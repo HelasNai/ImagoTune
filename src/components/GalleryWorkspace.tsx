@@ -190,7 +190,7 @@ export function GalleryWorkspace({
 
   return (
     <section className="gallery-workbench">
-      <aside className="workspace-sidebar">
+      <section className="workspace-sidebar">
         <span className="eyebrow">PROJECTS</span>
         <h3>创作项目</h3>
         <div className="project-list">
@@ -220,7 +220,7 @@ export function GalleryWorkspace({
           />
           <button onClick={() => void createProject()}>新建项目</button>
         </div>
-      </aside>
+      </section>
 
       <div className="gallery-main">
         <div className="section-head">

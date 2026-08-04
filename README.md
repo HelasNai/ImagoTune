@@ -38,7 +38,7 @@ https://github.com/zztnbnb/image-studio/releases/latest
     npm.cmd run build
     npm.cmd run package:win
 
-安装包输出在 dist/PinAI-Image-Studio-Setup-1.1.1.exe。
+安装包输出在 dist/PinAI-Image-Studio-Setup-1.1.2.exe。
 
 ## API 配置
 
@@ -77,6 +77,6 @@ API 密钥由 Electron 主进程写入 Windows 凭据库，不写入源码、项
 
 ## 发布
 
-当前版本：v1.1.1。公开 GitHub 仓库：
+当前版本：v1.1.2。公开 GitHub 仓库：
 
 https://github.com/zztnbnb/image-studio
