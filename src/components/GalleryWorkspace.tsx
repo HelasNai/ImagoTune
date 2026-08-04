@@ -233,17 +233,17 @@ export function GalleryWorkspace({
         </div>
 
         <div className="gallery-toolbar">
-          <label>关键词
+          <label className="toolbar-search">关键词
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="标题、提示词、模型、尺寸或标签" />
           </label>
-          <label>标签
+          <label className="toolbar-tag">标签
             <input value={tag} onChange={(event) => setTag(event.target.value)} placeholder="筛选标签" />
           </label>
           <label className="favorite-toggle">
             <input type="checkbox" checked={favoriteOnly} onChange={(event) => setFavoriteOnly(event.target.checked)} />
             仅收藏
           </label>
-          <label>排序
+          <label className="toolbar-sort">排序
             <select value={sort} onChange={(event) => setSort(event.target.value as "newest" | "oldest")}>
               <option value="newest">最新优先</option>
               <option value="oldest">最早优先</option>
@@ -252,17 +252,30 @@ export function GalleryWorkspace({
         </div>
 
         <div className="bulk-toolbar">
-          <strong>已选择 {selected.size} 张</strong>
-          <select value={bulkProjectId} onChange={(event) => setBulkProjectId(event.target.value)}>
-            {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-          </select>
-          <button onClick={() => void bulk("move", { projectId: bulkProjectId })}>移动项目</button>
-          <input value={bulkTags} onChange={(event) => setBulkTags(event.target.value)} placeholder="批量标签" />
-          <button onClick={() => void bulk("tags", { tags: parseTags(bulkTags) })}>更新标签</button>
-          <button onClick={() => void bulk("favorite", { favorite: true })}>收藏</button>
-          <button onClick={() => void compareSelected()}>对比</button>
-          <button onClick={() => void exportZip()}>导出 ZIP</button>
-          <button className="danger" onClick={() => void bulk("delete")}>删除</button>
+          <div className="bulk-summary">
+            <strong>已选择 {selected.size} 张</strong>
+            <span>可批量归类、标注和导出</span>
+          </div>
+          <div className="bulk-group">
+            <label>移动到项目
+              <select value={bulkProjectId} onChange={(event) => setBulkProjectId(event.target.value)}>
+                {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+              </select>
+            </label>
+            <button onClick={() => void bulk("move", { projectId: bulkProjectId })}>移动</button>
+          </div>
+          <div className="bulk-group">
+            <label>批量标签
+              <input value={bulkTags} onChange={(event) => setBulkTags(event.target.value)} placeholder="用逗号分隔" />
+            </label>
+            <button onClick={() => void bulk("tags", { tags: parseTags(bulkTags) })}>更新</button>
+          </div>
+          <div className="bulk-actions">
+            <button onClick={() => void bulk("favorite", { favorite: true })}>收藏</button>
+            <button onClick={() => void compareSelected()}>对比</button>
+            <button onClick={() => void exportZip()}>导出 ZIP</button>
+            <button className="danger" onClick={() => void bulk("delete")}>删除</button>
+          </div>
         </div>
 
         {items.length === 0 ? (
