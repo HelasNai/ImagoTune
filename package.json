@@ -7,7 +7,7 @@
     "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron . --dev\"",
     "build": "tsc -p tsconfig.json && vite build && tsc -p tsconfig.electron.json",
     "start": "electron .",
-    "package:win": "npm run build && electron-builder --win --dir",
+    "package:win": "npm run build && electron-builder --win nsis --x64",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit"
   },
   "dependencies": {
@@ -15,6 +15,36 @@
     "keytar": "^7.9.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
+  },
+  "build": {
+    "appId": "com.zztnbnb.pinaic.imagestudio",
+    "productName": "PinAI Image Studio",
+    "artifactName": "PinAI-Image-Studio-Setup-${version}.${ext}",
+    "asar": true,
+    "npmRebuild": false,
+    "files": [
+      "**/*",
+      "!chat-tool{,/**/*}",
+      "!保存图片{,/**/*}",
+      "!*.log"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "PinAI Image Studio.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "PinAI Image Studio"
+    }
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

@@ -43,6 +43,14 @@ npm.cmd run dev
 - `启动 PinAI Image Studio.bat`
 - `启动 PinAI Image Studio.vbs`
 
+## 下载 Windows 安装包
+
+普通用户不需要安装 Node.js，可以直接从 GitHub Releases 下载最新安装程序：
+
+<https://github.com/zztnbnb/image-studio/releases/latest>
+
+安装程序支持选择安装目录，并会创建桌面和开始菜单快捷方式。由于当前版本未购买代码签名证书，Windows SmartScreen 可能显示“未知发布者”，确认来源为本项目后即可继续安装。
+
 ## API 配置
 
 首次启动后进入“设置”，填写：
