@@ -1,6 +1,8 @@
 {
   "name": "pinaic-image-studio",
-  "version": "1.0.0",
+  "version": "1.1.0",
+  "description": "PinAI Image Studio local creative workspace for Windows",
+  "author": "zztnbnb",
   "private": true,
   "main": "dist-electron/main.js",
   "scripts": {
@@ -8,10 +10,13 @@
     "build": "tsc -p tsconfig.json && vite build && tsc -p tsconfig.electron.json",
     "start": "electron .",
     "package:win": "npm run build && electron-builder --win nsis --x64",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@types/archiver": "^6.0.2",
     "@vitejs/plugin-react": "^4.3.4",
+    "archiver": "^7.0.1",
     "keytar": "^7.9.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
@@ -32,7 +37,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "PinAI Image Studio.ico",
@@ -55,6 +62,7 @@
     "electron-builder": "^25.1.8",
     "typescript": "^5.7.2",
     "vite": "^6.0.5",
+    "vitest": "^3.0.5",
     "wait-on": "^8.0.1"
   }
 }

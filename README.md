@@ -1,107 +1,82 @@
 # PinAI Image Studio
 
-Windows 本地图片创作工作台，基于 Electron + React，调用 PinAI OpenAI 兼容接口的 `gpt-image-2` 图片模型。
+PinAI Image Studio v1.1 是一个 Windows 本地创作工作台，使用 Electron + React 调用 PinAI OpenAI 兼容接口中的 gpt-image-2，同时提供提示词助手、项目图库、局部编辑、任务队列和批量交付。
 
-## 功能
+## v1.1 功能
 
-- 文生图：根据自然语言提示词生成图片。
-- 图生图：上传原图，可选上传蒙版并继续编辑。
-- 清晰度选择：自动、1K、2K、4K。
-- 画面比例：1:1、4:3、3:4、3:2、2:3、16:9、9:16、4:5、5:4、21:9。
-- 生成数量：支持一次生成 1–4 张图片。
-- 提示词模板：内置海报、封面、产品图、社交媒体配图模板，也支持自定义模板的保存、编辑和删除。
-- 本地图库：自动归档、关键词搜索、收藏筛选、时间排序、大图预览和删除确认。
-- 图片迭代：结果支持一键再生成、复用参数和继续编辑。
-- API 密钥：通过 Windows 凭据库保存，不写入源码或项目配置。
-- 浅色蓝粉渐变界面，支持宽屏、窗口化和小窗口自适应布局。
+- 文生图与图生图：1K / 2K / 4K 清晰度，1:1、4:3、3:4、3:2、2:3、16:9、9:16、4:5、5:4、21:9 比例。
+- 自定义尺寸：提交前校验 16 倍数、边长、像素和比例风险。
+- 本地提示词助手：精炼主体、强化细节、海报化、社媒化、写实化和高级感，不产生额外 API 调用。
+- 可选 AI 增强：用户主动点击时，通过 PinAI /chat/completions 固定调用 gpt-4o。
+- 提示词模板：内置海报、封面、产品图、社交媒体模板，也可保存和删除自定义模板。
+- 图片编辑：原图上传、可视化蒙版画笔、最多 3 张参考图。参考图会在本地合成为带区域标识的参考画板。
+- 上传预处理：超大图片按最长边 2048 px 等比压缩，透明图保留 PNG，其他图片使用高质量 JPEG。
+- 顺序任务队列：一次只发送一个请求，支持查看、取消待执行任务、重试失败任务；应用重启后执行中的任务标记为“已中断”。
+- 项目图库：项目 CRUD、收件箱、标题/标签/收藏、搜索筛选、懒加载缩略图、批量移动/收藏/删除/ZIP 导出。
+- 图片工作流：点击大图预览、复用参数、继续编辑、创建变体、复制图片/提示词/完整参数、最多 4 张对比。
+- 社交画布导出：1:1、4:5、16:9、9:16，可选择浅色留白或模糊延展背景。
 
-## 环境要求
+## 安装
 
-- Windows 10 或更高版本。
-- Node.js 18 或更高版本。
-- 可用的 PinAI API 密钥。
+普通用户无需安装 Node.js，直接从公开 Release 下载 Windows 安装包：
 
-## 安装与启动
+https://github.com/zztnbnb/image-studio/releases/latest
 
-在项目目录执行：
+安装程序支持选择安装目录，并创建桌面和开始菜单快捷方式。
 
-```powershell
-npm.cmd install
-npm.cmd run build
-npm.cmd start
-```
+## 开发与构建
 
-开发模式：
+要求 Windows 10 或更高版本、Node.js 18+。
 
-```powershell
-npm.cmd install
-npm.cmd run dev
-```
+    npm.cmd install
+    npm.cmd run dev
 
-也可以直接双击：
+检查、测试和生产构建：
 
-- `启动 PinAI Image Studio.bat`
-- `启动 PinAI Image Studio.vbs`
+    npm.cmd run typecheck
+    npm.cmd test
+    npm.cmd run build
+    npm.cmd run package:win
 
-## 下载 Windows 安装包
-
-普通用户不需要安装 Node.js，可以直接从 GitHub Releases 下载最新安装程序：
-
-<https://github.com/zztnbnb/image-studio/releases/latest>
-
-安装程序支持选择安装目录，并会创建桌面和开始菜单快捷方式。由于当前版本未购买代码签名证书，Windows SmartScreen 可能显示“未知发布者”，确认来源为本项目后即可继续安装。
+安装包输出在 dist/PinAI-Image-Studio-Setup-1.1.0.exe。
 
 ## API 配置
 
-首次启动后进入“设置”，填写：
+首次启动后进入“设置”，填入：
 
-```text
-API Base URL: https://api.pinaic.com/v1
-模型: gpt-image-2
-```
+    API Base URL: https://api.pinaic.com/v1
+    图片模型: gpt-image-2
 
-输入 API 密钥并保存。密钥由 Electron 主进程写入 Windows 凭据库，渲染页面不会直接读取密钥。
+API 密钥由 Electron 主进程写入 Windows 凭据库，不写入源码、项目配置或渲染进程。应用会记住已配置状态，后续启动无需重复填写；界面不会显示已保存的密钥。
 
-## 图片与图库位置
+## 本地数据
 
-手动保存图片时，默认打开：
+默认手动保存目录：
 
-```text
-D:\codexproject\生图\保存图片
-```
+    D:\codexproject\生图\保存图片
 
-自动归档的图库位置为：
+自动图库目录：
 
-```text
-D:\codexproject\生图\保存图片\图库
-```
+    D:\codexproject\生图\保存图片\图库
 
-图库会保存 PNG 原图和 `index.json` 元数据索引，记录提示词、模型、比例、像素尺寸、清晰度、创建时间和收藏状态。
+图库保存 PNG 原图、版本化 index.json、.thumbs 缩略图缓存和提示词/参数元数据。旧版数组索引首次读取时会自动备份为 index.v1.backup.json，并迁移到“收件箱”项目。
 
-## 参数说明
+## 安全与隐私
 
-画面比例用于决定生成画布的宽高比例，程序会根据所选清晰度自动换算像素尺寸，并在提示词中明确要求模型原生按目标比例构图，避免生成后再裁剪。
-
-“自动”清晰度不会发送 `quality` 参数；选择其他清晰度时会发送对应质量值。如果接口明确返回不支持 `quality`，程序会提示切换到“自动”，不会自动重复请求。
+- API 密钥只保存在 Windows 凭据库。
+- 图片、项目、模板、队列和缩略图只保存在本机。
+- 不会对提示词做客户端关键词过滤或改写；服务端响应仍以 PinAI 实际规则为准。
+- 生图请求不会自动重试，避免重复计费；失败任务可由用户手动重试。
 
 ## 项目结构
 
-```text
-electron/                 Electron 主进程和受限 IPC
-src/                      React 渲染界面
-tools/                    图标等辅助脚本
-启动 PinAI Image Studio.*  Windows 启动脚本
-```
+    electron/                 Electron 主进程、IPC、图库与队列存储
+    src/                      React 创作界面、图库、蒙版画笔和提示词助手
+    tests/                    Vitest 纯逻辑测试
+    chat-tool/                独立的 PinAI Chat 工具，不与图片应用合并
 
-聊天工具位于本地的独立目录 `chat-tool`，不会随本图片软件仓库提交。
+## 发布
 
-## 检查与构建
+当前版本：v1.1.0。公开 GitHub 仓库：
 
-```powershell
-npm.cmd run typecheck
-npm.cmd run build
-```
-
-## 许可证
-
-本项目用于个人本地创作和 PinAI API 调用。图片内容、API 使用费用及模型输出版权请以 PinAI 账户和相关服务条款为准。
+https://github.com/zztnbnb/image-studio
