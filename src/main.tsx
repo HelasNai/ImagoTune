@@ -266,6 +266,9 @@ function App() {
   const [baseUrl, setBaseUrl] = useState("https://api.pinaic.com/v1");
   const [autoArchive, setAutoArchive] = useState(true);
   const [testMessage, setTestMessage] = useState("");
+  const [checkUpdatesAtStartup, setCheckUpdatesAtStartup] = useState(true);
+  const [appVersion, setAppVersion] = useState("");
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ phase: "idle", message: "尚未检查更新" });
   const [templates, setTemplates] = useState<PromptTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState("");
   const [projects, setProjects] = useState<GalleryProject[]>([]);
@@ -305,9 +308,16 @@ function App() {
       setAutoArchive(value.autoArchive);
     });
     void window.pinaic.templates.list().then((value) => setTemplates(value.items));
+    void window.pinaic.updates.get().then((value) => {
+      setCheckUpdatesAtStartup(value.checkAtStartup);
+      setAppVersion(value.appVersion);
+      setUpdateStatus(value.status);
+    });
     void refreshWorkspace();
     void refreshQueue();
   }, [refreshQueue, refreshWorkspace]);
+
+  useEffect(() => window.pinaic.onUpdateStatus((value) => setUpdateStatus(value)), []);
 
   useEffect(() => {
     const offProgress = window.pinaic.onProgress((value) => {
@@ -624,6 +634,31 @@ function App() {
     setTestMessage(result.message);
   };
 
+  const setUpdateStartupPreference = async (enabled: boolean) => {
+    setCheckUpdatesAtStartup(enabled);
+    const result = await window.pinaic.updates.setStartup(enabled);
+    if (!result.ok) {
+      setCheckUpdatesAtStartup(!enabled);
+      setError("无法保存更新检查设置");
+    }
+  };
+
+  const checkUpdates = async () => {
+    setUpdateStatus((current) => ({ ...current, phase: "checking", message: "正在检查更新…" }));
+    const result = await window.pinaic.updates.check();
+    if (!result.ok) setUpdateStatus((current) => ({ ...current, phase: "error", message: result.message }));
+  };
+
+  const downloadUpdate = async () => {
+    const result = await window.pinaic.updates.download();
+    if (!result.ok) setError(result.message);
+  };
+
+  const installUpdate = async () => {
+    const result = await window.pinaic.updates.install();
+    if (!result.ok) setError(result.message);
+  };
+
   const galleryOpen = (
     item: GalleryItem,
     b64: string,
@@ -932,6 +967,26 @@ function App() {
         <input type="checkbox" checked={autoArchive} onChange={(event) => setAutoArchive(event.target.checked)} />
         自动归档生成图片到本地图库与收件箱
       </label>
+      <section className="update-settings">
+        <div>
+          <span className="eyebrow">APPLICATION UPDATE</span>
+          <h3>软件更新</h3>
+          <p>当前版本：v{appVersion || "—"}。发现新版本时会先询问你是否下载，不会强制更新。</p>
+        </div>
+        <label className="archive-toggle">
+          <input type="checkbox" checked={checkUpdatesAtStartup} onChange={(event) => void setUpdateStartupPreference(event.target.checked)} />
+          启动时检查 GitHub 更新
+        </label>
+        <div className="update-actions">
+          <button className="secondary" onClick={() => void checkUpdates()} disabled={updateStatus.phase === "checking"}>
+            {updateStatus.phase === "checking" ? "检查中…" : "检查更新"}
+          </button>
+          {updateStatus.phase === "available" && <button className="primary" onClick={() => void downloadUpdate()}>下载 v{updateStatus.version}</button>}
+          {updateStatus.phase === "downloading" && <span className="update-progress">下载中 {updateStatus.progress || 0}%</span>}
+          {updateStatus.phase === "downloaded" && <button className="primary" onClick={() => void installUpdate()}>重启并安装 v{updateStatus.version}</button>}
+        </div>
+        <p className={updateStatus.phase === "error" ? "update-status error-text" : "update-status"}>{updateStatus.message}</p>
+      </section>
       <div className="actions">
         <button className="primary" onClick={() => void saveSettings()}>保存设置</button>
         <button className="secondary" onClick={() => void testSettings()}>测试连接</button>

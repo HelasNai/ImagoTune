@@ -9,6 +9,13 @@ declare global {
         clear: () => Promise<{ ok: boolean }>;
         test: () => Promise<{ ok: boolean; message: string }>;
       };
+      updates: {
+        get: () => Promise<{ ok: boolean; appVersion: string; checkAtStartup: boolean; supported: boolean; status: UpdateStatus }>;
+        setStartup: (enabled: boolean) => Promise<{ ok: boolean; checkAtStartup: boolean }>;
+        check: () => Promise<{ ok: boolean; message: string }>;
+        download: () => Promise<{ ok: boolean; message: string }>;
+        install: () => Promise<{ ok: boolean; message: string }>;
+      };
       generate: (input: unknown) => Promise<ApiResult>;
       edit: (input: unknown) => Promise<ApiResult>;
       cancel: (requestId: string) => Promise<void>;
@@ -52,6 +59,7 @@ declare global {
       onQueueUpdate: (callback: (event: QueueJob[]) => void) => () => void;
       onQueueResult: (callback: (event: { job: QueueJob; result: ApiResult }) => void) => () => void;
       onQueueError: (callback: (event: QueueJob) => void) => () => void;
+      onUpdateStatus: (callback: (event: UpdateStatus) => void) => () => void;
     };
   }
 
@@ -62,4 +70,5 @@ declare global {
   interface GalleryItem { id: string; fileName: string; title: string; prompt: string; model: string; size: string; quality?: string; ratio?: string; resolution?: string; mode: "generate" | "edit"; createdAt: string; favorite: boolean; projectId: string; tags: string[]; sourceId?: string; variationLabel?: string }
   interface PromptTemplate { id: string; title: string; category: string; prompt: string; ratio?: string; resolution?: string; quality?: string; builtin?: boolean }
   interface QueueJob { id: string; requestId: string; kind: "generate" | "edit"; status: "queued" | "running" | "completed" | "failed" | "cancelled" | "interrupted"; createdAt: string; updatedAt: string; attempts: number; input: Record<string, unknown>; error?: string; elapsedMs?: number; resultGalleryIds?: string[] }
+  interface UpdateStatus { phase: "idle" | "checking" | "available" | "downloading" | "downloaded" | "not-available" | "error"; version?: string; progress?: number; message: string }
 }

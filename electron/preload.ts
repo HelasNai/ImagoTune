@@ -7,6 +7,13 @@ contextBridge.exposeInMainWorld("pinaic", {
     clear: () => ipcRenderer.invoke("settings:clear"),
     test: () => ipcRenderer.invoke("settings:test")
   },
+  updates: {
+    get: () => ipcRenderer.invoke("updates:get"),
+    setStartup: (enabled: boolean) => ipcRenderer.invoke("updates:setStartup", enabled),
+    check: () => ipcRenderer.invoke("updates:check"),
+    download: () => ipcRenderer.invoke("updates:download"),
+    install: () => ipcRenderer.invoke("updates:install")
+  },
   generate: (input: unknown) => ipcRenderer.invoke("image:generate", input),
   edit: (input: unknown) => ipcRenderer.invoke("image:edit", input),
   cancel: (requestId: string) => ipcRenderer.invoke("image:cancel", requestId),
@@ -45,5 +52,10 @@ contextBridge.exposeInMainWorld("pinaic", {
     const listener = (_event: Electron.IpcRendererEvent, value: unknown) => callback(value);
     ipcRenderer.on("image:progress", listener);
     return () => ipcRenderer.removeListener("image:progress", listener);
+  },
+  onUpdateStatus: (callback: (event: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, value: unknown) => callback(value);
+    ipcRenderer.on("update:status", listener);
+    return () => ipcRenderer.removeListener("update:status", listener);
   }
 });

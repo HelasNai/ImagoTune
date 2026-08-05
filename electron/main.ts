@@ -5,6 +5,7 @@ import { createWriteStream } from "node:fs";
 import { randomUUID } from "node:crypto";
 import keytar from "keytar";
 import archiver from "archiver";
+import { autoUpdater, type ProgressInfo, type UpdateInfo } from "electron-updater";
 import { createGalleryStore, GalleryItem, GalleryProject, GallerySearch, GalleryState, INBOX_PROJECT_ID } from "./gallery-store";
 import { createQueueStore, QueueJob, QueueStore } from "./queue-store";
 
@@ -13,6 +14,11 @@ const ACCOUNT = "default";
 const DEFAULT_BASE_URL = "https://api.pinaic.com/v1";
 const DEFAULT_SAVE_DIR = "D:\\codexproject\\生图\\保存图片";
 const controllers = new Map<string, AbortController>();
+type UpdatePhase = "idle" | "checking" | "available" | "downloading" | "downloaded" | "not-available" | "error";
+type UpdateStatus = { phase: UpdatePhase; version?: string; progress?: number; message: string };
+let updateStatus: UpdateStatus = { phase: "idle", message: "尚未检查更新" };
+let updateCheckInFlight = false;
+let updatePromptOpen = false;
 
 type RequestInput = { requestId: string; prompt: string; userPrompt?: string; model: string; size: string; n: number; quality?: string; ratio?: string; resolution?: string; projectId?: string; title?: string; tags?: string[]; sourceId?: string; variationLabel?: string };
 type EditInput = RequestInput & { image: { name: string; type: string; data: number[] }; mask?: { name: string; type: string; data: number[] } };
@@ -49,6 +55,107 @@ function createWindow() {
 async function config() {
   const archiveSetting = await keytar.getPassword(SERVICE, `${ACCOUNT}:autoArchive`);
   return { apiKey: await keytar.getPassword(SERVICE, ACCOUNT), baseUrl: (await keytar.getPassword(SERVICE, `${ACCOUNT}:baseUrl`)) || DEFAULT_BASE_URL, autoArchive: archiveSetting !== "false" };
+}
+
+async function checkUpdatesAtStartup() {
+  return (await keytar.getPassword(SERVICE, ACCOUNT + ":checkUpdatesAtStartup")) !== "false";
+}
+
+function publishUpdateStatus(next: UpdateStatus) {
+  updateStatus = next;
+  broadcast("update:status", updateStatus);
+}
+
+function updateWindow() {
+  return BrowserWindow.getAllWindows()[0];
+}
+
+async function downloadAppUpdate() {
+  if (!app.isPackaged) return { ok: false, message: "开发模式不检查更新，请使用安装版测试。" };
+  if (updateStatus.phase === "downloading") return { ok: true, message: "更新正在下载。" };
+  try {
+    publishUpdateStatus({ phase: "downloading", version: updateStatus.version, progress: 0, message: "正在下载更新…" });
+    await autoUpdater.downloadUpdate();
+    return { ok: true, message: "更新下载完成。" };
+  } catch (error) {
+    const message = (error as Error).message || "更新下载失败";
+    publishUpdateStatus({ phase: "error", message });
+    return { ok: false, message };
+  }
+}
+
+async function promptForDownload(info: UpdateInfo) {
+  if (updatePromptOpen) return;
+  const win = updateWindow();
+  if (!win) return;
+  updatePromptOpen = true;
+  try {
+    const result = await dialog.showMessageBox(win, {
+      type: "info",
+      title: "发现新版本",
+      message: "PinAI Image Studio " + info.version + " 已可更新",
+      detail: "是否现在下载？下载完成后仍由你选择是否重启安装。",
+      buttons: ["稍后再说", "下载更新"],
+      defaultId: 1,
+      cancelId: 0,
+      noLink: true
+    });
+    if (result.response === 1) await downloadAppUpdate();
+  } finally {
+    updatePromptOpen = false;
+  }
+}
+
+async function checkForAppUpdate() {
+  if (!app.isPackaged) {
+    const message = "开发模式不检查更新，请使用安装版测试。";
+    publishUpdateStatus({ phase: "idle", message });
+    return { ok: false, message };
+  }
+  if (updateCheckInFlight) return { ok: true, message: "正在检查更新…" };
+  try {
+    updateCheckInFlight = true;
+    await autoUpdater.checkForUpdates();
+    return { ok: true, message: "已完成更新检查。" };
+  } catch (error) {
+    const message = (error as Error).message || "检查更新失败";
+    publishUpdateStatus({ phase: "error", message });
+    return { ok: false, message };
+  } finally {
+    updateCheckInFlight = false;
+  }
+}
+
+function configureAutoUpdater() {
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater.on("checking-for-update", () => publishUpdateStatus({ phase: "checking", message: "正在检查更新…" }));
+  autoUpdater.on("update-available", (info) => {
+    publishUpdateStatus({ phase: "available", version: info.version, message: "发现新版本 v" + info.version });
+    void promptForDownload(info);
+  });
+  autoUpdater.on("update-not-available", () => publishUpdateStatus({ phase: "not-available", message: "当前已是最新版本。" }));
+  autoUpdater.on("download-progress", (progress: ProgressInfo) => {
+    const percent = Math.round(progress.percent);
+    publishUpdateStatus({ phase: "downloading", version: updateStatus.version, progress: percent, message: "正在下载更新：" + percent + "%" });
+  });
+  autoUpdater.on("update-downloaded", async (info) => {
+    publishUpdateStatus({ phase: "downloaded", version: info.version, progress: 100, message: "v" + info.version + " 已下载，等待安装。" });
+    const win = updateWindow();
+    if (!win) return;
+    const result = await dialog.showMessageBox(win, {
+      type: "info",
+      title: "更新已下载",
+      message: "PinAI Image Studio " + info.version + " 已准备好",
+      detail: "是否现在重启并安装？你也可以稍后在“设置”中执行安装。",
+      buttons: ["稍后安装", "重启并安装"],
+      defaultId: 1,
+      cancelId: 0,
+      noLink: true
+    });
+    if (result.response === 1) autoUpdater.quitAndInstall();
+  });
+  autoUpdater.on("error", (error) => publishUpdateStatus({ phase: "error", message: error.message || "更新服务发生错误" }));
 }
 
 function emit(win: BrowserWindow, requestId: string, status: string, progress?: number, message?: string) {
@@ -197,6 +304,16 @@ app.whenReady().then(async () => {
   ipcMain.handle("settings:save", async (_e, value: { apiKey: string; baseUrl: string; autoArchive?: boolean }) => { if (value.apiKey.trim()) await keytar.setPassword(SERVICE, ACCOUNT, value.apiKey.trim()); await keytar.setPassword(SERVICE, `${ACCOUNT}:baseUrl`, value.baseUrl.trim() || DEFAULT_BASE_URL); await keytar.setPassword(SERVICE, `${ACCOUNT}:autoArchive`, value.autoArchive === false ? "false" : "true"); return { ok: true }; });
   ipcMain.handle("settings:clear", async () => { await keytar.deletePassword(SERVICE, ACCOUNT); return { ok: true }; });
   ipcMain.handle("settings:test", async () => { const c = await config(); if (!c.apiKey) return { ok: false, message: "尚未配置 API 密钥" }; try { const r = await fetch(`${c.baseUrl.replace(/\/$/, "")}/models`, { headers: { Authorization: `Bearer ${c.apiKey}` }, signal: AbortSignal.timeout(20_000) }); return r.ok ? { ok: true, message: "连接成功" } : { ok: false, message: `接口返回 ${r.status}` }; } catch (e) { return { ok: false, message: (e as Error).message }; } });
+  ipcMain.handle("updates:get", async () => ({ ok: true, appVersion: app.getVersion(), checkAtStartup: await checkUpdatesAtStartup(), supported: app.isPackaged, status: updateStatus }));
+  ipcMain.handle("updates:setStartup", async (_e, enabled: boolean) => { await keytar.setPassword(SERVICE, ACCOUNT + ":checkUpdatesAtStartup", enabled ? "true" : "false"); return { ok: true, checkAtStartup: enabled }; });
+  ipcMain.handle("updates:check", async () => checkForAppUpdate());
+  ipcMain.handle("updates:download", async () => downloadAppUpdate());
+  ipcMain.handle("updates:install", async () => {
+    if (!app.isPackaged) return { ok: false, message: "开发模式不支持安装更新。" };
+    if (updateStatus.phase !== "downloaded") return { ok: false, message: "尚未下载可安装的更新。" };
+    autoUpdater.quitAndInstall();
+    return { ok: true, message: "正在重启并安装更新。" };
+  });
   ipcMain.handle("image:generate", (e, input: RequestInput) => callImages(BrowserWindow.fromWebContents(e.sender)!, "generations", input));
   ipcMain.handle("image:edit", (e, input: EditInput) => callImages(BrowserWindow.fromWebContents(e.sender)!, "edits", input));
   ipcMain.handle("image:cancel", async (_e, requestId: string) => { controllers.get(requestId)?.abort(); });
@@ -246,7 +363,10 @@ app.whenReady().then(async () => {
   ipcMain.handle("templates:list", async () => ({ ok: true, items: [...DEFAULT_TEMPLATES, ...(await readCustomTemplates())] }));
   ipcMain.handle("templates:save", async (_e, input: Partial<PromptTemplate>) => { if (!input.title?.trim() || !input.prompt?.trim()) return { ok: false, error: "模板标题和提示词不能为空" }; const items = await readCustomTemplates(); const item: PromptTemplate = { id: input.id && !input.id.startsWith("builtin-") ? input.id : `custom-${randomUUID()}`, title: input.title.trim(), category: input.category?.trim() || "自定义", prompt: input.prompt.trim(), ratio: input.ratio, resolution: input.resolution, quality: input.quality }; const next = [...items.filter(value => value.id !== item.id), item]; await fs.mkdir(path.dirname(await templatesFile()), { recursive: true }); await fs.writeFile(await templatesFile(), JSON.stringify(next, null, 2), "utf8"); return { ok: true, item }; });
   ipcMain.handle("templates:delete", async (_e, id: string) => { if (id.startsWith("builtin-")) return { ok: false, error: "内置模板不能删除" }; const items = await readCustomTemplates(); await fs.writeFile(await templatesFile(), JSON.stringify(items.filter(item => item.id !== id), null, 2), "utf8"); return { ok: true }; });
-  createWindow(); app.on("activate", () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
+  configureAutoUpdater();
+  createWindow();
+  if (app.isPackaged && await checkUpdatesAtStartup()) setTimeout(() => { void checkForAppUpdate(); }, 5_000);
+  app.on("activate", () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
 });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
 

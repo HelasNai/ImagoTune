@@ -15,6 +15,7 @@ PinAI Image Studio v1.1 是一个 Windows 本地创作工作台，使用 Electro
 - 项目图库：项目 CRUD、收件箱、标题/标签/收藏、搜索筛选、懒加载缩略图、批量移动/收藏/删除/ZIP 导出。
 - 图片工作流：点击大图预览、复用参数、继续编辑、创建变体、复制图片/提示词/完整参数、最多 4 张对比。
 - 社交画布导出：1:1、4:5、16:9、9:16，可选择浅色留白或模糊延展背景。
+- 软件更新：安装版可在启动时检查 GitHub Release；发现新版本后由用户选择下载，并在下载完成后选择是否重启安装。
 
 ## 安装
 
@@ -38,7 +39,7 @@ https://github.com/zztnbnb/image-studio/releases/latest
     npm.cmd run build
     npm.cmd run package:win
 
-安装包输出在 dist/PinAI-Image-Studio-Setup-1.1.3.exe。
+安装包输出在 dist/PinAI-Image-Studio-Setup-1.1.4.exe。
 
 ## API 配置
 
@@ -77,6 +78,16 @@ API 密钥由 Electron 主进程写入 Windows 凭据库，不写入源码、项
 
 ## 发布
 
-当前版本：v1.1.3。公开 GitHub 仓库：
+当前版本：v1.1.4。公开 GitHub 仓库：
 
 https://github.com/zztnbnb/image-studio
+
+### 自动更新发布清单
+
+从 v1.1.4 起，每次发布后续版本时，GitHub Release 必须同时包含以下三个构建产物：
+
+- PinAI-Image-Studio-Setup-版本号.exe
+- PinAI-Image-Studio-Setup-版本号.exe.blockmap
+- latest.yml
+
+其中 latest.yml 会指向本次安装包并携带校验信息；缺少它时，已安装用户无法收到新版本提醒。
