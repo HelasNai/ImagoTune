@@ -12,28 +12,26 @@ import {
   validateCanvasSize,
   variationOptions,
 } from "./lib/creative";
+import {
+  createOutpaintFiles,
+  OutpaintMargins,
+  outpaintFromPercent,
+  outpaintToSize,
+  targetSizeForRatio,
+} from "./lib/outpaint";
 
-type Mode = "generate" | "edit" | "gallery" | "queue" | "settings";
+type Mode = "generate" | "edit" | "outpaint" | "gallery" | "queue" | "settings";
 type Output = {
   id: string;
   b64: string;
   createdAt: number;
   galleryId?: string;
-  prompt: string;
-  model: string;
-  mode: "generate" | "edit";
-  size: string;
-  quality?: string;
-  ratio?: string;
-  resolution?: string;
-  projectId: string;
-  tags: string[];
-  sourceId?: string;
-  variationLabel?: string;
+  recipe: ImageRecipeV1;
 };
 type SubmitOverride = {
   prompt?: string;
-  mode?: "generate" | "edit";
+  negativePrompt?: string;
+  mode?: RecipeMode;
   size?: string;
   quality?: string;
   ratio?: string;
@@ -101,6 +99,31 @@ function dataUrlFor(output: Output) {
   return "data:image/png;base64," + output.b64;
 }
 
+function recipeFromQueueInput(input: Record<string, unknown>, kind: "generate" | "edit", fallbackSize: string): ImageRecipeV1 {
+  if (input.recipe && typeof input.recipe === "object") return input.recipe as ImageRecipeV1;
+  return {
+    version: 1,
+    prompt: String(input.userPrompt || input.prompt || ""),
+    negativePrompt: String(input.negativePrompt || ""),
+    model: String(input.model || "gpt-image-2"),
+    size: String(input.size || fallbackSize),
+    ratio: typeof input.ratio === "string" ? input.ratio : undefined,
+    resolution: typeof input.resolution === "string" ? input.resolution : undefined,
+    quality: typeof input.quality === "string" ? input.quality : undefined,
+    n: Number(input.n) || 1,
+    mode: kind,
+    projectId: String(input.projectId || "inbox"),
+    tags: Array.isArray(input.tags) ? input.tags.map(String) : [],
+    createdAt: new Date().toISOString(),
+    sourceId: typeof input.sourceId === "string" ? input.sourceId : undefined,
+    variationLabel: typeof input.variationLabel === "string" ? input.variationLabel : undefined,
+  };
+}
+
+function recipeModeLabel(recipe: ImageRecipeV1) {
+  return recipe.mode === "outpaint" ? "智能扩图" : recipe.mode === "edit" ? "图片编辑" : "文生图";
+}
+
 function b64ToFile(b64: string, name: string) {
   const bytes = Uint8Array.from(atob(b64), (value) => value.charCodeAt(0));
   return new File([bytes], name, { type: "image/png" });
@@ -154,6 +177,27 @@ async function prepareUpload(file: File) {
   return blob
     ? new File([blob], file.name.replace(/\.[^.]+$/, extension), { type })
     : file;
+}
+
+async function prepareVisionUpload(file: File) {
+  const image = await readImage(file);
+  const scale = Math.min(1, 1536 / Math.max(image.naturalWidth, image.naturalHeight));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(16, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(16, Math.round(image.naturalHeight * scale));
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) return file;
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  let transparent = false;
+  if (file.type === "image/png") {
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    for (let index = 3; index < pixels.length; index += 4) {
+      if (pixels[index] < 255) { transparent = true; break; }
+    }
+  }
+  const type = transparent ? "image/png" : "image/jpeg";
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, type === "image/jpeg" ? 0.88 : undefined));
+  return blob ? new File([blob], transparent ? "reverse-source.png" : "reverse-source.jpg", { type }) : file;
 }
 
 function drawContain(
@@ -244,6 +288,7 @@ async function exportSocialCanvas(output: Output, preset: string, fill: "light" 
 function App() {
   const [mode, setMode] = useState<Mode>("generate");
   const [prompt, setPrompt] = useState("");
+  const [negativePrompt, setNegativePrompt] = useState("");
   const [originalPrompt, setOriginalPrompt] = useState("");
   const [quality, setQuality] = useState("auto");
   const [resolution, setResolution] = useState("1k");
@@ -271,6 +316,15 @@ function App() {
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ phase: "idle", message: "尚未检查更新" });
   const [templates, setTemplates] = useState<PromptTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState("");
+  const [selectedNegativeTemplate, setSelectedNegativeTemplate] = useState("");
+  const [reverseImage, setReverseImage] = useState<File | null>(null);
+  const [reverseResult, setReverseResult] = useState<{ zh: string; en: string } | null>(null);
+  const [reversing, setReversing] = useState(false);
+  const [outpaintStrategy, setOutpaintStrategy] = useState<"percent" | "target">("percent");
+  const [outpaintMargins, setOutpaintMargins] = useState<OutpaintMargins>({ top: 25, right: 25, bottom: 25, left: 25 });
+  const [outpaintTargetSize, setOutpaintTargetSize] = useState("");
+  const [outpaintPreset, setOutpaintPreset] = useState("");
+  const [sourceDimensions, setSourceDimensions] = useState<{ width: number; height: number } | null>(null);
   const [projects, setProjects] = useState<GalleryProject[]>([]);
   const [projectId, setProjectId] = useState("inbox");
   const [tagsText, setTagsText] = useState("");
@@ -280,14 +334,30 @@ function App() {
   const [progress, setProgress] = useState<AppProgress | null>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [errorInfo, setErrorInfo] = useState<GenerationErrorInfo | null>(null);
   const [enhancing, setEnhancing] = useState(false);
 
   const presetSize = sizeMatrix[resolution][ratio];
   const customCheck = validateCanvasSize(customSize);
   const chosenSize = customSizeEnabled && customCheck.ok ? customCheck.size : presetSize;
-  const [width, height] = chosenSize.split("x").map(Number);
-  const heavyRequest = resolution === "4k" || n > 1 || width * height > 3_000_000;
   const maskChange = useCallback((file: File | null) => setPaintedMask(file), []);
+  const outpaintCheck = sourceDimensions
+    ? outpaintStrategy === "percent"
+      ? outpaintFromPercent(sourceDimensions.width, sourceDimensions.height, outpaintMargins)
+      : outpaintToSize(sourceDimensions.width, sourceDimensions.height, outpaintTargetSize)
+    : null;
+  const displaySize = mode === "outpaint" && outpaintCheck?.ok ? outpaintCheck.layout.targetSize : chosenSize;
+  const [displayWidth, displayHeight] = displaySize.split("x").map(Number);
+  const heavyRequest = resolution === "4k" || n > 1 || displayWidth * displayHeight > 3_000_000;
+
+  useEffect(() => {
+    if (mode !== "outpaint" || !image) { setSourceDimensions(null); return; }
+    let active = true;
+    void readImage(image).then((value) => {
+      if (active) setSourceDimensions({ width: value.naturalWidth, height: value.naturalHeight });
+    }).catch(() => { if (active) setSourceDimensions(null); });
+    return () => { active = false; };
+  }, [image, mode]);
 
   const refreshWorkspace = useCallback(async () => {
     const workspace = await window.pinaic.gallery.workspace();
@@ -328,7 +398,7 @@ function App() {
       const result = value.result;
       const gallery = result.gallery || [];
       const input = value.job.input;
-      const userPrompt = String(input.userPrompt || input.prompt || "");
+      const baseRecipe = result.recipe || recipeFromQueueInput(input, value.job.kind, chosenSize);
       const items = (result.images || [])
         .filter((item) => item.b64_json)
         .map((item, index) => ({
@@ -336,17 +406,10 @@ function App() {
           b64: item.b64_json || "",
           createdAt: Date.now(),
           galleryId: gallery[index]?.id,
-          prompt: userPrompt,
-          model: String(input.model || "gpt-image-2"),
-          mode: value.job.kind,
-          size: String(input.size || chosenSize),
-          quality: typeof input.quality === "string" ? input.quality : undefined,
-          ratio: typeof input.ratio === "string" ? input.ratio : undefined,
-          resolution: typeof input.resolution === "string" ? input.resolution : undefined,
-          projectId: String(input.projectId || "inbox"),
-          tags: Array.isArray(input.tags) ? input.tags.map(String) : [],
-          sourceId: typeof input.sourceId === "string" ? input.sourceId : undefined,
-          variationLabel: typeof input.variationLabel === "string" ? input.variationLabel : undefined,
+          recipe: gallery[index]?.recipe || {
+            ...baseRecipe,
+            seed: item.seed === undefined ? baseRecipe.seed : String(item.seed),
+          },
         }));
       if (value.job.id === activeJobId) {
         setOutputs(items);
@@ -363,7 +426,8 @@ function App() {
     const offError = window.pinaic.onQueueError((job) => {
       if (job.id === activeJobId) {
         setActiveJobId("");
-        setError(job.error || "任务失败");
+        setErrorInfo(job.errorInfo || null);
+        setError(job.errorInfo ? "" : job.error || "任务失败");
       } else {
         setNotice("队列任务失败：" + (job.error || "未知错误"));
       }
@@ -378,7 +442,7 @@ function App() {
 
   const applyTemplate = (id: string) => {
     const item = templates.find((value) => value.id === id);
-    if (!item) return;
+    if (!item || item.kind !== "positive") return;
     setSelectedTemplate(id);
     setOriginalPrompt(prompt);
     setPrompt(item.prompt);
@@ -388,34 +452,50 @@ function App() {
     setMode("generate");
   };
 
-  const saveTemplate = async () => {
-    if (!prompt.trim()) {
-      setError("请先输入提示词再保存模板");
+  const applyNegativeTemplate = (id: string) => {
+    const item = templates.find((value) => value.id === id);
+    if (!item || item.kind !== "negative") return;
+    setSelectedNegativeTemplate(id);
+    setNegativePrompt(item.prompt);
+  };
+
+  const saveTemplate = async (kind: "positive" | "negative", update = false) => {
+    const value = kind === "negative" ? negativePrompt : prompt;
+    const selectedId = kind === "negative" ? selectedNegativeTemplate : selectedTemplate;
+    const selected = templates.find((item) => item.id === selectedId && item.kind === kind);
+    if (!value.trim()) {
+      setError(kind === "negative" ? "请先输入负面提示词" : "请先输入提示词再保存模板");
       return;
     }
-    const title = window.prompt("模板名称", "我的模板");
+    if (update && (!selected || selected.builtin)) return;
+    const title = update ? selected!.title : window.prompt("模板名称", kind === "negative" ? "我的负面词" : "我的模板");
     if (!title?.trim()) return;
     const result = await window.pinaic.templates.save({
+      id: update ? selected!.id : undefined,
       title,
       category: "自定义",
-      prompt,
-      ratio,
-      resolution,
-      quality,
+      prompt: value,
+      kind,
+      ratio: kind === "positive" ? ratio : undefined,
+      resolution: kind === "positive" ? resolution : undefined,
+      quality: kind === "positive" ? quality : undefined,
     });
     if (result.item) {
       setTemplates((current) => [...current.filter((item) => item.id !== result.item!.id), result.item!]);
-      setSelectedTemplate(result.item.id);
-      setNotice("模板已保存");
+      if (kind === "negative") setSelectedNegativeTemplate(result.item.id);
+      else setSelectedTemplate(result.item.id);
+      setNotice(update ? "模板已更新" : "模板已保存");
     }
   };
 
-  const deleteTemplate = async () => {
-    const item = templates.find((value) => value.id === selectedTemplate);
+  const deleteTemplate = async (kind: "positive" | "negative") => {
+    const selectedId = kind === "negative" ? selectedNegativeTemplate : selectedTemplate;
+    const item = templates.find((value) => value.id === selectedId && value.kind === kind);
     if (!item || item.builtin || !window.confirm("删除模板“" + item.title + "”吗？")) return;
     await window.pinaic.templates.delete(item.id);
     setTemplates((current) => current.filter((value) => value.id !== item.id));
-    setSelectedTemplate("");
+    if (kind === "negative") setSelectedNegativeTemplate("");
+    else setSelectedTemplate("");
   };
 
   const optimizeLocal = (action: PromptAction) => {
@@ -449,9 +529,42 @@ function App() {
     setNotice("已通过 gpt-4o 增强提示词");
   };
 
+  const reversePrompt = async () => {
+    if (!reverseImage) { setError("请先选择需要反推的图片"); return; }
+    if (!configured) { setError("请先到设置页保存 API 密钥"); return; }
+    setReversing(true);
+    setError("");
+    setErrorInfo(null);
+    try {
+      const prepared = await prepareVisionUpload(reverseImage);
+      const result = await window.pinaic.prompt.reverse({ image: await fileToPayload(prepared) });
+      if (!result.ok) { setError(result.error || "图反推失败，原提示词未改变"); return; }
+      setReverseResult({ zh: result.zh || "", en: result.en || "" });
+      setNotice("已生成中英文反推提示词，原提示词尚未改变");
+    } catch (cause) {
+      setError((cause as Error).message || "图反推失败，原提示词未改变");
+    } finally { setReversing(false); }
+  };
+
+  const applyReversePrompt = (value: string, action: "replace" | "append") => {
+    if (!value.trim()) return;
+    setOriginalPrompt(prompt);
+    setPrompt(action === "append" && prompt.trim() ? prompt.trim() + "\n\n" + value.trim() : value.trim());
+    setNotice(action === "append" ? "反推提示词已追加" : "反推提示词已替换当前内容");
+  };
+
+  const chooseOutpaintPreset = (preset: string) => {
+    if (!sourceDimensions) { setError("请先上传扩图原图"); return; }
+    const size = targetSizeForRatio(sourceDimensions.width, sourceDimensions.height, preset);
+    setOutpaintStrategy("target");
+    setOutpaintPreset(preset);
+    setOutpaintTargetSize(size);
+  };
+
   const enqueue = async (override: SubmitOverride = {}) => {
-    const activeMode = override.mode || (mode === "edit" ? "edit" : "generate");
+    const activeMode = override.mode || (mode === "outpaint" ? "outpaint" : mode === "edit" ? "edit" : "generate");
     const activePrompt = (override.prompt ?? prompt).trim();
+    const activeNegativePrompt = (override.negativePrompt ?? negativePrompt).trim();
     const activeResolution = override.resolution || resolution;
     const activeRatio = override.ratio || ratio;
     const activeSize = override.size || chosenSize;
@@ -460,7 +573,7 @@ function App() {
     const activeProject = override.projectId || projectId;
     const activeTags = override.tags || parseTags(tagsText);
     const sourceImage = override.image === undefined ? image : override.image;
-    const suppliedMask = override.mask === undefined ? (paintedMask || externalMask) : override.mask;
+    let suppliedMask = override.mask === undefined ? (paintedMask || externalMask) : override.mask;
 
     if (!activePrompt) {
       setError("请先输入提示词");
@@ -470,42 +583,87 @@ function App() {
       setError("请先到设置页保存 API 密钥");
       return;
     }
-    if (customSizeEnabled && !customCheck.ok && !override.size) {
+    if (activeMode !== "outpaint" && customSizeEnabled && !customCheck.ok && !override.size) {
       setError(customCheck.message);
       return;
     }
-    if (activeMode === "edit" && !sourceImage) {
-      setError("图片编辑需要上传原图");
+    if (activeMode !== "generate" && !sourceImage) {
+      setError(activeMode === "outpaint" ? "智能扩图需要上传原图" : "图片编辑需要上传原图");
+      return;
+    }
+    if (activeMode === "outpaint" && (!outpaintCheck || !outpaintCheck.ok)) {
+      setError(outpaintCheck?.error || "请设置有效的扩图范围");
       return;
     }
 
     setError("");
+    setErrorInfo(null);
     setNotice("");
     const id = crypto.randomUUID();
     setRequestId(id);
     setProgress({ requestId: id, status: "准备进入队列", progress: 2 });
-    const ratioPrompt = "\n\n构图要求：严格使用 " + activeRatio + " 画面比例（" +
-      activeSize + " 像素画布）进行原生构图；不要生成正方形或在生成后裁切；主体、文字和边缘内容必须完整适配画布。";
-    const payload: Record<string, unknown> = {
-      requestId: id,
-      prompt: activePrompt + ratioPrompt,
-      userPrompt: activePrompt,
+    let finalSize = activeSize;
+    let finalRatio = activeRatio;
+    let preparedImage: File | null = null;
+    let outpaintRecipe: OutpaintRecipe | undefined;
+    try {
+      if (activeMode === "edit" && sourceImage) {
+        const prepared = await prepareUpload(sourceImage);
+        preparedImage = await createReferenceBoard(prepared, references);
+      }
+      if (activeMode === "outpaint" && sourceImage) {
+        const prepared = await prepareUpload(sourceImage);
+        const source = await readImage(prepared);
+        const layoutResult = outpaintStrategy === "percent"
+          ? outpaintFromPercent(source.naturalWidth, source.naturalHeight, outpaintMargins)
+          : outpaintToSize(source.naturalWidth, source.naturalHeight, outpaintTargetSize);
+        if (!layoutResult.ok) { setError(layoutResult.error); return; }
+        const validation = await window.pinaic.outpaint.prepare({ sourceWidth: source.naturalWidth, sourceHeight: source.naturalHeight, targetSize: layoutResult.layout.targetSize });
+        if (!validation.ok) { setError(validation.error || "扩图尺寸无效"); return; }
+        const files = await createOutpaintFiles(prepared, layoutResult.layout);
+        preparedImage = files.image;
+        suppliedMask = files.mask;
+        finalSize = layoutResult.layout.targetSize;
+        finalRatio = outpaintPreset || activeRatio;
+        outpaintRecipe = {
+          sourceSize: `${source.naturalWidth}x${source.naturalHeight}`,
+          targetSize: finalSize,
+          top: layoutResult.layout.top,
+          right: layoutResult.layout.right,
+          bottom: layoutResult.layout.bottom,
+          left: layoutResult.layout.left,
+          preset: outpaintPreset || undefined,
+        };
+      }
+    } catch (cause) {
+      setError((cause as Error).message || "图片预处理失败");
+      return;
+    }
+    const recipe: ImageRecipeV1 = {
+      version: 1,
+      prompt: activePrompt,
+      negativePrompt: activeNegativePrompt,
       model: "gpt-image-2",
-      size: activeSize,
-      n: activeMode === "edit" ? 1 : activeN,
+      size: finalSize,
+      n: activeMode === "generate" ? activeN : 1,
       quality: activeQuality,
-      ratio: activeRatio,
+      ratio: finalRatio,
       resolution: activeResolution,
+      mode: activeMode,
       projectId: activeProject,
-      title: activePrompt.slice(0, 48),
       tags: activeTags,
+      createdAt: new Date().toISOString(),
       sourceId: override.sourceId,
       variationLabel: override.variationLabel,
+      outpaint: outpaintRecipe,
     };
-    if (activeMode === "edit" && sourceImage) {
-      const prepared = await prepareUpload(sourceImage);
-      const referenceBoard = await createReferenceBoard(prepared, references);
-      payload.image = await fileToPayload(referenceBoard);
+    const payload: Record<string, unknown> = {
+      requestId: id,
+      recipe,
+      title: activePrompt.slice(0, 48),
+    };
+    if (activeMode !== "generate" && preparedImage) {
+      payload.image = await fileToPayload(preparedImage);
       if (suppliedMask) {
         const maskFile = suppliedMask.type === "image/png"
           ? suppliedMask
@@ -513,7 +671,7 @@ function App() {
         payload.mask = await fileToPayload(maskFile);
       }
     }
-    const result = await window.pinaic.queue.enqueue({ kind: activeMode, payload });
+    const result = await window.pinaic.queue.enqueue({ kind: activeMode === "generate" ? "generate" : "edit", payload });
     if (!result.ok || !result.job) {
       setError(result.error || "无法创建任务");
       return;
@@ -550,43 +708,63 @@ function App() {
   };
 
   const regenerate = (output: Output) => {
+    const recipe = output.recipe;
     void enqueue({
-      prompt: output.prompt,
-      size: output.size,
-      ratio: output.ratio,
-      resolution: output.resolution,
-      quality: output.quality,
+      prompt: recipe.prompt,
+      negativePrompt: recipe.negativePrompt,
+      size: recipe.size,
+      ratio: recipe.ratio,
+      resolution: recipe.resolution,
+      quality: recipe.quality,
       n: 1,
-      projectId: output.projectId,
-      tags: output.tags,
+      projectId: recipe.projectId,
+      tags: recipe.tags,
       sourceId: output.galleryId,
       mode: "generate",
     });
   };
 
   const continueEdit = (output: Output) => {
+    const recipe = output.recipe;
     setMode("edit");
-    setPrompt(output.prompt);
+    setPrompt(recipe.prompt);
+    setNegativePrompt(recipe.negativePrompt);
     setImage(b64ToFile(output.b64, "pinaic-source.png"));
-    if (output.ratio) setRatio(output.ratio);
-    if (output.resolution) setResolution(output.resolution);
-    if (output.quality) setQuality(output.quality);
-    setProjectId(output.projectId || "inbox");
-    setTagsText(output.tags.join("，"));
+    if (recipe.ratio) setRatio(recipe.ratio);
+    if (recipe.resolution) setResolution(recipe.resolution);
+    if (recipe.quality) setQuality(recipe.quality);
+    setProjectId(recipe.projectId || "inbox");
+    setTagsText(recipe.tags.join("，"));
     setNotice("已带入图片和参数，可局部涂抹蒙版后继续编辑");
   };
 
+  const startOutpaint = (output: Output) => {
+    const recipe = output.recipe;
+    setMode("outpaint");
+    setPrompt(recipe.prompt);
+    setNegativePrompt(recipe.negativePrompt);
+    setImage(b64ToFile(output.b64, "pinaic-outpaint-source.png"));
+    setProjectId(recipe.projectId || "inbox");
+    setTagsText(recipe.tags.join("，"));
+    setOutpaintStrategy("percent");
+    setOutpaintMargins({ top: 25, right: 25, bottom: 25, left: 25 });
+    setOutpaintPreset("");
+    setNotice("已进入智能扩图，可选择快捷比例或分别设置四向扩展量");
+  };
+
   const createVariation = (
-    source: Pick<Output, "prompt" | "projectId" | "tags" | "galleryId"> | GalleryItem,
+    source: Output | GalleryItem,
     option: (typeof variationOptions)[number] = variationOptions[0],
   ) => {
-    const sourceId = "id" in source ? source.id : source.galleryId;
+    const sourceId = "fileName" in source ? source.id : source.galleryId;
+    const recipe = source.recipe;
     void enqueue({
-      prompt: source.prompt + "\n\n" + option.suffix,
+      prompt: recipe.prompt + "\n\n" + option.suffix,
+      negativePrompt: recipe.negativePrompt,
       mode: "generate",
       n: 1,
-      projectId: source.projectId,
-      tags: source.tags,
+      projectId: recipe.projectId,
+      tags: recipe.tags,
       sourceId,
       variationLabel: option.label,
     });
@@ -596,6 +774,7 @@ function App() {
     const result = await window.pinaic.saveImage({
       dataUrl: dataUrlFor(output),
       suggestedName: "pinaic-" + new Date(output.createdAt).toISOString().replace(/[:.]/g, "-") + ".png",
+      recipe: output.recipe,
     });
     if (!result.canceled) setNotice("已保存：" + (result.path || ""));
   };
@@ -607,6 +786,7 @@ function App() {
       const result = await window.pinaic.saveImage({
         dataUrl,
         suggestedName: "pinaic-social-" + socialPreset + ".png",
+        recipe: { ...exportOutput.recipe, size: socialPreset },
       });
       if (!result.canceled) {
         setNotice("社交平台成品已保存：" + (result.path || ""));
@@ -662,37 +842,30 @@ function App() {
   const galleryOpen = (
     item: GalleryItem,
     b64: string,
-    action: "preview" | "reuse" | "edit",
+    action: "preview" | "reuse" | "edit" | "outpaint",
   ) => {
     const output: Output = {
       id: item.id,
       b64,
       createdAt: Date.parse(item.createdAt),
       galleryId: item.id,
-      prompt: item.prompt,
-      model: item.model,
-      mode: item.mode,
-      size: item.size,
-      quality: item.quality,
-      ratio: item.ratio,
-      resolution: item.resolution,
-      projectId: item.projectId,
-      tags: item.tags,
-      sourceId: item.sourceId,
-      variationLabel: item.variationLabel,
+      recipe: item.recipe,
     };
     if (action === "preview") {
       setPreview(output);
     } else if (action === "edit") {
       continueEdit(output);
+    } else if (action === "outpaint") {
+      startOutpaint(output);
     } else {
       setMode("generate");
-      setPrompt(item.prompt);
-      setProjectId(item.projectId);
-      setTagsText(item.tags.join("，"));
-      if (item.ratio) setRatio(item.ratio);
-      if (item.resolution) setResolution(item.resolution);
-      if (item.quality) setQuality(item.quality);
+      setPrompt(item.recipe.prompt);
+      setNegativePrompt(item.recipe.negativePrompt);
+      setProjectId(item.recipe.projectId);
+      setTagsText(item.recipe.tags.join("，"));
+      if (item.recipe.ratio) setRatio(item.recipe.ratio);
+      if (item.recipe.resolution) setResolution(item.recipe.resolution);
+      if (item.recipe.quality) setQuality(item.recipe.quality);
       setNotice("已复用历史参数，可修改提示词后生成");
     }
   };
@@ -701,10 +874,10 @@ function App() {
     <section className="card composer">
       <div className="mode-title">
         <div>
-          <span className="eyebrow">{mode === "edit" ? "IMAGE EDIT" : "CREATE STUDIO"}</span>
-          <h2>{mode === "edit" ? "编辑与局部重绘" : "描述你想要的画面"}</h2>
+          <span className="eyebrow">{mode === "outpaint" ? "SMART OUTPAINT" : mode === "edit" ? "IMAGE EDIT" : "CREATE STUDIO"}</span>
+          <h2>{mode === "outpaint" ? "智能扩展画面" : mode === "edit" ? "编辑与局部重绘" : "描述你想要的画面"}</h2>
         </div>
-        <span className="pill">{mode === "edit" ? "原图 + 蒙版 + 参考图" : "提示词 + 变体 + 队列"}</span>
+        <span className="pill">{mode === "outpaint" ? "透明画布 + 自动蒙版" : mode === "edit" ? "原图 + 蒙版 + 参考图" : "提示词 + 变体 + 队列"}</span>
       </div>
 
       <div className="project-strip">
@@ -723,12 +896,15 @@ function App() {
         <label>提示词模板
           <select value={selectedTemplate} onChange={(event) => applyTemplate(event.target.value)}>
             <option value="">选择模板…</option>
-            {templates.map((item) => <option key={item.id} value={item.id}>[{item.category}] {item.title}</option>)}
+            {templates.filter((item) => item.kind === "positive").map((item) => <option key={item.id} value={item.id}>[{item.category}] {item.title}</option>)}
           </select>
         </label>
-        <button className="secondary" onClick={() => void saveTemplate()}>保存为模板</button>
+        <button className="secondary" onClick={() => void saveTemplate("positive")}>保存为模板</button>
         {selectedTemplate && !templates.find((item) => item.id === selectedTemplate)?.builtin && (
-          <button className="secondary" onClick={() => void deleteTemplate()}>删除模板</button>
+          <>
+            <button className="secondary" onClick={() => void saveTemplate("positive", true)}>更新模板</button>
+            <button className="secondary" onClick={() => void deleteTemplate("positive")}>删除模板</button>
+          </>
         )}
       </div>
 
@@ -740,6 +916,22 @@ function App() {
           : "例如：一张科技感产品海报，蓝白配色，干净高级"}
         rows={5}
       />
+
+      <section className="negative-prompt">
+        <div className="negative-head">
+          <div><strong>负面提示词</strong><small>独立保存；提交时转换为“必须避免”的自然语言约束。</small></div>
+          <div className="negative-template-actions">
+            <select value={selectedNegativeTemplate} onChange={(event) => applyNegativeTemplate(event.target.value)}>
+              <option value="">选择负面词模板…</option>
+              {templates.filter((item) => item.kind === "negative").map((item) => <option key={item.id} value={item.id}>[{item.category}] {item.title}</option>)}
+            </select>
+            <button onClick={() => void saveTemplate("negative")}>保存</button>
+            {selectedNegativeTemplate && !templates.find((item) => item.id === selectedNegativeTemplate)?.builtin && <button onClick={() => void saveTemplate("negative", true)}>更新</button>}
+            {selectedNegativeTemplate && !templates.find((item) => item.id === selectedNegativeTemplate)?.builtin && <button onClick={() => void deleteTemplate("negative")}>删除</button>}
+          </div>
+        </div>
+        <textarea value={negativePrompt} onChange={(event) => setNegativePrompt(event.target.value)} rows={3} placeholder="例如：水印、乱码文字、重复元素、肢体畸形、塑料质感" />
+      </section>
 
       <div className="prompt-assistant">
         <strong>提示词助手</strong>
@@ -755,18 +947,37 @@ function App() {
         {originalPrompt && <button onClick={() => setPrompt(originalPrompt)}>恢复原提示词</button>}
       </div>
 
-      {mode === "edit" && (
+      <details className="reverse-prompt">
+        <summary>图反推提示词 · gpt-4o</summary>
+        <div className="reverse-upload-row">
+          <label className="upload ghost">
+            {reverseImage ? "待分析：" + reverseImage.name : "选择需要反推的图片"}
+            <input type="file" accept="image/*" onChange={(event) => { setReverseImage(event.target.files?.[0] || null); setReverseResult(null); }} />
+          </label>
+          <button className="assistant-ai" onClick={() => void reversePrompt()} disabled={reversing}>{reversing ? "分析中…" : "生成中英文提示词"}</button>
+        </div>
+        {reverseResult && <div className="reverse-results">
+          {[{ key: "zh", label: "中文提示词", value: reverseResult.zh }, { key: "en", label: "English Prompt", value: reverseResult.en }].map((item) => item.value && (
+            <article key={item.key}>
+              <strong>{item.label}</strong><p>{item.value}</p>
+              <div><button onClick={() => applyReversePrompt(item.value, "replace")}>替换当前</button><button onClick={() => applyReversePrompt(item.value, "append")}>追加</button><button onClick={() => void window.pinaic.clipboard.copyText(item.value).then(() => setNotice("反推提示词已复制"))}>复制</button></div>
+            </article>
+          ))}
+        </div>}
+      </details>
+
+      {(mode === "edit" || mode === "outpaint") && (
         <>
           <div className="upload-row">
             <label className="upload">
-              {image ? "原图：" + image.name : "上传原图"}
+              {image ? "原图：" + image.name : mode === "outpaint" ? "上传扩图原图" : "上传原图"}
               <input type="file" accept="image/*" onChange={(event) => setImage(event.target.files?.[0] || null)} />
             </label>
-            <label className="upload ghost">
+            {mode === "edit" && <label className="upload ghost">
               {externalMask ? "外部蒙版：" + externalMask.name : "可选外部蒙版"}
               <input type="file" accept="image/*" onChange={(event) => setExternalMask(event.target.files?.[0] || null)} />
-            </label>
-            <label className="upload ghost">
+            </label>}
+            {mode === "edit" && <label className="upload ghost">
               添加参考图（{references.length}/3）
               <input
                 type="file"
@@ -774,9 +985,9 @@ function App() {
                 multiple
                 onChange={(event) => setReferences(Array.from(event.target.files || []).slice(0, 3))}
               />
-            </label>
+            </label>}
           </div>
-          {references.length > 0 && (
+          {mode === "edit" && references.length > 0 && (
             <div className="reference-list">
               {references.map((file, index) => (
                 <span key={file.name + String(index)}>
@@ -786,9 +997,25 @@ function App() {
               ))}
             </div>
           )}
-          <MaskPainter image={image} onMaskChange={maskChange} />
+          {mode === "edit" && <MaskPainter image={image} onMaskChange={maskChange} />}
         </>
       )}
+
+      {mode === "outpaint" && <section className="outpaint-panel">
+        <div className="outpaint-head"><div><strong>扩图画布</strong><small>{sourceDimensions ? `原图 ${sourceDimensions.width}x${sourceDimensions.height}` : "上传原图后可设置目标画布"}</small></div><span>仅扩展，不裁剪</span></div>
+        <div className="outpaint-presets">
+          <span>快捷转换</span>
+          {["1:1", "4:5", "16:9", "9:16"].map((value) => <button className={outpaintPreset === value ? "active" : ""} key={value} onClick={() => chooseOutpaintPreset(value)}>{value}</button>)}
+        </div>
+        <div className="outpaint-strategy">
+          <label className="check"><input type="radio" checked={outpaintStrategy === "percent"} onChange={() => { setOutpaintStrategy("percent"); setOutpaintPreset(""); }} />四向百分比</label>
+          <label className="check"><input type="radio" checked={outpaintStrategy === "target"} onChange={() => setOutpaintStrategy("target")} />目标分辨率</label>
+        </div>
+        {outpaintStrategy === "percent" ? <div className="outpaint-margins">
+          {(["top", "right", "bottom", "left"] as const).map((key) => <label key={key}>{({ top: "上", right: "右", bottom: "下", left: "左" })[key]}（%）<input type="number" min="0" max="200" value={outpaintMargins[key]} onChange={(event) => setOutpaintMargins((current) => ({ ...current, [key]: Number(event.target.value) }))} /></label>)}
+        </div> : <label className="outpaint-target">目标分辨率<input value={outpaintTargetSize} onChange={(event) => { setOutpaintTargetSize(event.target.value); setOutpaintPreset(""); }} placeholder="例如 1080x1920" /></label>}
+        {outpaintCheck && <p className={outpaintCheck.ok ? "outpaint-valid" : "outpaint-invalid"}>{outpaintCheck.ok ? `目标 ${outpaintCheck.layout.targetSize} · 原图位于 (${outpaintCheck.layout.x}, ${outpaintCheck.layout.y})` : outpaintCheck.error}</p>}
+      </section>}
 
       <div className="performance-presets">
         <span>生成速度</span>
@@ -809,18 +1036,18 @@ function App() {
           </select>
         </label>
         <label>画面比例
-          <select value={ratio} onChange={(event) => setRatio(event.target.value)} disabled={customSizeEnabled}>
+          <select value={ratio} onChange={(event) => setRatio(event.target.value)} disabled={customSizeEnabled || mode === "outpaint"}>
             {ratioOptions.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
           </select>
         </label>
         <label>数量
-          <select value={n} onChange={(event) => setN(Number(event.target.value))}>
+          <select value={n} onChange={(event) => setN(Number(event.target.value))} disabled={mode !== "generate"}>
             {[1, 2, 3, 4].map((value) => <option key={value} value={value}>{value} 张</option>)}
           </select>
         </label>
       </div>
 
-      <div className="custom-size">
+      {mode !== "outpaint" && <div className="custom-size">
         <label className="check">
           <input type="checkbox" checked={customSizeEnabled} onChange={(event) => setCustomSizeEnabled(event.target.checked)} />
           自定义安全尺寸
@@ -831,9 +1058,9 @@ function App() {
             <small className={customCheck.ok ? "valid" : "invalid"}>{customCheck.message}</small>
           </>
         )}
-      </div>
+      </div>}
       <p className="size-hint">
-        当前输出：{chosenSize} · {ratio} 比例 · {resolution.toUpperCase()} 清晰度 · 项目：
+        当前输出：{displaySize} · {mode === "outpaint" ? outpaintPreset || "扩展画布" : ratio + " 比例"} · {resolution.toUpperCase()} 清晰度 · 项目：
         {projects.find((project) => project.id === projectId)?.name || "收件箱"}
       </p>
       {heavyRequest ? (
@@ -847,7 +1074,7 @@ function App() {
       )}
       <div className="run-row">
         <button className="primary generate" onClick={() => void enqueue()} disabled={Boolean(activeJobId)}>
-          {activeJobId ? "队列生成中…" : mode === "edit" ? "加入编辑队列" : "加入生成队列"}
+          {activeJobId ? "队列生成中…" : mode === "outpaint" ? "加入扩图队列" : mode === "edit" ? "加入编辑队列" : "加入生成队列"}
         </button>
         {activeJobId && <button className="secondary" onClick={() => void cancelActive()}>取消任务</button>}
         <span className="save-note">
@@ -869,6 +1096,11 @@ function App() {
         <div><span className="eyebrow">RESULTS</span><h2>生成结果</h2></div>
         {outputs.length > 0 && <span className="muted">{outputs.length} 张图片 · 点击查看大图</span>}
       </div>
+      {errorInfo && <div className="generation-error">
+        <div><span>{errorInfo.category.replace("_", " ")}</span><strong>{errorInfo.title}</strong></div>
+        <p>{errorInfo.message}</p><small>{errorInfo.suggestion}</small>
+        {errorInfo.details && <details><summary>查看接口详情</summary><pre>{errorInfo.details}</pre></details>}
+      </div>}
       {error && <div className="error"><span>{error}</span></div>}
       {notice && <div className="notice">{notice}</div>}
       {outputs.length === 0 ? (
@@ -883,16 +1115,18 @@ function App() {
             <article key={output.id}>
               <img className="result-image" onClick={() => setPreview(output)} src={dataUrlFor(output)} alt="生成结果" />
               <div className="result-caption">
-                <strong>{output.variationLabel || "新生成图片"}</strong>
-                <small>{output.size} · {output.projectId}</small>
+                <strong>{output.recipe.variationLabel || (output.recipe.mode === "outpaint" ? "智能扩图" : "新生成图片")}</strong>
+                <small>{output.recipe.size} · {output.recipe.projectId}{output.recipe.seed ? " · Seed " + output.recipe.seed : ""}</small>
               </div>
+              {output.recipe.seed && <button className="seed-chip" onClick={() => void window.pinaic.clipboard.copyText(output.recipe.seed!).then(() => setNotice("Seed 已复制"))}>Seed：{output.recipe.seed} · 点击复制</button>}
               <div className="result-actions">
                 <button onClick={() => void saveOutput(output)}>保存 PNG</button>
                 <button onClick={() => void window.pinaic.clipboard.copyImage(output.b64).then(() => setNotice("图片已复制到剪贴板"))}>复制图片</button>
-                <button onClick={() => void window.pinaic.clipboard.copyText(output.prompt).then(() => setNotice("提示词已复制"))}>复制提示词</button>
-                <button onClick={() => void window.pinaic.clipboard.copyText(formatGenerationParameters(output)).then(() => setNotice("完整参数已复制"))}>复制参数</button>
+                <button onClick={() => void window.pinaic.clipboard.copyText(output.recipe.prompt).then(() => setNotice("提示词已复制"))}>复制提示词</button>
+                <button onClick={() => void window.pinaic.clipboard.copyText(formatGenerationParameters(output.recipe)).then(() => setNotice("完整参数已复制"))}>复制参数</button>
                 <button onClick={() => regenerate(output)}>再生成</button>
                 <button onClick={() => continueEdit(output)}>继续编辑</button>
+                <button onClick={() => startOutpaint(output)}>智能扩图</button>
                 <button onClick={() => setExportOutput(output)}>社媒导出</button>
               </div>
               <div className="variation-row">
@@ -924,10 +1158,10 @@ function App() {
           {queueItems.map((job) => (
             <article key={job.id}>
               <div>
-                <strong>{job.kind === "edit" ? "图片编辑" : "文生图"} · {job.status}</strong>
+                <strong>{recipeModeLabel(recipeFromQueueInput(job.input, job.kind, "1024x1024"))} · {job.status}</strong>
                 <small>{new Date(job.createdAt).toLocaleString()} · 尝试 {job.attempts} 次</small>
-                <p>{String(job.input.userPrompt || job.input.prompt || "")}</p>
-                {job.error && <em>{job.error}</em>}
+                <p>{recipeFromQueueInput(job.input, job.kind, "1024x1024").prompt}</p>
+                {job.errorInfo ? <div className="queue-error"><em>{job.errorInfo.title}：{job.errorInfo.message}</em><small>{job.errorInfo.suggestion}</small></div> : job.error && <em>{job.error}</em>}
               </div>
               <div className="queue-actions">
                 {["failed", "interrupted", "cancelled"].includes(job.status) && (
@@ -1004,7 +1238,7 @@ function App() {
     <div className="app">
       <header>
         <div>
-          <span className="eyebrow">PINAI IMAGE STUDIO · V1.1</span>
+          <span className="eyebrow">PINAI IMAGE STUDIO · V1.2</span>
           <img className="brand-title" src={imaginationTitle} alt="把想象变成图片" />
           <p>本地创作工作台 · 提示词助手 · 项目图库 · 局部重绘 · 批量交付</p>
         </div>
@@ -1017,6 +1251,7 @@ function App() {
         <aside>
           <button className={mode === "generate" ? "nav active" : "nav"} onClick={() => setMode("generate")}>✦ 创作生成</button>
           <button className={mode === "edit" ? "nav active" : "nav"} onClick={() => setMode("edit")}>◌ 图片编辑</button>
+          <button className={mode === "outpaint" ? "nav active" : "nav"} onClick={() => setMode("outpaint")}>↗ 智能扩图</button>
           <button className={mode === "gallery" ? "nav active" : "nav"} onClick={() => setMode("gallery")}>▧ 项目图库</button>
           <button className={mode === "queue" ? "nav active" : "nav"} onClick={() => setMode("queue")}>⇢ 任务队列</button>
           <button className={mode === "settings" ? "nav active" : "nav"} onClick={() => setMode("settings")}>⚙ 设置</button>

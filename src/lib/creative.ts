@@ -43,17 +43,20 @@ export function parseTags(value: string) {
 }
 
 export function formatGenerationParameters(
-  item: Pick<GalleryItem, "model" | "size" | "quality" | "ratio" | "resolution" | "mode" | "projectId" | "tags">,
+  recipe: ImageRecipeV1,
 ) {
   return [
-    "模型：" + item.model,
-    "尺寸：" + item.size,
-    "比例：" + (item.ratio || "未记录"),
-    "清晰度：" + (item.resolution || "未记录"),
-    "细节质量：" + (item.quality || "自动"),
-    "模式：" + (item.mode === "edit" ? "图片编辑" : "文生图"),
-    "标签：" + (item.tags.join("、") || "无"),
-    "项目：" + item.projectId,
+    "正面提示词：" + recipe.prompt,
+    "负面提示词：" + (recipe.negativePrompt || "无"),
+    "模型：" + recipe.model,
+    "尺寸：" + recipe.size,
+    "比例：" + (recipe.ratio || "未记录"),
+    "清晰度：" + (recipe.resolution || "未记录"),
+    "细节质量：" + (recipe.quality || "自动"),
+    "模式：" + (recipe.mode === "outpaint" ? "智能扩图" : recipe.mode === "edit" ? "图片编辑" : "文生图"),
+    "Seed：" + (recipe.seed || "接口未返回"),
+    "标签：" + (recipe.tags.join("、") || "无"),
+    "项目：" + recipe.projectId,
   ].join("\n");
 }
 

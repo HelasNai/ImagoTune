@@ -1,21 +1,28 @@
 # PinAI Image Studio
 
-PinAI Image Studio v1.1 是一个 Windows 本地创作工作台，使用 Electron + React 调用 PinAI OpenAI 兼容接口中的 gpt-image-2，同时提供提示词助手、项目图库、局部编辑、任务队列和批量交付。
+PinAI Image Studio v1.2.0 是一款面向 Windows 的本地 AI 图片创作工作台。应用使用 Electron + React，通过 PinAI OpenAI 兼容接口调用 `gpt-image-2`，覆盖创作、编辑、扩图、项目图库、任务队列和成品交付。
 
-## v1.1 功能
+## v1.2.0 新功能
 
-- 文生图与图生图：1K / 2K / 4K 清晰度，1:1、4:3、3:4、3:2、2:3、16:9、9:16、4:5、5:4、21:9 比例。
-- 自定义尺寸：提交前校验 16 倍数、边长、像素和比例风险。
-- 本地提示词助手：精炼主体、强化细节、海报化、社媒化、写实化和高级感，不产生额外 API 调用。
-- 可选 AI 增强：用户主动点击时，通过 PinAI /chat/completions 固定调用 gpt-4o。
-- 提示词模板：内置海报、封面、产品图、社交媒体模板，也可保存和删除自定义模板。
-- 图片编辑：原图上传、可视化蒙版画笔、最多 3 张参考图。参考图会在本地合成为带区域标识的参考画板。
-- 上传预处理：超大图片按最长边 2048 px 等比压缩，透明图保留 PNG，其他图片使用高质量 JPEG。
-- 顺序任务队列：一次只发送一个请求，支持查看、取消待执行任务、重试失败任务；应用重启后执行中的任务标记为“已中断”。
-- 项目图库：项目 CRUD、收件箱、标题/标签/收藏、搜索筛选、懒加载缩略图、批量移动/收藏/删除/ZIP 导出。
-- 图片工作流：点击大图预览、复用参数、继续编辑、创建变体、复制图片/提示词/完整参数、最多 4 张对比。
-- 社交画布导出：1:1、4:5、16:9、9:16，可选择浅色留白或模糊延展背景。
-- 软件更新：安装版可在启动时检查 GitHub Release；发现新版本后由用户选择下载，并在下载完成后选择是否重启安装。
+- 负面提示词：正、负面提示词分开编辑，内置通用高质量、人像无畸变、写实去 AI 感和干净背景模板，也可保存自定义模板。由于图片接口未声明 `negative_prompt`，应用会将负面内容转换为明确的“避免出现……”约束并只组合一次。
+- 智能扩图：支持上、下、左、右分别扩展，或直接输入目标分辨率；提供 1:1、4:5、16:9、9:16 快捷比例，不会隐式裁剪原图。
+- 图反推提示词：用户主动点击后，用固定 `gpt-4o` 分析压缩后的图片，返回中、英文提示词，可复制、替换或追加到创作框。如果 PinAI 通道不支持图片输入，会保留原提示词并明确提示。
+- 结构化失败提示：区分网络、鉴权、余额不足、参数超限、上传过大、内容合规、限流、超时和服务端异常，并提供修正建议与原始详情。
+- PNG 配方元数据：自动归档、手动保存和社媒导出的 PNG 会嵌入 UTF-8 `iTXt` 配方，不重新编码原始像素。
+- 图库 v3：统一保存正面提示词、负面提示词、模型、比例、尺寸、清晰度、来源关系、扩图参数与可选真实 Seed；新增清晰度、精确分辨率和真实 Seed 检索兼容。
+- 统一配方结构：创作表单、任务队列、生成结果、图库记录、PNG 元数据和参数复用共用 `ImageRecipeV1`。
+
+Seed 只在 PinAI 接口真实返回时显示、复制和检索。应用不会向图片接口发送未文档化的 `seed` 参数，也不会生成无法复现画面的本地假 Seed。
+
+## 既有创作能力
+
+- 文生图与图生图，支持 1K / 2K / 4K、常用横竖比例和安全自定义尺寸。
+- 本地提示词助手与可选的 `gpt-4o` AI 增强。
+- 可视化蒙版画笔、最多 3 张参考图、本地参考画板和上传预处理。
+- 持久化顺序任务队列，一次只发送一个请求；支持取消待执行任务和手动重试失败任务，不自动重试生图，避免重复计费。
+- 项目图库、收件箱、收藏、标签、搜索、缩略图懒加载、批量移动/删除/ZIP 导出和最多 4 张对比。
+- 复制图片、提示词与完整参数，支持 1:1、4:5、16:9、9:16 社交画布导出。
+- 安装版启动后检查 GitHub Release，发现新版本时由用户选择是否下载和安装。
 
 ## 安装
 
@@ -23,71 +30,78 @@ PinAI Image Studio v1.1 是一个 Windows 本地创作工作台，使用 Electro
 
 https://github.com/zztnbnb/image-studio/releases/latest
 
-安装程序支持选择安装目录，并创建桌面和开始菜单快捷方式。
-
-## 开发与构建
-
-要求 Windows 10 或更高版本、Node.js 18+。
-
-    npm.cmd install
-    npm.cmd run dev
-
-检查、测试和生产构建：
-
-    npm.cmd run typecheck
-    npm.cmd test
-    npm.cmd run build
-    npm.cmd run package:win
-
-安装包输出在 dist/PinAI-Image-Studio-Setup-1.1.4.exe。
+安装程序支持选择安装目录，并创建桌面和开始菜单快捷方式。未签名安装包可能触发 Windows SmartScreen 提示，请核对发布者仓库和文件名后继续。
 
 ## API 配置
 
-首次启动后进入“设置”，填入：
+首次启动后进入“设置”，填写：
 
-    API Base URL: https://api.pinaic.com/v1
-    图片模型: gpt-image-2
+```text
+API Base URL: https://api.pinaic.com/v1
+图片模型: gpt-image-2
+```
 
-API 密钥由 Electron 主进程写入 Windows 凭据库，不写入源码、项目配置或渲染进程。应用会记住已配置状态，后续启动无需重复填写；界面不会显示已保存的密钥。
+API 密钥由 Electron 主进程写入 Windows 凭据库，不写入源码、项目配置或渲染进程。应用会记住已配置状态，后续启动无需重复输入；界面不会显示已保存密钥的原文。
+
+图反推提示词和 AI 提示词增强只会在用户主动点击时调用 PinAI。图片、项目、模板、队列、缩略图和索引均保存在本机。
 
 ## 本地数据
 
 默认手动保存目录：
 
-    D:\codexproject\生图\保存图片
+```text
+D:\codexproject\生图\保存图片
+```
 
 自动图库目录：
 
-    D:\codexproject\生图\保存图片\图库
+```text
+D:\codexproject\生图\保存图片\图库
+```
 
-图库保存 PNG 原图、版本化 index.json、.thumbs 缩略图缓存和提示词/参数元数据。旧版数组索引首次读取时会自动备份为 index.v1.backup.json，并迁移到“收件箱”项目。
+图库包含 PNG 原图、版本化 `index.json`、`.thumbs` 缩略图缓存和配方元数据。首次读取 v2 索引时会先备份为 `index.v2.backup.json`，再迁移到 v3；不会移动或重新编码旧图片。
 
-## 安全与隐私
+## 开发与测试
 
-- API 密钥只保存在 Windows 凭据库。
-- 图片、项目、模板、队列和缩略图只保存在本机。
-- 不会对提示词做客户端关键词过滤或改写；服务端响应仍以 PinAI 实际规则为准。
-- 生图请求不会自动重试，避免重复计费；失败任务可由用户手动重试。
+要求 Windows 10 或更高版本、Node.js 18+。
+
+```powershell
+npm.cmd install
+npm.cmd run dev
+```
+
+完整检查与 Windows 安装包构建：
+
+```powershell
+npm.cmd run typecheck
+npm.cmd test
+npm.cmd run build
+npm.cmd run package:win
+```
+
+安装包输出到：
+
+```text
+dist\PinAI-Image-Studio-Setup-1.2.0.exe
+```
 
 ## 项目结构
 
-    electron/                 Electron 主进程、IPC、图库与队列存储
-    src/                      React 创作界面、图库、蒙版画笔和提示词助手
-    tests/                    Vitest 纯逻辑测试
-    chat-tool/                独立的 PinAI Chat 工具，不与图片应用合并
+```text
+electron/    Electron 主进程、IPC、图库、队列、配方、错误分类与 PNG 元数据
+src/         React 创作界面、图库、蒙版画笔、智能扩图与提示词工具
+tests/       Vitest 纯逻辑测试
+chat-tool/   独立 PinAI Chat 工具，不与图片应用合并
+```
 
-## 发布
+## 发布与自动更新
 
-当前版本：v1.1.4。公开 GitHub 仓库：
+公开仓库：https://github.com/zztnbnb/image-studio
 
-https://github.com/zztnbnb/image-studio
+每个版本的 GitHub Release 必须同时上传：
 
-### 自动更新发布清单
+- `PinAI-Image-Studio-Setup-版本号.exe`
+- `PinAI-Image-Studio-Setup-版本号.exe.blockmap`
+- `latest.yml`
 
-从 v1.1.4 起，每次发布后续版本时，GitHub Release 必须同时包含以下三个构建产物：
-
-- PinAI-Image-Studio-Setup-版本号.exe
-- PinAI-Image-Studio-Setup-版本号.exe.blockmap
-- latest.yml
-
-其中 latest.yml 会指向本次安装包并携带校验信息；缺少它时，已安装用户无法收到新版本提醒。
+`latest.yml` 包含更新地址和校验信息；缺少它时，已安装用户无法收到新版本提醒。

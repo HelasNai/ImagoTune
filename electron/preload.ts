@@ -17,8 +17,13 @@ contextBridge.exposeInMainWorld("pinaic", {
   generate: (input: unknown) => ipcRenderer.invoke("image:generate", input),
   edit: (input: unknown) => ipcRenderer.invoke("image:edit", input),
   cancel: (requestId: string) => ipcRenderer.invoke("image:cancel", requestId),
-  saveImage: (input: { dataUrl: string; suggestedName: string }) => ipcRenderer.invoke("image:save", input),
-  prompt: { enhance: (input: { prompt: string; mode: "generate" | "edit" }) => ipcRenderer.invoke("prompt:enhance", input) },
+  saveImage: (input: { dataUrl: string; suggestedName: string; recipe?: unknown }) => ipcRenderer.invoke("image:save", input),
+  prompt: {
+    enhance: (input: { prompt: string; mode: "generate" | "edit" }) => ipcRenderer.invoke("prompt:enhance", input),
+    reverse: (input: unknown) => ipcRenderer.invoke("prompt:reverse", input)
+  },
+  outpaint: { prepare: (input: unknown) => ipcRenderer.invoke("outpaint:prepare", input) },
+  png: { readRecipe: (input: unknown) => ipcRenderer.invoke("png:readRecipe", input) },
   queue: {
     list: () => ipcRenderer.invoke("queue:list"),
     enqueue: (input: { kind: "generate" | "edit"; payload: unknown }) => ipcRenderer.invoke("queue:enqueue", input),

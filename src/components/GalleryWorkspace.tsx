@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { parseTags } from "../lib/creative";
 
-type OpenAction = "preview" | "reuse" | "edit";
+type OpenAction = "preview" | "reuse" | "edit" | "outpaint";
 type CompareItem = { item: GalleryItem; b64: string };
 
 export function GalleryWorkspace({
@@ -20,6 +20,11 @@ export function GalleryWorkspace({
   const [tag, setTag] = useState("");
   const [activeProject, setActiveProject] = useState("all");
   const [favoriteOnly, setFavoriteOnly] = useState(false);
+  const [resolutionFilter, setResolutionFilter] = useState("");
+  const [sizeFilter, setSizeFilter] = useState("");
+  const [seedFilter, setSeedFilter] = useState("");
+  const [availableSizes, setAvailableSizes] = useState<string[]>([]);
+  const [hasSeeds, setHasSeeds] = useState(false);
   const [sort, setSort] = useState<"newest" | "oldest">("newest");
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
@@ -32,11 +37,17 @@ export function GalleryWorkspace({
   const refresh = useCallback(async (targetPage = page) => {
     const workspace = await window.pinaic.gallery.workspace();
     setProjects(workspace.projects || []);
+    const allItems = workspace.items || [];
+    setAvailableSizes([...new Set(allItems.map((item) => item.recipe.size).filter(Boolean))].sort());
+    setHasSeeds(allItems.some((item) => Boolean(item.recipe.seed)));
     const result = await window.pinaic.gallery.search({
       query,
       tag,
       favoriteOnly,
       projectId: activeProject === "all" ? undefined : activeProject,
+      resolution: resolutionFilter || undefined,
+      size: sizeFilter || undefined,
+      seed: seedFilter || undefined,
       sort,
       page: targetPage,
       pageSize: 40,
@@ -49,7 +60,7 @@ export function GalleryWorkspace({
       return [...map.values()];
     });
     setTotal(result.total || 0);
-  }, [activeProject, favoriteOnly, page, query, sort, tag]);
+  }, [activeProject, favoriteOnly, page, query, resolutionFilter, seedFilter, sizeFilter, sort, tag]);
 
   useEffect(() => {
     void refresh(page);
@@ -58,7 +69,7 @@ export function GalleryWorkspace({
   useEffect(() => {
     setPage(0);
     setSelected(new Set());
-  }, [activeProject, favoriteOnly, query, sort, tag]);
+  }, [activeProject, favoriteOnly, query, resolutionFilter, seedFilter, sizeFilter, sort, tag]);
 
   useEffect(() => {
     let active = true;
@@ -128,10 +139,10 @@ export function GalleryWorkspace({
   const updateMetadata = async (item: GalleryItem) => {
     const title = window.prompt("图片标题", item.title);
     if (title === null) return;
-    const tags = window.prompt("标签（用逗号分隔）", item.tags.join("，"));
+    const tags = window.prompt("标签（用逗号分隔）", item.recipe.tags.join("，"));
     const response = await window.pinaic.gallery.update(item.id, {
       title,
-      tags: tags === null ? item.tags : parseTags(tags),
+      tags: tags === null ? item.recipe.tags : parseTags(tags),
     });
     onNotice(response.ok ? "图片信息已更新" : response.error || "更新失败");
     await refresh(0);
@@ -179,11 +190,11 @@ export function GalleryWorkspace({
   };
 
   const setCover = async (item: GalleryItem) => {
-    if (item.projectId === "inbox") {
+    if (item.recipe.projectId === "inbox") {
       onNotice("收件箱没有项目封面，请先把图片移入一个项目");
       return;
     }
-    const response = await window.pinaic.projects.setCover(item.projectId, item.id);
+    const response = await window.pinaic.projects.setCover(item.recipe.projectId, item.id);
     onNotice(response.ok ? "已设为项目封面" : response.error || "设置失败");
     await refresh(0);
   };
@@ -239,6 +250,23 @@ export function GalleryWorkspace({
           <label className="toolbar-tag">标签
             <input value={tag} onChange={(event) => setTag(event.target.value)} placeholder="筛选标签" />
           </label>
+          <label>清晰度
+            <select value={resolutionFilter} onChange={(event) => setResolutionFilter(event.target.value)}>
+              <option value="">全部</option>
+              <option value="1k">1K</option>
+              <option value="2k">2K</option>
+              <option value="4k">4K</option>
+            </select>
+          </label>
+          <label>精确分辨率
+            <select value={sizeFilter} onChange={(event) => setSizeFilter(event.target.value)}>
+              <option value="">全部尺寸</option>
+              {availableSizes.map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </label>
+          {hasSeeds && <label>Seed
+            <input value={seedFilter} onChange={(event) => setSeedFilter(event.target.value)} placeholder="搜索真实 Seed" />
+          </label>}
           <label className="favorite-toggle">
             <input type="checkbox" checked={favoriteOnly} onChange={(event) => setFavoriteOnly(event.target.checked)} />
             仅收藏
@@ -296,20 +324,21 @@ export function GalleryWorkspace({
                 </button>
                 <div className="archive-meta">
                   <strong>{item.title}</strong>
-                  <small>{item.size} · {item.model}</small>
-                  <p>{item.prompt}</p>
-                  <div className="tag-row">{item.tags.map((value) => <span key={value}>#{value}</span>)}</div>
+                  <small>{item.recipe.size} · {item.recipe.model}{item.recipe.seed ? " · Seed " + item.recipe.seed : ""}</small>
+                  <p>{item.recipe.prompt}</p>
+                  <div className="tag-row">{item.recipe.tags.map((value) => <span key={value}>#{value}</span>)}</div>
                 </div>
                 <div className="card-actions">
                   <button onClick={() => void open(item, "preview")}>预览</button>
                   <button onClick={() => void open(item, "reuse")}>复用</button>
                   <button onClick={() => void open(item, "edit")}>继续编辑</button>
+                  <button onClick={() => void open(item, "outpaint")}>智能扩图</button>
                   <button onClick={() => onVariation(item)}>创建变体</button>
                   <button onClick={() => void window.pinaic.gallery.toggleFavorite(item.id).then(() => refresh(0))}>
                     {item.favorite ? "取消收藏" : "收藏"}
                   </button>
                   <button onClick={() => void updateMetadata(item)}>信息</button>
-                  {item.projectId !== "inbox" && <button onClick={() => void setCover(item)}>设封面</button>}
+                  {item.recipe.projectId !== "inbox" && <button onClick={() => void setCover(item)}>设封面</button>}
                 </div>
               </article>
             ))}

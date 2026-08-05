@@ -19,8 +19,13 @@ declare global {
       generate: (input: unknown) => Promise<ApiResult>;
       edit: (input: unknown) => Promise<ApiResult>;
       cancel: (requestId: string) => Promise<void>;
-      saveImage: (input: { dataUrl: string; suggestedName: string }) => Promise<{ canceled: boolean; path?: string }>;
-      prompt: { enhance: (input: { prompt: string; mode: "generate" | "edit" }) => Promise<{ ok: boolean; prompt?: string; error?: string }> };
+      saveImage: (input: { dataUrl: string; suggestedName: string; recipe?: ImageRecipeV1 }) => Promise<{ canceled: boolean; path?: string }>;
+      prompt: {
+        enhance: (input: { prompt: string; mode: "generate" | "edit" }) => Promise<{ ok: boolean; prompt?: string; error?: string }>;
+        reverse: (input: { image: BinaryPayload }) => Promise<{ ok: boolean; zh?: string; en?: string; error?: string }>;
+      };
+      outpaint: { prepare: (input: { sourceWidth: number; sourceHeight: number; targetSize: string }) => Promise<{ ok: boolean; size?: string; error?: string }> };
+      png: { readRecipe: (input: { dataUrl?: string; data?: number[] }) => Promise<{ ok: boolean; recipe?: ImageRecipeV1; error?: string }> };
       queue: {
         list: () => Promise<{ ok: boolean; items: QueueJob[] }>;
         enqueue: (input: { kind: "generate" | "edit"; payload: unknown }) => Promise<{ ok: boolean; job?: QueueJob; error?: string }>;
@@ -64,11 +69,17 @@ declare global {
   }
 
   interface AppProgress { requestId: string; progress?: number; status: string; message?: string }
-  interface ApiImage { b64_json?: string; url?: string }
-  interface ApiResult { ok: boolean; images?: ApiImage[]; gallery?: GalleryItem[]; error?: string; requestId?: string; elapsedMs?: number }
+  interface BinaryPayload { name: string; type: string; data: number[] }
+  type RecipeMode = "generate" | "edit" | "outpaint";
+  interface OutpaintRecipe { sourceSize: string; targetSize: string; top: number; right: number; bottom: number; left: number; preset?: string }
+  interface ImageRecipeV1 { version: 1; prompt: string; negativePrompt: string; model: string; size: string; ratio?: string; resolution?: string; quality?: string; n: number; mode: RecipeMode; projectId: string; tags: string[]; createdAt: string; sourceId?: string; variationLabel?: string; seed?: string; outpaint?: OutpaintRecipe }
+  type GenerationErrorCategory = "network" | "authentication" | "balance" | "parameters" | "upload" | "content" | "rate_limit" | "timeout" | "server" | "cancelled" | "unknown";
+  interface GenerationErrorInfo { category: GenerationErrorCategory; title: string; message: string; suggestion: string; retryable: boolean; status?: number; details?: string }
+  interface ApiImage { b64_json?: string; url?: string; seed?: string | number }
+  interface ApiResult { ok: boolean; images?: ApiImage[]; gallery?: GalleryItem[]; recipe?: ImageRecipeV1; error?: string; errorInfo?: GenerationErrorInfo; requestId?: string; elapsedMs?: number }
   interface GalleryProject { id: string; name: string; createdAt: string; updatedAt: string; coverId?: string }
-  interface GalleryItem { id: string; fileName: string; title: string; prompt: string; model: string; size: string; quality?: string; ratio?: string; resolution?: string; mode: "generate" | "edit"; createdAt: string; favorite: boolean; projectId: string; tags: string[]; sourceId?: string; variationLabel?: string }
-  interface PromptTemplate { id: string; title: string; category: string; prompt: string; ratio?: string; resolution?: string; quality?: string; builtin?: boolean }
-  interface QueueJob { id: string; requestId: string; kind: "generate" | "edit"; status: "queued" | "running" | "completed" | "failed" | "cancelled" | "interrupted"; createdAt: string; updatedAt: string; attempts: number; input: Record<string, unknown>; error?: string; elapsedMs?: number; resultGalleryIds?: string[] }
+  interface GalleryItem { id: string; fileName: string; title: string; createdAt: string; favorite: boolean; recipe: ImageRecipeV1 }
+  interface PromptTemplate { id: string; title: string; category: string; prompt: string; kind: "positive" | "negative"; ratio?: string; resolution?: string; quality?: string; builtin?: boolean }
+  interface QueueJob { id: string; requestId: string; kind: "generate" | "edit"; status: "queued" | "running" | "completed" | "failed" | "cancelled" | "interrupted"; createdAt: string; updatedAt: string; attempts: number; input: Record<string, unknown>; error?: string; errorInfo?: GenerationErrorInfo; elapsedMs?: number; resultGalleryIds?: string[] }
   interface UpdateStatus { phase: "idle" | "checking" | "available" | "downloading" | "downloaded" | "not-available" | "error"; version?: string; progress?: number; message: string }
 }
