@@ -179,6 +179,21 @@ async function prepareUpload(file: File) {
     : file;
 }
 
+async function resizeMaskToMatch(mask: File, target: File) {
+  const [maskImage, targetImage] = await Promise.all([readImage(mask), readImage(target)]);
+  if (maskImage.naturalWidth === targetImage.naturalWidth && maskImage.naturalHeight === targetImage.naturalHeight) return mask;
+  const canvas = document.createElement("canvas");
+  canvas.width = targetImage.naturalWidth;
+  canvas.height = targetImage.naturalHeight;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("无法调整蒙版尺寸");
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(maskImage, 0, 0, canvas.width, canvas.height);
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+  if (!blob) throw new Error("无法导出匹配尺寸的蒙版");
+  return new File([blob], "pinaic-matched-mask.png", { type: "image/png" });
+}
+
 async function prepareVisionUpload(file: File) {
   const image = await readImage(file);
   const scale = Math.min(1, 1536 / Math.max(image.naturalWidth, image.naturalHeight));
@@ -310,6 +325,7 @@ function App() {
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("https://api.pinaic.com/v1");
   const [autoArchive, setAutoArchive] = useState(true);
+  const [saveDir, setSaveDir] = useState("");
   const [testMessage, setTestMessage] = useState("");
   const [checkUpdatesAtStartup, setCheckUpdatesAtStartup] = useState(true);
   const [appVersion, setAppVersion] = useState("");
@@ -330,6 +346,7 @@ function App() {
   const [tagsText, setTagsText] = useState("");
   const [queueItems, setQueueItems] = useState<QueueJob[]>([]);
   const [activeJobId, setActiveJobId] = useState("");
+  const [isEnqueueing, setIsEnqueueing] = useState(false);
   const [requestId, setRequestId] = useState("");
   const [progress, setProgress] = useState<AppProgress | null>(null);
   const [notice, setNotice] = useState("");
@@ -360,10 +377,14 @@ function App() {
   }, [image, mode]);
 
   const refreshWorkspace = useCallback(async () => {
-    const workspace = await window.pinaic.gallery.workspace();
-    setProjects(workspace.projects || []);
-    if (!workspace.projects.some((project) => project.id === projectId)) {
-      setProjectId("inbox");
+    try {
+      const workspace = await window.pinaic.gallery.workspace();
+      setProjects(workspace.projects || []);
+      if (!workspace.projects.some((project) => project.id === projectId)) {
+        setProjectId("inbox");
+      }
+    } catch (cause) {
+      setError("本地图库读取失败：" + ((cause as Error).message || "请检查保存目录"));
     }
   }, [projectId]);
   const refreshQueue = useCallback(async () => {
@@ -376,6 +397,7 @@ function App() {
       setConfigured(value.configured);
       setBaseUrl(value.baseUrl);
       setAutoArchive(value.autoArchive);
+      setSaveDir(value.saveDir || "");
     });
     void window.pinaic.templates.list().then((value) => setTemplates(value.items));
     void window.pinaic.updates.get().then((value) => {
@@ -386,6 +408,25 @@ function App() {
     void refreshWorkspace();
     void refreshQueue();
   }, [refreshQueue, refreshWorkspace]);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "auto" });
+    setPreviewContextMenu(null);
+    setError("");
+    setNotice("");
+    setErrorInfo(null);
+  }, [mode]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setPreviewContextMenu(null);
+      if (preview) setPreview(null);
+      else if (exportOutput) setExportOutput(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [exportOutput, preview]);
 
   useEffect(() => window.pinaic.onUpdateStatus((value) => setUpdateStatus(value)), []);
 
@@ -414,10 +455,12 @@ function App() {
       if (value.job.id === activeJobId) {
         setOutputs(items);
         setActiveJobId("");
-        setNotice(
-          "生成完成，用时 " + ((result.elapsedMs || 0) / 1000).toFixed(1) +
-          " 秒，已归档到本地图库",
-        );
+        const elapsed = "生成完成，用时 " + ((result.elapsedMs || 0) / 1000).toFixed(1) + " 秒。";
+        setNotice(result.archiveWarning
+          ? elapsed + result.archiveWarning
+          : gallery.length
+            ? elapsed + "已归档到本地图库。"
+            : elapsed + "自动归档已关闭，请按需手动保存 PNG。");
       } else {
         setNotice("队列任务已完成：" + String(items.length) + " 张图片");
       }
@@ -562,6 +605,7 @@ function App() {
   };
 
   const enqueue = async (override: SubmitOverride = {}) => {
+    if (isEnqueueing) return;
     const activeMode = override.mode || (mode === "outpaint" ? "outpaint" : mode === "edit" ? "edit" : "generate");
     const activePrompt = (override.prompt ?? prompt).trim();
     const activeNegativePrompt = (override.negativePrompt ?? negativePrompt).trim();
@@ -595,10 +639,16 @@ function App() {
       setError(outpaintCheck?.error || "请设置有效的扩图范围");
       return;
     }
+    if (activeMode === "edit" && references.length && suppliedMask) {
+      setError("局部蒙版暂不能与多参考图同时提交。请移除参考图或清空蒙版后再加入队列，避免接口因尺寸不一致而失败。");
+      return;
+    }
 
     setError("");
     setErrorInfo(null);
     setNotice("");
+    setIsEnqueueing(true);
+    try {
     const id = crypto.randomUUID();
     setRequestId(id);
     setProgress({ requestId: id, status: "准备进入队列", progress: 2 });
@@ -610,6 +660,7 @@ function App() {
       if (activeMode === "edit" && sourceImage) {
         const prepared = await prepareUpload(sourceImage);
         preparedImage = await createReferenceBoard(prepared, references);
+        if (suppliedMask && !references.length) suppliedMask = await resizeMaskToMatch(suppliedMask, preparedImage);
       }
       if (activeMode === "outpaint" && sourceImage) {
         const prepared = await prepareUpload(sourceImage);
@@ -679,6 +730,9 @@ function App() {
     setActiveJobId(result.job.id);
     setNotice("任务已加入队列，将按顺序生成");
     await refreshQueue();
+    } finally {
+      setIsEnqueueing(false);
+    }
   };
 
   const cancelActive = async () => {
@@ -1073,8 +1127,8 @@ function App() {
         </p>
       )}
       <div className="run-row">
-        <button className="primary generate" onClick={() => void enqueue()} disabled={Boolean(activeJobId)}>
-          {activeJobId ? "队列生成中…" : mode === "outpaint" ? "加入扩图队列" : mode === "edit" ? "加入编辑队列" : "加入生成队列"}
+        <button className="primary generate" onClick={() => void enqueue()} disabled={isEnqueueing}>
+          {isEnqueueing ? "正在准备任务…" : activeJobId ? "继续加入队列" : mode === "outpaint" ? "加入扩图队列" : mode === "edit" ? "加入编辑队列" : "加入生成队列"}
         </button>
         {activeJobId && <button className="secondary" onClick={() => void cancelActive()}>取消任务</button>}
         <span className="save-note">
@@ -1201,6 +1255,7 @@ function App() {
         <input type="checkbox" checked={autoArchive} onChange={(event) => setAutoArchive(event.target.checked)} />
         自动归档生成图片到本地图库与收件箱
       </label>
+      {saveDir && <div className="storage-path"><strong>本地保存位置</strong><code>{saveDir}</code><small>旧版图库存在时会继续沿用；新安装设备默认使用系统“图片”文件夹。</small></div>}
       <section className="update-settings">
         <div>
           <span className="eyebrow">APPLICATION UPDATE</span>
@@ -1238,7 +1293,7 @@ function App() {
     <div className="app">
       <header>
         <div>
-          <span className="eyebrow">PINAI IMAGE STUDIO · V1.2</span>
+          <span className="eyebrow">PINAI IMAGE STUDIO · V1.2.1</span>
           <img className="brand-title" src={imaginationTitle} alt="把想象变成图片" />
           <p>本地创作工作台 · 提示词助手 · 项目图库 · 局部重绘 · 批量交付</p>
         </div>
@@ -1247,6 +1302,16 @@ function App() {
           <button className="queue-chip" onClick={() => setMode("queue")}>任务队列 <strong>{runningCount}</strong></button>
         </div>
       </header>
+      {(error || notice || errorInfo) && (
+        <div className={error || errorInfo ? "feedback-toast feedback-error" : "feedback-toast feedback-success"} role={error || errorInfo ? "alert" : "status"}>
+          <div>
+            <strong>{errorInfo?.title || (error ? "需要处理" : "操作成功")}</strong>
+            <span>{error || errorInfo?.message || notice}</span>
+            {errorInfo?.suggestion && <small>{errorInfo.suggestion}</small>}
+          </div>
+          <button aria-label="关闭提示" onClick={() => { setError(""); setNotice(""); setErrorInfo(null); }}>×</button>
+        </div>
+      )}
       <div className="layout">
         <aside>
           <button className={mode === "generate" ? "nav active" : "nav"} onClick={() => setMode("generate")}>✦ 创作生成</button>
@@ -1280,7 +1345,10 @@ function App() {
             onContextMenu={(event) => {
               event.preventDefault();
               event.stopPropagation();
-              setPreviewContextMenu({ x: event.clientX, y: event.clientY });
+              setPreviewContextMenu({
+                x: Math.max(8, Math.min(event.clientX, window.innerWidth - 152)),
+                y: Math.max(8, Math.min(event.clientY, window.innerHeight - 72)),
+              });
             }}
             alt="大图预览"
           />

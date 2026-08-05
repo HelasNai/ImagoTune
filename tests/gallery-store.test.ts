@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createInitialState, migrateGallery, searchGallery } from "../electron/gallery-store";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { createInitialState, createGalleryStore, migrateGallery, searchGallery } from "../electron/gallery-store";
+import { embedRecipeInPng } from "../electron/png-metadata";
+
+const onePixelPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 
 describe("gallery migration and search", () => {
   it("migrates legacy array items to the inbox project", () => {
@@ -21,5 +27,21 @@ describe("gallery migration and search", () => {
     expect(searchGallery(state, { resolution: "1k", seed: "234" }).items.map((item) => item.id)).toEqual(["a"]);
     expect(searchGallery(state, { size: "1536x1024" }).items.map((item) => item.id)).toEqual(["b"]);
     expect(searchGallery(state, { page: 1, pageSize: 1 }).items.map((item) => item.id)).toEqual(["a"]);
+  });
+
+  it("preserves a corrupt index and rebuilds records from PNG recipes", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "pinaic-gallery-recovery-"));
+    try {
+      const recipe = { version: 1 as const, prompt: "恢复海报", negativePrompt: "", model: "gpt-image-2", size: "1024x1024", n: 1, mode: "generate" as const, projectId: "inbox", tags: [], createdAt: "2025-01-01T00:00:00.000Z" };
+      await writeFile(path.join(directory, "recovered.png"), embedRecipeInPng(onePixelPng, recipe));
+      await writeFile(path.join(directory, "index.json"), "{ broken json");
+      const state = await createGalleryStore(directory).read();
+      expect(state.items).toHaveLength(1);
+      expect(state.items[0].recipe.prompt).toBe("恢复海报");
+      const files = await import("node:fs/promises").then((fs) => fs.readdir(directory));
+      expect(files.some((name) => name.startsWith("index.corrupt-") && name.endsWith(".json"))).toBe(true);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });

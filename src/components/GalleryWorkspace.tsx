@@ -35,31 +35,35 @@ export function GalleryWorkspace({
   const [compare, setCompare] = useState<CompareItem[]>([]);
 
   const refresh = useCallback(async (targetPage = page) => {
-    const workspace = await window.pinaic.gallery.workspace();
-    setProjects(workspace.projects || []);
-    const allItems = workspace.items || [];
-    setAvailableSizes([...new Set(allItems.map((item) => item.recipe.size).filter(Boolean))].sort());
-    setHasSeeds(allItems.some((item) => Boolean(item.recipe.seed)));
-    const result = await window.pinaic.gallery.search({
-      query,
-      tag,
-      favoriteOnly,
-      projectId: activeProject === "all" ? undefined : activeProject,
-      resolution: resolutionFilter || undefined,
-      size: sizeFilter || undefined,
-      seed: seedFilter || undefined,
-      sort,
-      page: targetPage,
-      pageSize: 40,
-    });
-    const nextItems = result.items || [];
-    setItems((current) => {
-      if (targetPage === 0) return nextItems;
-      const map = new Map(current.map((item) => [item.id, item]));
-      nextItems.forEach((item) => map.set(item.id, item));
-      return [...map.values()];
-    });
-    setTotal(result.total || 0);
+    try {
+      const workspace = await window.pinaic.gallery.workspace();
+      setProjects(workspace.projects || []);
+      const allItems = workspace.items || [];
+      setAvailableSizes([...new Set(allItems.map((item) => item.recipe.size).filter(Boolean))].sort());
+      setHasSeeds(allItems.some((item) => Boolean(item.recipe.seed)));
+      const result = await window.pinaic.gallery.search({
+        query,
+        tag,
+        favoriteOnly,
+        projectId: activeProject === "all" ? undefined : activeProject,
+        resolution: resolutionFilter || undefined,
+        size: sizeFilter || undefined,
+        seed: seedFilter || undefined,
+        sort,
+        page: targetPage,
+        pageSize: 40,
+      });
+      const nextItems = result.items || [];
+      setItems((current) => {
+        if (targetPage === 0) return nextItems;
+        const map = new Map(current.map((item) => [item.id, item]));
+        nextItems.forEach((item) => map.set(item.id, item));
+        return [...map.values()];
+      });
+      setTotal(result.total || 0);
+    } catch (cause) {
+      onNotice("图库读取失败：" + ((cause as Error).message || "请检查本地保存目录"));
+    }
   }, [activeProject, favoriteOnly, page, query, resolutionFilter, seedFilter, sizeFilter, sort, tag]);
 
   useEffect(() => {
@@ -98,6 +102,15 @@ export function GalleryWorkspace({
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      return next;
+    });
+  };
+
+  const togglePageSelection = () => {
+    setSelected((current) => {
+      const next = new Set(current);
+      const allSelected = items.length > 0 && items.every((item) => next.has(item.id));
+      items.forEach((item) => allSelected ? next.delete(item.id) : next.add(item.id));
       return next;
     });
   };
@@ -279,30 +292,33 @@ export function GalleryWorkspace({
           </label>
         </div>
 
-        <div className="bulk-toolbar">
-          <div className="bulk-summary">
-            <strong>已选择 {selected.size} 张</strong>
-            <span>可批量归类、标注和导出</span>
-          </div>
-          <div className="bulk-group">
+          <div className="bulk-toolbar">
+            <div className="bulk-summary">
+              <strong>已选择 {selected.size} 张</strong>
+              <span>可批量归类、标注和导出</span>
+              <button className="select-page" onClick={togglePageSelection} disabled={!items.length}>
+                {items.length > 0 && items.every((item) => selected.has(item.id)) ? "取消全选本页" : "全选本页"}
+              </button>
+            </div>
+            <div className="bulk-group">
             <label>移动到项目
               <select value={bulkProjectId} onChange={(event) => setBulkProjectId(event.target.value)}>
                 {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
               </select>
             </label>
-            <button onClick={() => void bulk("move", { projectId: bulkProjectId })}>移动</button>
+            <button disabled={!selected.size} onClick={() => void bulk("move", { projectId: bulkProjectId })}>移动</button>
           </div>
           <div className="bulk-group">
             <label>批量标签
               <input value={bulkTags} onChange={(event) => setBulkTags(event.target.value)} placeholder="用逗号分隔" />
             </label>
-            <button onClick={() => void bulk("tags", { tags: parseTags(bulkTags) })}>更新</button>
+            <button disabled={!selected.size} onClick={() => void bulk("tags", { tags: parseTags(bulkTags) })}>更新</button>
           </div>
           <div className="bulk-actions">
-            <button onClick={() => void bulk("favorite", { favorite: true })}>收藏</button>
-            <button onClick={() => void compareSelected()}>对比</button>
-            <button onClick={() => void exportZip()}>导出 ZIP</button>
-            <button className="danger" onClick={() => void bulk("delete")}>删除</button>
+            <button disabled={!selected.size} onClick={() => void bulk("favorite", { favorite: true })}>收藏</button>
+            <button disabled={selected.size < 2} onClick={() => void compareSelected()}>对比</button>
+            <button disabled={!selected.size} onClick={() => void exportZip()}>导出 ZIP</button>
+            <button className="danger" disabled={!selected.size} onClick={() => void bulk("delete")}>删除</button>
           </div>
         </div>
 
@@ -333,13 +349,18 @@ export function GalleryWorkspace({
                   <button onClick={() => void open(item, "reuse")}>复用</button>
                   <button onClick={() => void open(item, "edit")}>继续编辑</button>
                   <button onClick={() => void open(item, "outpaint")}>智能扩图</button>
-                  <button onClick={() => onVariation(item)}>创建变体</button>
-                  <button onClick={() => void window.pinaic.gallery.toggleFavorite(item.id).then(() => refresh(0))}>
-                    {item.favorite ? "取消收藏" : "收藏"}
-                  </button>
-                  <button onClick={() => void updateMetadata(item)}>信息</button>
-                  {item.recipe.projectId !== "inbox" && <button onClick={() => void setCover(item)}>设封面</button>}
                 </div>
+                <details className="card-more">
+                  <summary>更多操作</summary>
+                  <div>
+                    <button onClick={() => onVariation(item)}>创建变体</button>
+                    <button onClick={() => void window.pinaic.gallery.toggleFavorite(item.id).then(() => refresh(0))}>
+                      {item.favorite ? "取消收藏" : "收藏"}
+                    </button>
+                    <button onClick={() => void updateMetadata(item)}>编辑信息</button>
+                    {item.recipe.projectId !== "inbox" && <button onClick={() => void setCover(item)}>设为封面</button>}
+                  </div>
+                </details>
               </article>
             ))}
           </div>

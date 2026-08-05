@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import keytar from "keytar";
 import archiver from "archiver";
 import { autoUpdater, type ProgressInfo, type UpdateInfo } from "electron-updater";
-import { createGalleryStore, GalleryProject, GallerySearch, INBOX_PROJECT_ID } from "./gallery-store";
+import { createGalleryStore, GalleryProject, GallerySearch, GalleryStore, INBOX_PROJECT_ID } from "./gallery-store";
 import { createQueueStore, QueueJob, QueueStore } from "./queue-store";
 import { composeImagePrompt, ImageRecipeV1, normalizeRecipe } from "./image-recipe";
 import { classifyHttpError, classifyRuntimeError, errorInfoMessage, GenerationError, GenerationErrorInfo } from "./generation-error";
@@ -16,7 +16,7 @@ import { isVisionInputUnsupported, parseReversePrompt } from "./reverse-prompt";
 const SERVICE = "pinaic-image-studio";
 const ACCOUNT = "default";
 const DEFAULT_BASE_URL = "https://api.pinaic.com/v1";
-const DEFAULT_SAVE_DIR = "D:\\codexproject\\生图\\保存图片";
+const LEGACY_SAVE_DIR = "D:\\codexproject\\生图\\保存图片";
 const controllers = new Map<string, AbortController>();
 const cancelledRequests = new Set<string>();
 const timedOutRequests = new Set<string>();
@@ -40,14 +40,24 @@ const DEFAULT_TEMPLATES: PromptTemplate[] = [
   { id: "builtin-negative-real", title: "写实去 AI 感", category: "写实", prompt: "塑料质感、过度锐化、虚假光影、悬浮物体、不自然景深、过饱和、AI 绘画感", kind: "negative", builtin: true },
   { id: "builtin-negative-clean", title: "干净背景", category: "背景", prompt: "杂乱背景、无关人物、无关道具、品牌标志、水印、边框、脏污、视觉噪声", kind: "negative", builtin: true }
 ];
-const galleryDir = path.join(DEFAULT_SAVE_DIR, "图库");
-const galleryStore = createGalleryStore(galleryDir);
+let saveDir = "";
+let galleryDir = "";
+let galleryStore: GalleryStore;
 let queueStore: QueueStore;
 let activeQueueJobId: string | null = null;
 
 async function archiveImages(images: ApiImage[], input: RequestInput | EditInput, enabled: boolean) {
   const recipe = normalizeRecipe(input, "image" in input ? "edit" : "generate");
   return galleryStore.addImages(images, { title: String(input.title || recipe.prompt.slice(0, 48)), recipe }, enabled);
+}
+
+async function resolveSaveDir() {
+  try {
+    if ((await fs.stat(LEGACY_SAVE_DIR)).isDirectory()) return LEGACY_SAVE_DIR;
+  } catch {
+    // 新安装设备通常没有开发机的 D 盘目录，改用系统“图片”文件夹。
+  }
+  return path.join(app.getPath("pictures"), "PinAI Image Studio");
 }
 async function templatesFile() { return path.join(app.getPath("userData"), "pinaic-image-templates.json"); }
 async function readCustomTemplates(): Promise<PromptTemplate[]> {
@@ -260,8 +270,17 @@ async function callImages(win: BrowserWindow, endpoint: "generations" | "edits",
     emit(win, input.requestId, "完成", 100, `生成完成，用时 ${((Date.now() - startedAt) / 1000).toFixed(1)} 秒`);
     const settings = await config();
     const normalizedInput = { ...input, recipe } as RequestInput | EditInput;
-    const gallery = await archiveImages(images, normalizedInput, settings.autoArchive);
-    return { ok: true, images, gallery, recipe, requestId: input.requestId, elapsedMs: Date.now() - startedAt };
+    let gallery: Awaited<ReturnType<typeof archiveImages>> = [];
+    let archiveWarning: string | undefined;
+    if (settings.autoArchive) {
+      try {
+        gallery = await archiveImages(images, normalizedInput, true);
+      } catch (error) {
+        archiveWarning = "图片已经生成成功，但自动归档失败：" + ((error as Error).message || "无法写入本地图库") + "。请立即在结果区手动保存，避免图片丢失。";
+        emit(win, input.requestId, "生成完成，归档失败", 100, archiveWarning);
+      }
+    }
+    return { ok: true, images, gallery, recipe, archiveWarning, requestId: input.requestId, elapsedMs: Date.now() - startedAt };
   } catch (error) {
     if (error instanceof GenerationError) throw error;
     if ((error as Error).name === "AbortError") {
@@ -345,6 +364,9 @@ async function processQueue() {
   finally { const current = (await queueStore.read()).find(item => item.id === running.id); if (current?.status === "completed") await queueStore.removeAssets(running); activeQueueJobId = null; broadcast("queue:update", await queueStore.read()); void processQueue(); }
 }
 app.whenReady().then(async () => {
+  saveDir = await resolveSaveDir();
+  galleryDir = path.join(saveDir, "图库");
+  galleryStore = createGalleryStore(galleryDir);
   queueStore = createQueueStore(app.getPath("userData")); await queueStore.recover();
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: "文件", submenu: [{ label: "关闭窗口", role: "close" }] },
@@ -361,7 +383,7 @@ app.whenReady().then(async () => {
     { label: "窗口", submenu: [{ label: "最小化", role: "minimize" }, { label: "关闭", role: "close" }] },
     { label: "帮助", submenu: [{ label: "PinAI Image Studio 使用说明", click: () => dialog.showMessageBox({ type: "info", title: "PinAI Image Studio", message: "本地 PinAI 图片生成工具\n支持文生图、图片编辑、比例与 1K/2K/4K 清晰度选择。" }) }] }
   ]));
-  ipcMain.handle("settings:get", async () => { const c = await config(); return { configured: Boolean(c.apiKey), baseUrl: c.baseUrl, autoArchive: c.autoArchive }; });
+  ipcMain.handle("settings:get", async () => { const c = await config(); return { configured: Boolean(c.apiKey), baseUrl: c.baseUrl, autoArchive: c.autoArchive, saveDir }; });
   ipcMain.handle("settings:save", async (_e, value: { apiKey: string; baseUrl: string; autoArchive?: boolean }) => { if (value.apiKey.trim()) await keytar.setPassword(SERVICE, ACCOUNT, value.apiKey.trim()); await keytar.setPassword(SERVICE, `${ACCOUNT}:baseUrl`, value.baseUrl.trim() || DEFAULT_BASE_URL); await keytar.setPassword(SERVICE, `${ACCOUNT}:autoArchive`, value.autoArchive === false ? "false" : "true"); return { ok: true }; });
   ipcMain.handle("settings:clear", async () => { await keytar.deletePassword(SERVICE, ACCOUNT); return { ok: true }; });
   ipcMain.handle("settings:test", async () => { const c = await config(); if (!c.apiKey) return { ok: false, message: "尚未配置 API 密钥" }; try { const r = await fetch(`${c.baseUrl.replace(/\/$/, "")}/models`, { headers: { Authorization: `Bearer ${c.apiKey}` }, signal: AbortSignal.timeout(20_000) }); return r.ok ? { ok: true, message: "连接成功" } : { ok: false, message: `接口返回 ${r.status}` }; } catch (e) { return { ok: false, message: (e as Error).message }; } });
@@ -379,14 +401,19 @@ app.whenReady().then(async () => {
   ipcMain.handle("image:edit", (e, input: EditInput) => callImages(BrowserWindow.fromWebContents(e.sender)!, "edits", input));
   ipcMain.handle("image:cancel", async (_e, requestId: string) => { cancelledRequests.add(requestId); controllers.get(requestId)?.abort(); });
   ipcMain.handle("image:save", async (_e, value: { dataUrl: string; suggestedName: string; recipe?: ImageRecipeV1 }) => {
-    await fs.mkdir(DEFAULT_SAVE_DIR, { recursive: true });
-    const result = await dialog.showSaveDialog({ defaultPath: path.join(DEFAULT_SAVE_DIR, value.suggestedName || `pinaic-${Date.now()}.png`), filters: [{ name: "PNG 图片", extensions: ["png"] }] });
+    await fs.mkdir(saveDir, { recursive: true });
+    const result = await dialog.showSaveDialog({ defaultPath: path.join(saveDir, value.suggestedName || `pinaic-${Date.now()}.png`), filters: [{ name: "PNG 图片", extensions: ["png"] }] });
     if (result.canceled || !result.filePath) return { canceled: true };
     const base64 = value.dataUrl.replace(/^data:image\/\w+;base64,/, "");
     const raw = Buffer.from(base64, "base64");
     const output = value.recipe ? embedRecipeInPng(raw, normalizeRecipe({ recipe: value.recipe }, value.recipe.mode)) : raw;
-    await fs.writeFile(result.filePath, output);
-    return { canceled: false, path: result.filePath };
+    // The dialog is filtered to PNG, but Windows still lets users type a different
+    // extension. Keep the on-disk suffix truthful because the bytes are PNG.
+    const outputPath = path.extname(result.filePath).toLowerCase() === ".png"
+      ? result.filePath
+      : `${result.filePath}.png`;
+    await fs.writeFile(outputPath, output);
+    return { canceled: false, path: outputPath };
   });
   ipcMain.handle("png:readRecipe", async (_e, value: { dataUrl?: string; data?: number[] }) => {
     try {
@@ -431,14 +458,14 @@ app.whenReady().then(async () => {
   ipcMain.handle("prompt:enhance", async (_e, input: { prompt: string; mode: "generate" | "edit" }) => { const prompt = String(input?.prompt || "").trim(); if (!prompt) return { ok: false, error: "请先输入提示词" }; try { return { ok: true, prompt: await enhancePromptWithModel(prompt, input.mode === "edit" ? "edit" : "generate") }; } catch (error) { return { ok: false, error: (error as Error).message || "提示词增强失败" }; } });
   ipcMain.handle("prompt:reverse", async (_e, input: { image: BinaryInput }) => { try { return { ok: true, ...(await reversePromptWithModel(input.image)) }; } catch (error) { return { ok: false, error: (error as Error).message || "图反推失败，原提示词未改变" }; } });
   ipcMain.handle("queue:list", async () => ({ ok: true, items: await queueSnapshot() }));
-  ipcMain.handle("queue:enqueue", async (_e, input: { kind: "generate" | "edit"; payload: Record<string, unknown> }) => { const job = await queueStore.enqueue(input.kind, input.payload); broadcast("queue:update", await queueStore.read()); void processQueue(); return { ok: true, job }; });
-  ipcMain.handle("queue:retry", async (_e, id: string) => { const items = await queueStore.read(); const job = items.find(value => value.id === id); if (!job || !["failed", "interrupted", "cancelled"].includes(job.status)) return { ok: false, error: "任务不可重试" }; const next = { ...job, status: "queued" as const, error: undefined, errorInfo: undefined, updatedAt: new Date().toISOString() }; await queueStore.save(next); broadcast("queue:update", await queueStore.read()); void processQueue(); return { ok: true, job: next }; });
+  ipcMain.handle("queue:enqueue", async (_e, input: { kind: "generate" | "edit"; payload: Record<string, unknown> }) => { try { const job = await queueStore.enqueue(input.kind, input.payload); broadcast("queue:update", await queueStore.read()); setImmediate(() => { void processQueue(); }); return { ok: true, job }; } catch (error) { return { ok: false, error: (error as Error).message || "无法创建任务" }; } });
+  ipcMain.handle("queue:retry", async (_e, id: string) => { const items = await queueStore.read(); const job = items.find(value => value.id === id); if (!job || !["failed", "interrupted", "cancelled"].includes(job.status)) return { ok: false, error: "任务不可重试" }; const next = { ...job, status: "queued" as const, error: undefined, errorInfo: undefined, updatedAt: new Date().toISOString() }; await queueStore.save(next); broadcast("queue:update", await queueStore.read()); setImmediate(() => { void processQueue(); }); return { ok: true, job: next }; });
   ipcMain.handle("queue:cancel", async (_e, id: string) => { const items = await queueStore.read(); const job = items.find(value => value.id === id); if (!job || !["queued", "running"].includes(job.status)) return { ok: false, error: "任务不可取消" }; const errorInfo: GenerationErrorInfo = { category: "cancelled", title: "任务已取消", message: "请求已由用户取消。", suggestion: "修改参数后可重新加入队列。", retryable: false }; const next = { ...job, status: "cancelled" as const, error: errorInfoMessage(errorInfo), errorInfo, updatedAt: new Date().toISOString() }; await queueStore.save(next); if (job.status === "running") { cancelledRequests.add(job.requestId); controllers.get(job.requestId)?.abort(); } broadcast("queue:update", await queueStore.read()); return { ok: true, job: next }; });
   ipcMain.handle("queue:remove", async (_e, id: string) => { const items = await queueStore.read(); const job = items.find(value => value.id === id); if (!job || job.status === "running") return { ok: false, error: "运行中的任务不可移除" }; await queueStore.remove(id); broadcast("queue:update", await queueStore.read()); return { ok: true }; });
   ipcMain.handle("clipboard:copyText", async (_e, value: string) => { clipboard.writeText(String(value || "")); return { ok: true }; });
   ipcMain.handle("clipboard:copyImage", async (_e, b64: string) => { const image = nativeImage.createFromBuffer(Buffer.from(String(b64 || "").replace(/^data:image\/\w+;base64,/, ""), "base64")); if (image.isEmpty()) return { ok: false, error: "图片数据无效" }; clipboard.writeImage(image); return { ok: true }; });
   ipcMain.handle("gallery:exportZip", async (_e, ids: string[]) => {
-    const state = await galleryStore.readState(); const selected = state.items.filter(item => (ids || []).includes(item.id)); if (!selected.length) return { ok: false, error: "未选择图片" }; await fs.mkdir(DEFAULT_SAVE_DIR, { recursive: true }); const dialogResult = await dialog.showSaveDialog({ defaultPath: path.join(DEFAULT_SAVE_DIR, `pinaic-images-${Date.now()}.zip`), filters: [{ name: "ZIP 文件", extensions: ["zip"] }] }); if (dialogResult.canceled || !dialogResult.filePath) return { ok: true, canceled: true };
+    const state = await galleryStore.readState(); const selected = state.items.filter(item => (ids || []).includes(item.id)); if (!selected.length) return { ok: false, error: "未选择图片" }; await fs.mkdir(saveDir, { recursive: true }); const dialogResult = await dialog.showSaveDialog({ defaultPath: path.join(saveDir, `pinaic-images-${Date.now()}.zip`), filters: [{ name: "ZIP 文件", extensions: ["zip"] }] }); if (dialogResult.canceled || !dialogResult.filePath) return { ok: true, canceled: true };
     await new Promise<void>((resolve, reject) => { const output = createWriteStream(dialogResult.filePath!); const archive = archiver("zip", { zlib: { level: 9 } }); output.on("close", resolve); archive.on("error", reject); archive.pipe(output); for (const item of selected) archive.file(path.join(galleryDir, path.basename(item.fileName)), { name: `${item.title.replace(/[\\/:*?\"<>|]/g, "_") || item.id}.png` }); void archive.finalize(); }); return { ok: true, path: dialogResult.filePath, count: selected.length };
   });
   ipcMain.handle("templates:list", async () => ({ ok: true, items: [...DEFAULT_TEMPLATES, ...(await readCustomTemplates())] }));

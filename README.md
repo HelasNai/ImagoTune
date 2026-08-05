@@ -1,6 +1,8 @@
 # PinAI Image Studio
 
-PinAI Image Studio v1.2.0 是一款面向 Windows 的本地 AI 图片创作工作台。应用使用 Electron + React，通过 PinAI OpenAI 兼容接口调用 `gpt-image-2`，覆盖创作、编辑、扩图、项目图库、任务队列和成品交付。
+PinAI Image Studio v1.2.1 是一款面向 Windows 的本地 AI 图片创作工作台。应用使用 Electron + React，通过 PinAI OpenAI 兼容接口调用 `gpt-image-2`，覆盖创作、编辑、扩图、项目图库、任务队列和成品交付。
+
+本次补丁重点修复了小窗口操作、固定操作栏、错误反馈可见性、跨电脑保存目录、图库索引损坏恢复、队列容量保护和局部蒙版尺寸匹配问题。
 
 ## v1.2.0 新功能
 
@@ -47,17 +49,20 @@ API 密钥由 Electron 主进程写入 Windows 凭据库，不写入源码、项
 
 ## 本地数据
 
-默认手动保存目录：
+手动保存目录：
 
 ```text
-D:\codexproject\生图\保存图片
+旧版目录存在时：D:\codexproject\生图\保存图片
+新安装设备：系统“图片”文件夹\PinAI Image Studio
 ```
 
-自动图库目录：
+自动图库位于手动保存目录下的“图库”子目录：
 
 ```text
-D:\codexproject\生图\保存图片\图库
+<手动保存目录>\图库
 ```
+
+应用会在“设置”中显示当前实际目录。这样把安装包复制到没有 D: 盘的电脑时，仍然可以正常启动、归档和保存图片。
 
 图库包含 PNG 原图、版本化 `index.json`、`.thumbs` 缩略图缓存和配方元数据。首次读取 v2 索引时会先备份为 `index.v2.backup.json`，再迁移到 v3；不会移动或重新编码旧图片。
 

@@ -39,6 +39,10 @@ export function classifyHttpError(status: number, body: string): GenerationError
   const details = bodyDetail(body);
   const contentPattern = /(content|safety|policy|moderation|blocked|prohibited|违规|合规|审核|敏感)/i;
   const balancePattern = /(balance|credit|quota|billing|subscription|余额|额度|权益|订阅)/i;
+  const unsupportedQuality = /quality/i.test(details) && /(unsupported|unknown|invalid|not supported|不支持|未知|无效)/i.test(details);
+  if ((status === 400 || status === 422) && unsupportedQuality) {
+    return { category: "parameters", title: "清晰度参数不兼容", message: "PinAI 不支持当前清晰度参数。", suggestion: "切换为“自动”后手动重试，软件不会自动重复生成。", retryable: false, status, details };
+  }
   if (contentPattern.test(details)) {
     return { category: "content", title: "内容合规限制", message: "服务端未接受当前内容请求。", suggestion: "调整可能触发审核的主体、描述或参考图片后再手动提交。", retryable: false, status, details };
   }
@@ -78,4 +82,3 @@ export function classifyRuntimeError(error: unknown, options: { timedOut?: boole
 export function errorInfoMessage(info: GenerationErrorInfo) {
   return info.title + "：" + info.message;
 }
-

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 
 type Point = { x: number; y: number };
-type Stroke = { points: Point[] };
+type Stroke = { points: Point[]; size: number };
 type Dimensions = { width: number; height: number };
 
 function readDimensions(file: File) {
@@ -14,8 +14,9 @@ function readDimensions(file: File) {
 }
 
 function drawStrokes(context: CanvasRenderingContext2D, strokes: Stroke[], scale: number, color: string, erase = false) {
-  context.save(); context.lineCap = "round"; context.lineJoin = "round"; context.lineWidth = Math.max(8, 38 * scale); context.strokeStyle = color; context.globalCompositeOperation = erase ? "destination-out" : "source-over";
+  context.save(); context.lineCap = "round"; context.lineJoin = "round"; context.strokeStyle = color; context.globalCompositeOperation = erase ? "destination-out" : "source-over";
   for (const stroke of strokes) {
+    context.lineWidth = Math.max(8, stroke.size * scale);
     if (stroke.points.length === 1) { const point = stroke.points[0]; context.beginPath(); context.arc(point.x * scale, point.y * scale, context.lineWidth / 2, 0, Math.PI * 2); context.fillStyle = color; context.fill(); continue; }
     context.beginPath(); stroke.points.forEach((point, index) => index === 0 ? context.moveTo(point.x * scale, point.y * scale) : context.lineTo(point.x * scale, point.y * scale)); context.stroke();
   }
@@ -40,8 +41,9 @@ export function MaskPainter({ image, onMaskChange }: { image: File | null; onMas
 
   useEffect(() => {
     const canvas = canvasRef.current; if (!canvas || !dimensions) return; canvas.width = dimensions.width; canvas.height = dimensions.height; const context = canvas.getContext("2d"); if (!context) return; context.clearRect(0, 0, canvas.width, canvas.height);
-    context.save(); context.lineCap = "round"; context.lineJoin = "round"; context.lineWidth = Math.max(8, brushSize); context.strokeStyle = "rgba(244,87,154,.56)"; context.fillStyle = "rgba(244,87,154,.56)";
+    context.save(); context.lineCap = "round"; context.lineJoin = "round"; context.strokeStyle = "rgba(244,87,154,.56)"; context.fillStyle = "rgba(244,87,154,.56)";
     for (const stroke of strokes) {
+      context.lineWidth = Math.max(8, stroke.size);
       if (stroke.points.length === 1) { const point = stroke.points[0]; context.beginPath(); context.arc(point.x, point.y, context.lineWidth / 2, 0, Math.PI * 2); context.fill(); continue; }
       context.beginPath(); stroke.points.forEach((point, index) => index === 0 ? context.moveTo(point.x, point.y) : context.lineTo(point.x, point.y)); context.stroke();
     }
@@ -52,8 +54,8 @@ export function MaskPainter({ image, onMaskChange }: { image: File | null; onMas
     const rect = event.currentTarget.getBoundingClientRect(); if (!dimensions) return null;
     return { x: (event.clientX - rect.left) * dimensions.width / rect.width, y: (event.clientY - rect.top) * dimensions.height / rect.height };
   };
-  const start = (event: React.PointerEvent<HTMLCanvasElement>) => { const point = pointFromEvent(event); if (!point) return; drawing.current = true; event.currentTarget.setPointerCapture(event.pointerId); setStrokes(current => [...current, { points: [point] }]); };
-  const move = (event: React.PointerEvent<HTMLCanvasElement>) => { if (!drawing.current) return; const point = pointFromEvent(event); if (!point) return; setStrokes(current => current.length ? [...current.slice(0, -1), { points: [...current[current.length - 1].points, point] }] : current); };
+  const start = (event: React.PointerEvent<HTMLCanvasElement>) => { const point = pointFromEvent(event); if (!point) return; drawing.current = true; event.currentTarget.setPointerCapture(event.pointerId); setStrokes(current => [...current, { points: [point], size: brushSize }]); };
+  const move = (event: React.PointerEvent<HTMLCanvasElement>) => { if (!drawing.current) return; const point = pointFromEvent(event); if (!point) return; setStrokes(current => current.length ? [...current.slice(0, -1), { ...current[current.length - 1], points: [...current[current.length - 1].points, point] }] : current); };
   const stop = () => { drawing.current = false; };
 
   if (!image || !dimensions) return null;

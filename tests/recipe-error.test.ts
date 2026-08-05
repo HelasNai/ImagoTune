@@ -17,6 +17,6 @@ describe("recipe and error classification", () => {
     expect(classifyHttpError(400, "content policy blocked").category).toBe("content");
     expect(classifyHttpError(429, "too many requests").category).toBe("rate_limit");
     expect(classifyRuntimeError(new TypeError("fetch failed")).category).toBe("network");
+    expect(classifyHttpError(400, "quality is not supported").title).toBe("清晰度参数不兼容");
   });
 });
-

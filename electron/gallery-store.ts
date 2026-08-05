@@ -2,7 +2,7 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { ImageRecipeV1, normalizeRecipe } from "./image-recipe";
-import { embedRecipeInPng } from "./png-metadata";
+import { embedRecipeInPng, readRecipeFromPng } from "./png-metadata";
 
 export const INBOX_PROJECT_ID = "inbox";
 export type GalleryProject = { id: string; name: string; createdAt: string; updatedAt: string; coverId?: string };
@@ -109,7 +109,48 @@ export function createGalleryStore(galleryDir: string) {
 
   async function write(state: GalleryState) {
     await fs.mkdir(galleryDir, { recursive: true });
-    await fs.writeFile(indexPath, JSON.stringify(state, null, 2), "utf8");
+    const temporaryPath = indexPath + "." + randomUUID() + ".tmp";
+    try {
+      await fs.writeFile(temporaryPath, JSON.stringify(state, null, 2), "utf8");
+      await fs.rename(temporaryPath, indexPath);
+    } finally {
+      await fs.rm(temporaryPath, { force: true }).catch(() => undefined);
+    }
+  }
+
+  async function rebuildFromPngFiles() {
+    const state = createInitialState();
+    const entries = await fs.readdir(galleryDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== ".png") continue;
+      const filePath = path.join(galleryDir, entry.name);
+      try {
+        const [buffer, stat] = await Promise.all([fs.readFile(filePath), fs.stat(filePath)]);
+        const embedded = readRecipeFromPng(buffer);
+        const createdAt = embedded?.createdAt || stat.birthtime.toISOString() || stat.mtime.toISOString();
+        const recipe = normalizeRecipe({
+          recipe: embedded || {
+            prompt: "恢复的历史图片",
+            mode: "generate",
+            projectId: INBOX_PROJECT_ID,
+            createdAt,
+          },
+        });
+        recipe.projectId = INBOX_PROJECT_ID;
+        state.items.push({
+          id: randomUUID(),
+          fileName: entry.name,
+          title: recipe.prompt || "恢复的历史图片",
+          createdAt,
+          favorite: false,
+          recipe,
+        });
+      } catch {
+        // 单个损坏图片不阻断其他原图的恢复。
+      }
+    }
+    state.items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return state;
   }
 
   async function read(): Promise<GalleryState> {
@@ -123,7 +164,21 @@ export function createGalleryStore(galleryDir: string) {
         await write(migrated);
       }
       return migrated;
-    } catch {
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT" && !(error instanceof SyntaxError)) throw error;
+      if (error instanceof SyntaxError) {
+        const corruptPath = path.join(galleryDir, `index.corrupt-${Date.now()}.json`);
+        await fs.copyFile(indexPath, corruptPath).catch(() => undefined);
+        try {
+          const backup = migrateGallery(JSON.parse(await fs.readFile(backupPath, "utf8")) as unknown);
+          await write(backup);
+          return backup;
+        } catch {
+          const rebuilt = await rebuildFromPngFiles();
+          await write(rebuilt);
+          return rebuilt;
+        }
+      }
       const state = createInitialState();
       await write(state);
       return state;

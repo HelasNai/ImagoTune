@@ -4,7 +4,7 @@ declare global {
   interface Window {
     pinaic: {
       settings: {
-        get: () => Promise<{ configured: boolean; baseUrl: string; autoArchive: boolean }>;
+        get: () => Promise<{ configured: boolean; baseUrl: string; autoArchive: boolean; saveDir: string }>;
         save: (input: { apiKey: string; baseUrl: string; autoArchive?: boolean }) => Promise<{ ok: boolean }>;
         clear: () => Promise<{ ok: boolean }>;
         test: () => Promise<{ ok: boolean; message: string }>;
@@ -76,7 +76,7 @@ declare global {
   type GenerationErrorCategory = "network" | "authentication" | "balance" | "parameters" | "upload" | "content" | "rate_limit" | "timeout" | "server" | "cancelled" | "unknown";
   interface GenerationErrorInfo { category: GenerationErrorCategory; title: string; message: string; suggestion: string; retryable: boolean; status?: number; details?: string }
   interface ApiImage { b64_json?: string; url?: string; seed?: string | number }
-  interface ApiResult { ok: boolean; images?: ApiImage[]; gallery?: GalleryItem[]; recipe?: ImageRecipeV1; error?: string; errorInfo?: GenerationErrorInfo; requestId?: string; elapsedMs?: number }
+  interface ApiResult { ok: boolean; images?: ApiImage[]; gallery?: GalleryItem[]; recipe?: ImageRecipeV1; archiveWarning?: string; error?: string; errorInfo?: GenerationErrorInfo; requestId?: string; elapsedMs?: number }
   interface GalleryProject { id: string; name: string; createdAt: string; updatedAt: string; coverId?: string }
   interface GalleryItem { id: string; fileName: string; title: string; createdAt: string; favorite: boolean; recipe: ImageRecipeV1 }
   interface PromptTemplate { id: string; title: string; category: string; prompt: string; kind: "positive" | "negative"; ratio?: string; resolution?: string; quality?: string; builtin?: boolean }
