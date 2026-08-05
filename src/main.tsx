@@ -257,6 +257,7 @@ function App() {
   const [references, setReferences] = useState<File[]>([]);
   const [outputs, setOutputs] = useState<Output[]>([]);
   const [preview, setPreview] = useState<Output | null>(null);
+  const [previewContextMenu, setPreviewContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [exportOutput, setExportOutput] = useState<Output | null>(null);
   const [socialPreset, setSocialPreset] = useState("1080x1080");
   const [socialFill, setSocialFill] = useState<"light" | "blur">("light");
@@ -981,10 +982,35 @@ function App() {
       </div>
 
       {preview && (
-        <div className="lightbox" onClick={() => setPreview(null)}>
-          <button className="lightbox-close" onClick={() => setPreview(null)} aria-label="关闭预览">×</button>
-          <img src={dataUrlFor(preview)} onClick={(event) => event.stopPropagation()} alt="大图预览" />
-          <span>点击空白处或右上角关闭</span>
+        <div className="lightbox" onClick={() => { setPreviewContextMenu(null); setPreview(null); }}>
+          <button className="lightbox-close" onClick={() => { setPreviewContextMenu(null); setPreview(null); }} aria-label="关闭预览">×</button>
+          <img
+            src={dataUrlFor(preview)}
+            onClick={(event) => { event.stopPropagation(); setPreviewContextMenu(null); }}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setPreviewContextMenu({ x: event.clientX, y: event.clientY });
+            }}
+            alt="大图预览"
+          />
+          {previewContextMenu && (
+            <div
+              className="preview-context-menu"
+              style={{ left: previewContextMenu.x, top: previewContextMenu.y }}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                onClick={() => {
+                  void window.pinaic.clipboard.copyImage(preview.b64).then(() => setNotice("图片已复制到剪贴板"));
+                  setPreviewContextMenu(null);
+                }}
+              >
+                复制图片
+              </button>
+            </div>
+          )}
+          <span>右键点击图片可复制；点击空白处或右上角关闭</span>
         </div>
       )}
       {exportOutput && (
