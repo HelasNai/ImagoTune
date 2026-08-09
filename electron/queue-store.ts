@@ -11,6 +11,22 @@ type StoredAttachment = { name: string; type: string; path: string };
 const timestamp = () => new Date().toISOString();
 const ACTIVE_STATUSES = new Set<QueueStatus>(["queued", "running"]);
 
+async function replaceWithRetry(source: string, target: string) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      await fs.rename(source, target);
+      return;
+    } catch (error) {
+      lastError = error;
+      const code = (error as NodeJS.ErrnoException).code;
+      if (!code || !["EPERM", "EACCES", "EBUSY"].includes(code) || attempt === 3) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 30 * (attempt + 1)));
+    }
+  }
+  throw lastError;
+}
+
 export function compactQueue(items: QueueJob[], historyLimit = 100) {
   const active = items.filter((item) => ACTIVE_STATUSES.has(item.status));
   const history = items.filter((item) => !ACTIVE_STATUSES.has(item.status));
@@ -24,7 +40,7 @@ export function createQueueStore(baseDir: string) {
     const temporaryPath = queuePath + "." + randomUUID() + ".tmp";
     try {
       await fs.writeFile(temporaryPath, JSON.stringify(compactQueue(items), null, 2), "utf8");
-      await fs.rename(temporaryPath, queuePath);
+      await replaceWithRetry(temporaryPath, queuePath);
     } finally {
       await fs.rm(temporaryPath, { force: true }).catch(() => undefined);
     }

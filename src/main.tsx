@@ -1293,7 +1293,7 @@ function App() {
     <div className="app">
       <header>
         <div>
-          <span className="eyebrow">PINAI IMAGE STUDIO · V1.2.1</span>
+          <span className="eyebrow">PINAI IMAGE STUDIO · V1.2.2</span>
           <img className="brand-title" src={imaginationTitle} alt="把想象变成图片" />
           <p>本地创作工作台 · 提示词助手 · 项目图库 · 局部重绘 · 批量交付</p>
         </div>

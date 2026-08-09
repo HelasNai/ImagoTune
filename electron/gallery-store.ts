@@ -22,6 +22,19 @@ export type GallerySearch = {
 };
 
 const now = () => new Date().toISOString();
+
+async function replaceWithRetry(source: string, target: string) {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      await fs.rename(source, target);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (!code || !["EPERM", "EACCES", "EBUSY"].includes(code) || attempt === 3) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 30 * (attempt + 1)));
+    }
+  }
+}
 export function createInitialState(): GalleryState {
   const timestamp = now();
   return { version: 3, projects: [{ id: INBOX_PROJECT_ID, name: "收件箱", createdAt: timestamp, updatedAt: timestamp }], items: [] };
@@ -112,7 +125,7 @@ export function createGalleryStore(galleryDir: string) {
     const temporaryPath = indexPath + "." + randomUUID() + ".tmp";
     try {
       await fs.writeFile(temporaryPath, JSON.stringify(state, null, 2), "utf8");
-      await fs.rename(temporaryPath, indexPath);
+      await replaceWithRetry(temporaryPath, indexPath);
     } finally {
       await fs.rm(temporaryPath, { force: true }).catch(() => undefined);
     }

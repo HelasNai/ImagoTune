@@ -12,6 +12,7 @@ import { composeImagePrompt, ImageRecipeV1, normalizeRecipe } from "./image-reci
 import { classifyHttpError, classifyRuntimeError, errorInfoMessage, GenerationError, GenerationErrorInfo } from "./generation-error";
 import { embedRecipeInPng, readRecipeFromPng } from "./png-metadata";
 import { isVisionInputUnsupported, parseReversePrompt } from "./reverse-prompt";
+import { normalizeImageBase64, prioritizeImageResponses, type ImageResponse } from "./image-response";
 
 const SERVICE = "pinaic-image-studio";
 const ACCOUNT = "default";
@@ -193,11 +194,11 @@ function formatHttpError(status: number, body: string) {
   return new GenerationError(classifyHttpError(status, body));
 }
 
-async function parseResponse(response: Response, win: BrowserWindow, requestId: string): Promise<ApiImage[]> {
+async function parseResponse(response: Response, win: BrowserWindow, requestId: string): Promise<ImageResponse[]> {
   const type = response.headers.get("content-type") || "";
   if (!response.body) throw new Error("接口没有返回内容");
   if (!type.includes("text/event-stream")) {
-    const json = await response.json() as { data?: ApiImage[]; seed?: string | number };
+    const json = await response.json() as { data?: ImageResponse[]; seed?: string | number };
     return (json.data || []).map((image) => image.seed === undefined && json.seed !== undefined ? { ...image, seed: json.seed } : image);
   }
   const reader = response.body.getReader();
@@ -210,7 +211,7 @@ async function parseResponse(response: Response, win: BrowserWindow, requestId: 
     const value = line.slice(5).trim();
     if (!value || value === "[DONE]") return;
     try {
-      const payload = JSON.parse(value) as { data?: ApiImage[]; images?: ApiImage[]; progress?: number; status?: string; message?: string; b64_json?: string; seed?: string | number };
+      const payload = JSON.parse(value) as { data?: ImageResponse[]; images?: ImageResponse[]; progress?: number; status?: string; message?: string; b64_json?: string; seed?: string | number };
       if (payload.data) images.push(...payload.data.map((image) => image.seed === undefined && payload.seed !== undefined ? { ...image, seed: payload.seed } : image));
       if (payload.images) images.push(...payload.images.map((image) => image.seed === undefined && payload.seed !== undefined ? { ...image, seed: payload.seed } : image));
       if (payload.b64_json) images.push({ b64_json: payload.b64_json, seed: payload.seed });
@@ -226,6 +227,29 @@ async function parseResponse(response: Response, win: BrowserWindow, requestId: 
   }
   if (buffer) consume(buffer);
   return images;
+}
+
+async function materializeImageResponse(image: ImageResponse, baseUrl: string, apiKey: string, signal: AbortSignal): Promise<ApiImage> {
+  if (image.b64_json) return { ...image, b64_json: normalizeImageBase64(image.b64_json) };
+  const source = String(image.url || "").trim();
+  if (!source) return image;
+  if (source.startsWith("data:image/") && source.includes(";base64,")) {
+    return { ...image, b64_json: normalizeImageBase64(source) };
+  }
+  let target: URL;
+  try { target = new URL(source, baseUrl); } catch { throw new Error("接口返回了无效的图片链接"); }
+  if (!['http:', 'https:'].includes(target.protocol)) throw new Error("接口返回了不支持的图片链接协议");
+  const headers: Record<string, string> = {};
+  try {
+    if (target.origin === new URL(baseUrl).origin) headers.Authorization = `Bearer ${apiKey}`;
+  } catch { /* base URL validation is handled by the API request */ }
+  const response = await fetch(target, { headers, signal });
+  if (!response.ok) throw new Error(`图片链接下载失败（${response.status}）`);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (!bytes.length || bytes.length > 30 * 1024 * 1024) throw new Error("接口返回的图片文件无效或过大");
+  const png = nativeImage.createFromBuffer(bytes).toPNG();
+  if (!png.length) throw new Error("接口返回的内容不是有效图片");
+  return { ...image, b64_json: png.toString("base64") };
 }
 
 async function callImages(win: BrowserWindow, endpoint: "generations" | "edits", input: RequestInput | EditInput) {
@@ -260,12 +284,14 @@ async function callImages(win: BrowserWindow, endpoint: "generations" | "edits",
     if (!response.ok) { const text = await response.text(); throw formatHttpError(response.status, text); }
     emit(win, input.requestId, "正在接收图片", 92, "图片服务已响应，正在读取结果");
     const parsedImages = await parseResponse(response, win, input.requestId);
-    const seen = new Set<string>();
-    const images = parsedImages.filter(image => {
-      const key = image.b64_json || image.url;
-      if (!key || seen.has(key)) return false;
-      seen.add(key); return true;
-    }).slice(0, recipe.n);
+    const selectedImages = prioritizeImageResponses(parsedImages, recipe.n);
+    if (selectedImages.some((image) => !image.b64_json && image.url)) {
+      emit(win, input.requestId, "正在保存图片", 96, "接口返回了图片链接，正在转存为本地 PNG");
+    }
+    const images: ApiImage[] = [];
+    for (const image of selectedImages) {
+      images.push(await materializeImageResponse(image, baseUrl, apiKey, controller.signal));
+    }
     if (!images.length) throw new Error("接口未返回图片数据");
     emit(win, input.requestId, "完成", 100, `生成完成，用时 ${((Date.now() - startedAt) / 1000).toFixed(1)} 秒`);
     const settings = await config();
@@ -478,4 +504,4 @@ app.whenReady().then(async () => {
 });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
 
-type ApiImage = { b64_json?: string; url?: string; seed?: string | number };
+type ApiImage = ImageResponse;

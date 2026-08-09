@@ -1,8 +1,8 @@
 # PinAI Image Studio
 
-PinAI Image Studio v1.2.1 是一款面向 Windows 的本地 AI 图片创作工作台。应用使用 Electron + React，通过 PinAI OpenAI 兼容接口调用 `gpt-image-2`，覆盖创作、编辑、扩图、项目图库、任务队列和成品交付。
+PinAI Image Studio v1.2.2 是一款面向 Windows 的本地 AI 图片创作工作台。应用使用 Electron + React，通过 PinAI OpenAI 兼容接口调用 `gpt-image-2`，覆盖创作、编辑、扩图、项目图库、任务队列和成品交付。
 
-本次补丁重点修复了小窗口操作、固定操作栏、错误反馈可见性、跨电脑保存目录、图库索引损坏恢复、队列容量保护和局部蒙版尺寸匹配问题。
+v1.2.2 修复了流式响应偶尔先返回图片 URL 时，界面提示成功但结果为空的问题。应用现在优先使用最终 Base64 图片；仅返回 URL 时会由主进程下载并转换为 PNG 后再展示和归档。同时增强 Windows 下队列与图库索引被临时占用时的写入重试。
 
 ## v1.2.0 新功能
 
