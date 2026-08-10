@@ -1,6 +1,11 @@
 # AI Image Studio
 
-AI Image Studio v1.3.0 是一款面向 Windows 的本地 AI 图片创作工作台。应用使用 Electron + React，可连接符合当前请求格式的 OpenAI 兼容服务，覆盖图片生成、图片编辑、智能扩图、项目图库、任务队列和成品交付。
+AI Image Studio v1.3.1 是一款面向 Windows 的本地 AI 图片创作工作台。应用使用 Electron + React，可连接符合当前请求格式的 OpenAI 兼容服务，覆盖图片生成、图片编辑、智能扩图、项目图库、任务队列和成品交付。
+
+## v1.3.1 更新
+
+- 使用新的浅色蓝粉相机视觉作为桌面、开始菜单、应用窗口和安装包图标。
+- 图标包含 16–256 px 多级 Windows ICO 尺寸，在不同显示缩放下保持清晰。
 
 ## v1.3.0 更新
 
@@ -104,7 +109,7 @@ npm.cmd run package:win
 安装包输出示例：
 
 ```text
-dist\AI-Image-Studio-Setup-1.3.0.exe
+dist\AI-Image-Studio-Setup-1.3.1.exe
 ```
 
 ## 项目结构

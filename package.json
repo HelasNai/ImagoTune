@@ -1,6 +1,6 @@
 {
   "name": "ai-image-studio",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "OpenAI-compatible local creative workspace for Windows",
   "author": "zztnbnb",
   "repository": {
@@ -31,6 +31,7 @@
     "productName": "AI Image Studio",
     "artifactName": "AI-Image-Studio-Setup-${version}.${ext}",
     "asar": true,
+    "afterPack": "tools/after-pack.cjs",
     "npmRebuild": false,
     "publish": [
       {
@@ -73,6 +74,7 @@
     "concurrently": "^9.1.2",
     "electron": "^32.2.7",
     "electron-builder": "^25.1.8",
+    "rcedit": "^5.0.2",
     "typescript": "^5.7.2",
     "vite": "^6.0.5",
     "vitest": "^3.0.5",
