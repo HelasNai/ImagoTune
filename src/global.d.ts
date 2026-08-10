@@ -2,10 +2,10 @@ export {};
 
 declare global {
   interface Window {
-    pinaic: {
+    imageStudio: {
       settings: {
-        get: () => Promise<{ configured: boolean; baseUrl: string; autoArchive: boolean; saveDir: string }>;
-        save: (input: { apiKey: string; baseUrl: string; autoArchive?: boolean }) => Promise<{ ok: boolean }>;
+        get: () => Promise<{ configured: boolean; baseUrl: string; imageModel: string; chatModel: string; autoArchive: boolean; saveDir: string }>;
+        save: (input: { apiKey: string; baseUrl: string; imageModel: string; chatModel: string; autoArchive?: boolean }) => Promise<{ ok: boolean }>;
         clear: () => Promise<{ ok: boolean }>;
         test: () => Promise<{ ok: boolean; message: string }>;
       };

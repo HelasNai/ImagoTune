@@ -115,7 +115,7 @@ export async function createOutpaintFiles(source: File, layout: OutpaintLayout) 
   ]);
   if (!imageBlob || !maskBlob) throw new Error("无法导出扩图画布");
   return {
-    image: new File([imageBlob], "pinaic-outpaint-source.png", { type: "image/png" }),
-    mask: new File([maskBlob], "pinaic-outpaint-mask.png", { type: "image/png" }),
+    image: new File([imageBlob], "image-studio-outpaint-source.png", { type: "image/png" }),
+    mask: new File([maskBlob], "image-studio-outpaint-mask.png", { type: "image/png" }),
   };
 }

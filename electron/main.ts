@@ -14,9 +14,12 @@ import { embedRecipeInPng, readRecipeFromPng } from "./png-metadata";
 import { isVisionInputUnsupported, parseReversePrompt } from "./reverse-prompt";
 import { normalizeImageBase64, prioritizeImageResponses, type ImageResponse } from "./image-response";
 
-const SERVICE = "pinaic-image-studio";
+const SERVICE = "ai-image-studio";
+const LEGACY_SERVICE = "pinaic-image-studio";
 const ACCOUNT = "default";
-const DEFAULT_BASE_URL = "https://api.pinaic.com/v1";
+const DEFAULT_BASE_URL = "";
+const DEFAULT_IMAGE_MODEL = "gpt-image-2";
+const DEFAULT_CHAT_MODEL = "gpt-4o";
 const LEGACY_SAVE_DIR = "D:\\codexproject\\生图\\保存图片";
 const controllers = new Map<string, AbortController>();
 const cancelledRequests = new Set<string>();
@@ -58,35 +61,56 @@ async function resolveSaveDir() {
   } catch {
     // 新安装设备通常没有开发机的 D 盘目录，改用系统“图片”文件夹。
   }
-  return path.join(app.getPath("pictures"), "PinAI Image Studio");
+  return path.join(app.getPath("pictures"), "AI Image Studio");
 }
-async function templatesFile() { return path.join(app.getPath("userData"), "pinaic-image-templates.json"); }
+async function templatesFile() { return path.join(app.getPath("userData"), "image-studio-templates.json"); }
 async function readCustomTemplates(): Promise<PromptTemplate[]> {
   try {
     const raw = await fs.readFile(await templatesFile(), "utf8");
     const value = JSON.parse(raw) as Array<Partial<PromptTemplate>>;
     return Array.isArray(value) ? value.map((item) => ({ ...item, kind: item.kind === "negative" ? "negative" : "positive" })) as PromptTemplate[] : [];
-  } catch { return []; }
+  } catch {
+    try {
+      const legacy = path.join(app.getPath("userData"), "pinaic-image-templates.json");
+      const raw = await fs.readFile(legacy, "utf8");
+      const value = JSON.parse(raw) as Array<Partial<PromptTemplate>>;
+      return Array.isArray(value) ? value.map((item) => ({ ...item, kind: item.kind === "negative" ? "negative" : "positive" })) as PromptTemplate[] : [];
+    } catch { return []; }
+  }
 }
 
 function createWindow() {
   const win = new BrowserWindow({
     width: 1180, height: 820, minWidth: 980, minHeight: 680,
     backgroundColor: "#f7f8fc",
-    icon: path.join(__dirname, "../PinAI Image Studio.ico"),
+    icon: path.join(__dirname, "../AI Image Studio.ico"),
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false }
   });
   if (process.argv.includes("--dev")) win.loadURL(process.env.VITE_DEV_SERVER_URL || "http://127.0.0.1:5173");
   else win.loadFile(path.join(__dirname, "../dist/index.html"));
 }
 
+async function storedCredential(account: string) {
+  const current = await keytar.getPassword(SERVICE, account);
+  if (current !== null) return current;
+  const legacy = await keytar.getPassword(LEGACY_SERVICE, account);
+  if (legacy !== null) await keytar.setPassword(SERVICE, account, legacy);
+  return legacy;
+}
+
 async function config() {
-  const archiveSetting = await keytar.getPassword(SERVICE, `${ACCOUNT}:autoArchive`);
-  return { apiKey: await keytar.getPassword(SERVICE, ACCOUNT), baseUrl: (await keytar.getPassword(SERVICE, `${ACCOUNT}:baseUrl`)) || DEFAULT_BASE_URL, autoArchive: archiveSetting !== "false" };
+  const archiveSetting = await storedCredential(`${ACCOUNT}:autoArchive`);
+  return {
+    apiKey: await storedCredential(ACCOUNT),
+    baseUrl: (await storedCredential(`${ACCOUNT}:baseUrl`)) || DEFAULT_BASE_URL,
+    imageModel: (await storedCredential(`${ACCOUNT}:imageModel`)) || DEFAULT_IMAGE_MODEL,
+    chatModel: (await storedCredential(`${ACCOUNT}:chatModel`)) || DEFAULT_CHAT_MODEL,
+    autoArchive: archiveSetting !== "false",
+  };
 }
 
 async function checkUpdatesAtStartup() {
-  return (await keytar.getPassword(SERVICE, ACCOUNT + ":checkUpdatesAtStartup")) !== "false";
+  return (await storedCredential(ACCOUNT + ":checkUpdatesAtStartup")) !== "false";
 }
 
 function publishUpdateStatus(next: UpdateStatus) {
@@ -121,7 +145,7 @@ async function promptForDownload(info: UpdateInfo) {
     const result = await dialog.showMessageBox(win, {
       type: "info",
       title: "发现新版本",
-      message: "PinAI Image Studio " + info.version + " 已可更新",
+      message: "AI Image Studio " + info.version + " 已可更新",
       detail: "是否现在下载？下载完成后仍由你选择是否重启安装。",
       buttons: ["稍后再说", "下载更新"],
       defaultId: 1,
@@ -174,7 +198,7 @@ function configureAutoUpdater() {
     const result = await dialog.showMessageBox(win, {
       type: "info",
       title: "更新已下载",
-      message: "PinAI Image Studio " + info.version + " 已准备好",
+      message: "AI Image Studio " + info.version + " 已准备好",
       detail: "是否现在重启并安装？你也可以稍后在“设置”中执行安装。",
       buttons: ["稍后安装", "重启并安装"],
       defaultId: 1,
@@ -254,7 +278,8 @@ async function materializeImageResponse(image: ImageResponse, baseUrl: string, a
 
 async function callImages(win: BrowserWindow, endpoint: "generations" | "edits", input: RequestInput | EditInput) {
   const { apiKey, baseUrl } = await config();
-  if (!apiKey) throw new GenerationError({ category: "authentication", title: "尚未配置 API 密钥", message: "客户端没有可用于请求 PinAI 的密钥。", suggestion: "请先在设置中保存有效的 PinAI API 密钥。", retryable: false });
+  if (!baseUrl) throw new GenerationError({ category: "authentication", title: "尚未配置基础地址", message: "客户端没有可用于请求图片服务的 API Base URL。", suggestion: "请先在设置中填写兼容平台提供的基础地址。", retryable: false });
+  if (!apiKey) throw new GenerationError({ category: "authentication", title: "尚未配置 API 密钥", message: "客户端没有可用于请求图片服务的密钥。", suggestion: "请先在设置中保存兼容平台提供的 API 密钥。", retryable: false });
   const recipe = normalizeRecipe(input, endpoint === "edits" ? "edit" : "generate");
   const effectivePrompt = composeImagePrompt(recipe);
   const controller = new AbortController(); controllers.set(input.requestId, controller);
@@ -317,7 +342,7 @@ async function callImages(win: BrowserWindow, endpoint: "generations" | "edits",
     }
     const message = (error as Error).message || "生成失败";
     if (/quality/i.test(message) && /(unsupported|unknown|invalid|不支持)/i.test(message)) {
-      throw new GenerationError({ category: "parameters", title: "清晰度参数不兼容", message: "PinAI 不支持当前清晰度参数。", suggestion: "切换为“自动”后手动重试。", retryable: false, details: message });
+      throw new GenerationError({ category: "parameters", title: "清晰度参数不兼容", message: "当前接口不支持所选清晰度参数。", suggestion: "切换为“自动”后手动重试。", retryable: false, details: message });
     }
     throw new GenerationError(classifyRuntimeError(error));
   } finally {
@@ -330,17 +355,17 @@ async function callImages(win: BrowserWindow, endpoint: "generations" | "edits",
 }
 
 async function enhancePromptWithModel(prompt: string, mode: "generate" | "edit") {
-  const { apiKey, baseUrl } = await config(); if (!apiKey) throw new Error("请先保存 API 密钥");
+  const { apiKey, baseUrl, chatModel } = await config(); if (!baseUrl || !apiKey) throw new Error("请先保存基础地址和 API 密钥");
   const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 60_000);
   try {
-    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: "gpt-4o", temperature: 0.7, max_tokens: 1200, messages: [{ role: "system", content: "你是图片提示词优化助手。保留用户意图，不增加不相关主体；输出一段可以直接用于图片生成的中文提示词，不要解释，不要加引号。" }, { role: "user", content: `模式：${mode === "edit" ? "图片编辑，保持主体不变" : "文生图"}\n原始提示词：${prompt}` }] }), signal: controller.signal });
+    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: chatModel, temperature: 0.7, max_tokens: 1200, messages: [{ role: "system", content: "你是图片提示词优化助手。保留用户意图，不增加不相关主体；输出一段可以直接用于图片生成的中文提示词，不要解释，不要加引号。" }, { role: "user", content: `模式：${mode === "edit" ? "图片编辑，保持主体不变" : "文生图"}\n原始提示词：${prompt}` }] }), signal: controller.signal });
     if (!response.ok) throw new Error(`提示词增强接口返回 ${response.status}`); const json = await response.json() as { choices?: Array<{ message?: { content?: string } }> }; const content = json.choices?.[0]?.message?.content?.trim(); if (!content) throw new Error("提示词增强没有返回内容"); return content;
   } catch (error) { if ((error as Error).name === "AbortError") throw new Error("提示词增强超时，请保留原提示词重试"); throw error; } finally { clearTimeout(timer); }
 }
 
 async function reversePromptWithModel(image: BinaryInput) {
-  const { apiKey, baseUrl } = await config();
-  if (!apiKey) throw new Error("请先保存 API 密钥");
+  const { apiKey, baseUrl, chatModel } = await config();
+  if (!baseUrl || !apiKey) throw new Error("请先保存基础地址和 API 密钥");
   if (!image.data?.length) throw new Error("请选择需要分析的图片");
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 90_000);
@@ -351,7 +376,7 @@ async function reversePromptWithModel(image: BinaryInput) {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "gpt-4o",
+        model: chatModel,
         temperature: 0.35,
         max_tokens: 1600,
         messages: [
@@ -367,7 +392,7 @@ async function reversePromptWithModel(image: BinaryInput) {
     if (!response.ok) {
       const body = await response.text();
       if (isVisionInputUnsupported(body)) {
-        throw new Error("当前 PinAI gpt-4o 通道不支持图片输入，原提示词未改变。");
+        throw new Error("当前聊天模型或接口不支持图片输入，原提示词未改变。");
       }
       throw new Error(`图反推接口返回 ${response.status}：${body.replace(/\s+/g, " ").slice(0, 300)}`);
     }
@@ -407,12 +432,12 @@ app.whenReady().then(async () => {
       { type: "separator" }, { label: "全屏", role: "togglefullscreen" }
     ] },
     { label: "窗口", submenu: [{ label: "最小化", role: "minimize" }, { label: "关闭", role: "close" }] },
-    { label: "帮助", submenu: [{ label: "PinAI Image Studio 使用说明", click: () => dialog.showMessageBox({ type: "info", title: "PinAI Image Studio", message: "本地 PinAI 图片生成工具\n支持文生图、图片编辑、比例与 1K/2K/4K 清晰度选择。" }) }] }
+    { label: "帮助", submenu: [{ label: "AI Image Studio 使用说明", click: () => dialog.showMessageBox({ type: "info", title: "AI Image Studio", message: "本地 OpenAI 兼容图片创作工具\n支持自定义基础地址、模型、文生图、图片编辑和常用输出尺寸。" }) }] }
   ]));
-  ipcMain.handle("settings:get", async () => { const c = await config(); return { configured: Boolean(c.apiKey), baseUrl: c.baseUrl, autoArchive: c.autoArchive, saveDir }; });
-  ipcMain.handle("settings:save", async (_e, value: { apiKey: string; baseUrl: string; autoArchive?: boolean }) => { if (value.apiKey.trim()) await keytar.setPassword(SERVICE, ACCOUNT, value.apiKey.trim()); await keytar.setPassword(SERVICE, `${ACCOUNT}:baseUrl`, value.baseUrl.trim() || DEFAULT_BASE_URL); await keytar.setPassword(SERVICE, `${ACCOUNT}:autoArchive`, value.autoArchive === false ? "false" : "true"); return { ok: true }; });
-  ipcMain.handle("settings:clear", async () => { await keytar.deletePassword(SERVICE, ACCOUNT); return { ok: true }; });
-  ipcMain.handle("settings:test", async () => { const c = await config(); if (!c.apiKey) return { ok: false, message: "尚未配置 API 密钥" }; try { const r = await fetch(`${c.baseUrl.replace(/\/$/, "")}/models`, { headers: { Authorization: `Bearer ${c.apiKey}` }, signal: AbortSignal.timeout(20_000) }); return r.ok ? { ok: true, message: "连接成功" } : { ok: false, message: `接口返回 ${r.status}` }; } catch (e) { return { ok: false, message: (e as Error).message }; } });
+  ipcMain.handle("settings:get", async () => { const c = await config(); return { configured: Boolean(c.apiKey && c.baseUrl), baseUrl: c.baseUrl, imageModel: c.imageModel, chatModel: c.chatModel, autoArchive: c.autoArchive, saveDir }; });
+  ipcMain.handle("settings:save", async (_e, value: { apiKey: string; baseUrl: string; imageModel: string; chatModel: string; autoArchive?: boolean }) => { if (value.apiKey.trim()) await keytar.setPassword(SERVICE, ACCOUNT, value.apiKey.trim()); await keytar.setPassword(SERVICE, `${ACCOUNT}:baseUrl`, value.baseUrl.trim()); await keytar.setPassword(SERVICE, `${ACCOUNT}:imageModel`, value.imageModel.trim() || DEFAULT_IMAGE_MODEL); await keytar.setPassword(SERVICE, `${ACCOUNT}:chatModel`, value.chatModel.trim() || DEFAULT_CHAT_MODEL); await keytar.setPassword(SERVICE, `${ACCOUNT}:autoArchive`, value.autoArchive === false ? "false" : "true"); return { ok: true }; });
+  ipcMain.handle("settings:clear", async () => { await Promise.all([keytar.deletePassword(SERVICE, ACCOUNT), keytar.deletePassword(LEGACY_SERVICE, ACCOUNT)]); return { ok: true }; });
+  ipcMain.handle("settings:test", async () => { const c = await config(); if (!c.baseUrl) return { ok: false, message: "尚未配置 API Base URL" }; if (!c.apiKey) return { ok: false, message: "尚未配置 API 密钥" }; try { new URL(c.baseUrl); const r = await fetch(`${c.baseUrl.replace(/\/$/, "")}/models`, { headers: { Authorization: `Bearer ${c.apiKey}` }, signal: AbortSignal.timeout(20_000) }); return r.ok ? { ok: true, message: "连接成功" } : { ok: false, message: `接口返回 ${r.status}` }; } catch (e) { return { ok: false, message: (e as Error).message }; } });
   ipcMain.handle("updates:get", async () => ({ ok: true, appVersion: app.getVersion(), checkAtStartup: await checkUpdatesAtStartup(), supported: app.isPackaged, status: updateStatus }));
   ipcMain.handle("updates:setStartup", async (_e, enabled: boolean) => { await keytar.setPassword(SERVICE, ACCOUNT + ":checkUpdatesAtStartup", enabled ? "true" : "false"); return { ok: true, checkAtStartup: enabled }; });
   ipcMain.handle("updates:check", async () => checkForAppUpdate());
@@ -428,7 +453,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("image:cancel", async (_e, requestId: string) => { cancelledRequests.add(requestId); controllers.get(requestId)?.abort(); });
   ipcMain.handle("image:save", async (_e, value: { dataUrl: string; suggestedName: string; recipe?: ImageRecipeV1 }) => {
     await fs.mkdir(saveDir, { recursive: true });
-    const result = await dialog.showSaveDialog({ defaultPath: path.join(saveDir, value.suggestedName || `pinaic-${Date.now()}.png`), filters: [{ name: "PNG 图片", extensions: ["png"] }] });
+    const result = await dialog.showSaveDialog({ defaultPath: path.join(saveDir, value.suggestedName || `image-studio-${Date.now()}.png`), filters: [{ name: "PNG 图片", extensions: ["png"] }] });
     if (result.canceled || !result.filePath) return { canceled: true };
     const base64 = value.dataUrl.replace(/^data:image\/\w+;base64,/, "");
     const raw = Buffer.from(base64, "base64");
@@ -445,7 +470,7 @@ app.whenReady().then(async () => {
     try {
       const raw = value.data ? Buffer.from(value.data) : Buffer.from(String(value.dataUrl || "").replace(/^data:image\/\w+;base64,/, ""), "base64");
       const recipe = readRecipeFromPng(raw);
-      return recipe ? { ok: true, recipe } : { ok: false, error: "PNG 中没有 PinAI 配方元数据" };
+      return recipe ? { ok: true, recipe } : { ok: false, error: "PNG 中没有 Image Studio 配方元数据" };
     } catch (error) { return { ok: false, error: (error as Error).message || "无法读取 PNG 元数据" }; }
   });
   ipcMain.handle("outpaint:prepare", async (_e, input: { sourceWidth: number; sourceHeight: number; targetSize: string }) => {
@@ -491,7 +516,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("clipboard:copyText", async (_e, value: string) => { clipboard.writeText(String(value || "")); return { ok: true }; });
   ipcMain.handle("clipboard:copyImage", async (_e, b64: string) => { const image = nativeImage.createFromBuffer(Buffer.from(String(b64 || "").replace(/^data:image\/\w+;base64,/, ""), "base64")); if (image.isEmpty()) return { ok: false, error: "图片数据无效" }; clipboard.writeImage(image); return { ok: true }; });
   ipcMain.handle("gallery:exportZip", async (_e, ids: string[]) => {
-    const state = await galleryStore.readState(); const selected = state.items.filter(item => (ids || []).includes(item.id)); if (!selected.length) return { ok: false, error: "未选择图片" }; await fs.mkdir(saveDir, { recursive: true }); const dialogResult = await dialog.showSaveDialog({ defaultPath: path.join(saveDir, `pinaic-images-${Date.now()}.zip`), filters: [{ name: "ZIP 文件", extensions: ["zip"] }] }); if (dialogResult.canceled || !dialogResult.filePath) return { ok: true, canceled: true };
+    const state = await galleryStore.readState(); const selected = state.items.filter(item => (ids || []).includes(item.id)); if (!selected.length) return { ok: false, error: "未选择图片" }; await fs.mkdir(saveDir, { recursive: true }); const dialogResult = await dialog.showSaveDialog({ defaultPath: path.join(saveDir, `image-studio-${Date.now()}.zip`), filters: [{ name: "ZIP 文件", extensions: ["zip"] }] }); if (dialogResult.canceled || !dialogResult.filePath) return { ok: true, canceled: true };
     await new Promise<void>((resolve, reject) => { const output = createWriteStream(dialogResult.filePath!); const archive = archiver("zip", { zlib: { level: 9 } }); output.on("close", resolve); archive.on("error", reject); archive.pipe(output); for (const item of selected) archive.file(path.join(galleryDir, path.basename(item.fileName)), { name: `${item.title.replace(/[\\/:*?\"<>|]/g, "_") || item.id}.png` }); void archive.finalize(); }); return { ok: true, path: dialogResult.filePath, count: selected.length };
   });
   ipcMain.handle("templates:list", async () => ({ ok: true, items: [...DEFAULT_TEMPLATES, ...(await readCustomTemplates())] }));

@@ -9,7 +9,7 @@ describe("PNG recipe metadata", () => {
     const recipe = normalizeRecipe({ recipe: { prompt: "蓝粉色产品海报", negativePrompt: "水印、乱码", size: "1024x1024", seed: "9988" } });
     const output = embedRecipeInPng(onePixelPng, recipe);
     expect(output.length).toBeGreaterThan(onePixelPng.length);
+    expect(output.includes(Buffer.from("image-studio.recipe"))).toBe(true);
     expect(readRecipeFromPng(output)).toMatchObject({ prompt: "蓝粉色产品海报", negativePrompt: "水印、乱码", seed: "9988" });
   });
 });
-

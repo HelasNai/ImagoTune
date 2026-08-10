@@ -40,8 +40,8 @@ d.ellipse((454, 454, 570, 570), fill=(103, 85, 210, 255))
 d.rounded_rectangle((704, 202, 808, 306), radius=26, fill=(255, 214, 125, 255))
 d.ellipse((730, 228, 782, 280), fill=(255, 244, 207, 255))
 
-png_path = ROOT / "PinAI Image Studio.png"
-ico_path = ROOT / "PinAI Image Studio.ico"
+png_path = ROOT / "AI Image Studio.png"
+ico_path = ROOT / "AI Image Studio.ico"
 img.save(png_path, "PNG")
 img.save(ico_path, "ICO", sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)])
 print(png_path)

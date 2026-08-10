@@ -28,7 +28,7 @@ async function createMask(strokes: Stroke[], dimensions: Dimensions) {
   const canvas = document.createElement("canvas"); canvas.width = dimensions.width; canvas.height = dimensions.height; const context = canvas.getContext("2d"); if (!context) return null;
   context.fillStyle = "#ffffff"; context.fillRect(0, 0, canvas.width, canvas.height); drawStrokes(context, strokes, 1, "#000000", true);
   const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/png"));
-  return blob ? new File([blob], "pinaic-painted-mask.png", { type: "image/png" }) : null;
+  return blob ? new File([blob], "image-studio-painted-mask.png", { type: "image/png" }) : null;
 }
 
 export function MaskPainter({ image, onMaskChange }: { image: File | null; onMaskChange: (file: File | null) => void }) {

@@ -34,7 +34,9 @@ export function compactQueue(items: QueueJob[], historyLimit = 100) {
 }
 
 export function createQueueStore(baseDir: string) {
-  const queuePath = path.join(baseDir, "pinaic-image-queue.json"); const assetsDir = path.join(baseDir, "pinaic-image-queue-assets");
+  const queuePath = path.join(baseDir, "image-studio-queue.json");
+  const legacyQueuePath = path.join(baseDir, "pinaic-image-queue.json");
+  const assetsDir = path.join(baseDir, "image-studio-queue-assets");
   async function write(items: QueueJob[]) {
     await fs.mkdir(baseDir, { recursive: true });
     const temporaryPath = queuePath + "." + randomUUID() + ".tmp";
@@ -46,7 +48,16 @@ export function createQueueStore(baseDir: string) {
     }
   }
   async function read(recoverRunning = false) {
-    try { const raw = await fs.readFile(queuePath, "utf8"); const parsed = JSON.parse(raw) as unknown; const items = Array.isArray(parsed) ? parsed as QueueJob[] : []; const normalized = recoverRunning ? items.map(item => item.status === "running" ? { ...item, status: "interrupted" as const, error: "应用关闭时任务正在运行，请手动重试。", errorInfo: { category: "cancelled" as const, title: "任务已中断", message: "应用关闭时任务仍在运行。", suggestion: "确认参数后手动重试，软件不会自动重复计费。", retryable: true }, updatedAt: timestamp() } : item) : items; if (recoverRunning && JSON.stringify(normalized) !== JSON.stringify(items)) await write(normalized); return normalized; } catch { return [] as QueueJob[]; }
+    try {
+      let raw: string;
+      try { raw = await fs.readFile(queuePath, "utf8"); }
+      catch { raw = await fs.readFile(legacyQueuePath, "utf8"); }
+      const parsed = JSON.parse(raw) as unknown;
+      const items = Array.isArray(parsed) ? parsed as QueueJob[] : [];
+      const normalized = recoverRunning ? items.map(item => item.status === "running" ? { ...item, status: "interrupted" as const, error: "应用关闭时任务正在运行，请手动重试。", errorInfo: { category: "cancelled" as const, title: "任务已中断", message: "应用关闭时任务仍在运行。", suggestion: "确认参数后手动重试，软件不会自动重复计费。", retryable: true }, updatedAt: timestamp() } : item) : items;
+      if (recoverRunning && JSON.stringify(normalized) !== JSON.stringify(items)) await write(normalized);
+      return normalized;
+    } catch { return [] as QueueJob[]; }
   }
   async function save(item: QueueJob) { const items = await read(); const next = [...items.filter(value => value.id !== item.id), item]; await write(next); return item; }
   async function enqueue(kind: "generate" | "edit", rawInput: Record<string, unknown>) {

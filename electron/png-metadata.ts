@@ -1,7 +1,8 @@
 import { ImageRecipeV1 } from "./image-recipe";
 
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-const KEYWORD = "pinaic.recipe";
+const KEYWORD = "image-studio.recipe";
+const LEGACY_KEYWORD = "pinaic.recipe";
 
 let crcTable: number[] | undefined;
 function table() {
@@ -64,7 +65,7 @@ export function embedRecipeInPng(buffer: Buffer, recipe: ImageRecipeV1) {
   const output: Buffer[] = [PNG_SIGNATURE];
   let inserted = false;
   for (const chunk of parsed) {
-    if (chunk.type === "iTXt" && keywordOf(chunk.data) === KEYWORD) continue;
+    if (chunk.type === "iTXt" && [KEYWORD, LEGACY_KEYWORD].includes(keywordOf(chunk.data))) continue;
     if (!inserted && (chunk.type === "IDAT" || chunk.type === "IEND")) {
       output.push(metadata);
       inserted = true;
@@ -76,7 +77,7 @@ export function embedRecipeInPng(buffer: Buffer, recipe: ImageRecipeV1) {
 
 export function readRecipeFromPng(buffer: Buffer): ImageRecipeV1 | null {
   for (const chunk of chunks(buffer)) {
-    if (chunk.type !== "iTXt" || keywordOf(chunk.data) !== KEYWORD) continue;
+    if (chunk.type !== "iTXt" || ![KEYWORD, LEGACY_KEYWORD].includes(keywordOf(chunk.data))) continue;
     let offset = chunk.data.indexOf(0) + 1;
     if (offset <= 0 || offset + 2 > chunk.data.length) continue;
     const compressed = chunk.data[offset];
@@ -95,4 +96,3 @@ export function readRecipeFromPng(buffer: Buffer): ImageRecipeV1 | null {
   }
   return null;
 }
-

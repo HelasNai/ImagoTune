@@ -1,9 +1,9 @@
 import { contextBridge, ipcRenderer } from "electron";
 
-contextBridge.exposeInMainWorld("pinaic", {
+contextBridge.exposeInMainWorld("imageStudio", {
   settings: {
     get: () => ipcRenderer.invoke("settings:get"),
-    save: (input: { apiKey: string; baseUrl: string; autoArchive?: boolean }) => ipcRenderer.invoke("settings:save", input),
+    save: (input: { apiKey: string; baseUrl: string; imageModel: string; chatModel: string; autoArchive?: boolean }) => ipcRenderer.invoke("settings:save", input),
     clear: () => ipcRenderer.invoke("settings:clear"),
     test: () => ipcRenderer.invoke("settings:test")
   },

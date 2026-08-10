@@ -36,12 +36,12 @@ export function GalleryWorkspace({
 
   const refresh = useCallback(async (targetPage = page) => {
     try {
-      const workspace = await window.pinaic.gallery.workspace();
+      const workspace = await window.imageStudio.gallery.workspace();
       setProjects(workspace.projects || []);
       const allItems = workspace.items || [];
       setAvailableSizes([...new Set(allItems.map((item) => item.recipe.size).filter(Boolean))].sort());
       setHasSeeds(allItems.some((item) => Boolean(item.recipe.seed)));
-      const result = await window.pinaic.gallery.search({
+      const result = await window.imageStudio.gallery.search({
         query,
         tag,
         favoriteOnly,
@@ -80,7 +80,7 @@ export function GalleryWorkspace({
     const missing = items.filter((item) => !thumbs[item.id]);
     if (!missing.length) return () => { active = false; };
     void Promise.all(missing.map(async (item) => {
-      const response = await window.pinaic.gallery.thumbnail(item.id);
+      const response = await window.imageStudio.gallery.thumbnail(item.id);
       return [item.id, response.b64 || ""] as const;
     })).then((values) => {
       if (!active) return;
@@ -116,13 +116,13 @@ export function GalleryWorkspace({
   };
 
   const open = async (item: GalleryItem, action: OpenAction) => {
-    const response = await window.pinaic.gallery.loadImage(item.id);
+    const response = await window.imageStudio.gallery.loadImage(item.id);
     if (response.b64) onOpen(item, response.b64, action);
     else onNotice(response.error || "无法读取图片");
   };
 
   const createProject = async () => {
-    const response = await window.pinaic.projects.create(newProject);
+    const response = await window.imageStudio.projects.create(newProject);
     if (!response.ok) {
       onNotice(response.error || "创建项目失败");
       return;
@@ -135,7 +135,7 @@ export function GalleryWorkspace({
   const renameProject = async (project: GalleryProject) => {
     const name = window.prompt("项目名称", project.name);
     if (!name?.trim()) return;
-    const response = await window.pinaic.projects.rename(project.id, name);
+    const response = await window.imageStudio.projects.rename(project.id, name);
     onNotice(response.ok ? "项目已重命名" : response.error || "重命名失败");
     await refresh(0);
   };
@@ -143,7 +143,7 @@ export function GalleryWorkspace({
   const deleteProject = async (project: GalleryProject) => {
     const message = "删除项目后，其中图片会回到收件箱，确定继续吗？";
     if (!window.confirm(message)) return;
-    const response = await window.pinaic.projects.delete(project.id);
+    const response = await window.imageStudio.projects.delete(project.id);
     if (activeProject === project.id) setActiveProject("all");
     onNotice(response.ok ? "项目已删除，图片已移回收件箱" : response.error || "删除失败");
     await refresh(0);
@@ -153,7 +153,7 @@ export function GalleryWorkspace({
     const title = window.prompt("图片标题", item.title);
     if (title === null) return;
     const tags = window.prompt("标签（用逗号分隔）", item.recipe.tags.join("，"));
-    const response = await window.pinaic.gallery.update(item.id, {
+    const response = await window.imageStudio.gallery.update(item.id, {
       title,
       tags: tags === null ? item.recipe.tags : parseTags(tags),
     });
@@ -171,7 +171,7 @@ export function GalleryWorkspace({
       return;
     }
     if (action === "delete" && !window.confirm("删除所选图片及原始 PNG 文件吗？")) return;
-    const response = await window.pinaic.gallery.bulk({ ids, action, ...extra });
+    const response = await window.imageStudio.gallery.bulk({ ids, action, ...extra });
     onNotice(response.ok
       ? "已处理 " + String(response.count || ids.length) + " 张图片"
       : response.error || "操作失败");
@@ -184,7 +184,7 @@ export function GalleryWorkspace({
       onNotice("请先选择需要导出的图片");
       return;
     }
-    const response = await window.pinaic.gallery.exportZip([...selected]);
+    const response = await window.imageStudio.gallery.exportZip([...selected]);
     if (!response.ok) onNotice(response.error || "导出失败");
     else if (!response.canceled) onNotice("ZIP 已导出：" + (response.path || ""));
   };
@@ -196,7 +196,7 @@ export function GalleryWorkspace({
       return;
     }
     const results = await Promise.all(candidates.map(async (item) => {
-      const response = await window.pinaic.gallery.loadImage(item.id);
+      const response = await window.imageStudio.gallery.loadImage(item.id);
       return { item, b64: response.b64 || "" };
     }));
     setCompare(results.filter((value) => Boolean(value.b64)));
@@ -207,7 +207,7 @@ export function GalleryWorkspace({
       onNotice("收件箱没有项目封面，请先把图片移入一个项目");
       return;
     }
-    const response = await window.pinaic.projects.setCover(item.recipe.projectId, item.id);
+    const response = await window.imageStudio.projects.setCover(item.recipe.projectId, item.id);
     onNotice(response.ok ? "已设为项目封面" : response.error || "设置失败");
     await refresh(0);
   };
@@ -354,7 +354,7 @@ export function GalleryWorkspace({
                   <summary>更多操作</summary>
                   <div>
                     <button onClick={() => onVariation(item)}>创建变体</button>
-                    <button onClick={() => void window.pinaic.gallery.toggleFavorite(item.id).then(() => refresh(0))}>
+                    <button onClick={() => void window.imageStudio.gallery.toggleFavorite(item.id).then(() => refresh(0))}>
                       {item.favorite ? "取消收藏" : "收藏"}
                     </button>
                     <button onClick={() => void updateMetadata(item)}>编辑信息</button>

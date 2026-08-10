@@ -22,5 +22,5 @@ if not exist "dist\index.html" (
   )
 )
 
-start "PinAI Image Studio" /D "%CD%" "%CD%\node_modules\electron\dist\electron.exe" .
+start "AI Image Studio" /D "%CD%" "%CD%\node_modules\electron\dist\electron.exe" .
 exit /b 0

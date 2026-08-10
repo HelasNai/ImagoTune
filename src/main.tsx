@@ -191,7 +191,7 @@ async function resizeMaskToMatch(mask: File, target: File) {
   context.drawImage(maskImage, 0, 0, canvas.width, canvas.height);
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
   if (!blob) throw new Error("无法导出匹配尺寸的蒙版");
-  return new File([blob], "pinaic-matched-mask.png", { type: "image/png" });
+  return new File([blob], "image-studio-matched-mask.png", { type: "image/png" });
 }
 
 async function prepareVisionUpload(file: File) {
@@ -264,7 +264,7 @@ async function createReferenceBoard(main: File, references: File[]) {
     canvas.toBlob(resolve, "image/jpeg", 0.92),
   );
   return blob
-    ? new File([blob], "pinaic-reference-board.jpg", { type: "image/jpeg" })
+    ? new File([blob], "image-studio-reference-board.jpg", { type: "image/jpeg" })
     : main;
 }
 
@@ -323,7 +323,9 @@ function App() {
   const [socialFill, setSocialFill] = useState<"light" | "blur">("light");
   const [configured, setConfigured] = useState(false);
   const [apiKey, setApiKey] = useState("");
-  const [baseUrl, setBaseUrl] = useState("https://api.pinaic.com/v1");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [imageModel, setImageModel] = useState("gpt-image-2");
+  const [chatModel, setChatModel] = useState("gpt-4o");
   const [autoArchive, setAutoArchive] = useState(true);
   const [saveDir, setSaveDir] = useState("");
   const [testMessage, setTestMessage] = useState("");
@@ -378,7 +380,7 @@ function App() {
 
   const refreshWorkspace = useCallback(async () => {
     try {
-      const workspace = await window.pinaic.gallery.workspace();
+      const workspace = await window.imageStudio.gallery.workspace();
       setProjects(workspace.projects || []);
       if (!workspace.projects.some((project) => project.id === projectId)) {
         setProjectId("inbox");
@@ -388,19 +390,21 @@ function App() {
     }
   }, [projectId]);
   const refreshQueue = useCallback(async () => {
-    const result = await window.pinaic.queue.list();
+    const result = await window.imageStudio.queue.list();
     setQueueItems(result.items || []);
   }, []);
 
   useEffect(() => {
-    void window.pinaic.settings.get().then((value) => {
+    void window.imageStudio.settings.get().then((value) => {
       setConfigured(value.configured);
       setBaseUrl(value.baseUrl);
+      setImageModel(value.imageModel);
+      setChatModel(value.chatModel);
       setAutoArchive(value.autoArchive);
       setSaveDir(value.saveDir || "");
     });
-    void window.pinaic.templates.list().then((value) => setTemplates(value.items));
-    void window.pinaic.updates.get().then((value) => {
+    void window.imageStudio.templates.list().then((value) => setTemplates(value.items));
+    void window.imageStudio.updates.get().then((value) => {
       setCheckUpdatesAtStartup(value.checkAtStartup);
       setAppVersion(value.appVersion);
       setUpdateStatus(value.status);
@@ -428,14 +432,14 @@ function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [exportOutput, preview]);
 
-  useEffect(() => window.pinaic.onUpdateStatus((value) => setUpdateStatus(value)), []);
+  useEffect(() => window.imageStudio.onUpdateStatus((value) => setUpdateStatus(value)), []);
 
   useEffect(() => {
-    const offProgress = window.pinaic.onProgress((value) => {
+    const offProgress = window.imageStudio.onProgress((value) => {
       if (value.requestId === requestId) setProgress(value);
     });
-    const offQueue = window.pinaic.onQueueUpdate((value) => setQueueItems(value));
-    const offResult = window.pinaic.onQueueResult((value) => {
+    const offQueue = window.imageStudio.onQueueUpdate((value) => setQueueItems(value));
+    const offResult = window.imageStudio.onQueueResult((value) => {
       const result = value.result;
       const gallery = result.gallery || [];
       const input = value.job.input;
@@ -466,7 +470,7 @@ function App() {
       }
       void refreshWorkspace();
     });
-    const offError = window.pinaic.onQueueError((job) => {
+    const offError = window.imageStudio.onQueueError((job) => {
       if (job.id === activeJobId) {
         setActiveJobId("");
         setErrorInfo(job.errorInfo || null);
@@ -513,7 +517,7 @@ function App() {
     if (update && (!selected || selected.builtin)) return;
     const title = update ? selected!.title : window.prompt("模板名称", kind === "negative" ? "我的负面词" : "我的模板");
     if (!title?.trim()) return;
-    const result = await window.pinaic.templates.save({
+    const result = await window.imageStudio.templates.save({
       id: update ? selected!.id : undefined,
       title,
       category: "自定义",
@@ -535,7 +539,7 @@ function App() {
     const selectedId = kind === "negative" ? selectedNegativeTemplate : selectedTemplate;
     const item = templates.find((value) => value.id === selectedId && value.kind === kind);
     if (!item || item.builtin || !window.confirm("删除模板“" + item.title + "”吗？")) return;
-    await window.pinaic.templates.delete(item.id);
+    await window.imageStudio.templates.delete(item.id);
     setTemplates((current) => current.filter((value) => value.id !== item.id));
     if (kind === "negative") setSelectedNegativeTemplate("");
     else setSelectedTemplate("");
@@ -558,7 +562,7 @@ function App() {
     }
     setEnhancing(true);
     setError("");
-    const result = await window.pinaic.prompt.enhance({
+    const result = await window.imageStudio.prompt.enhance({
       prompt,
       mode: mode === "edit" ? "edit" : "generate",
     });
@@ -569,7 +573,7 @@ function App() {
     }
     setOriginalPrompt(prompt);
     setPrompt(result.prompt);
-    setNotice("已通过 gpt-4o 增强提示词");
+    setNotice("已通过 " + chatModel + " 增强提示词");
   };
 
   const reversePrompt = async () => {
@@ -580,7 +584,7 @@ function App() {
     setErrorInfo(null);
     try {
       const prepared = await prepareVisionUpload(reverseImage);
-      const result = await window.pinaic.prompt.reverse({ image: await fileToPayload(prepared) });
+      const result = await window.imageStudio.prompt.reverse({ image: await fileToPayload(prepared) });
       if (!result.ok) { setError(result.error || "图反推失败，原提示词未改变"); return; }
       setReverseResult({ zh: result.zh || "", en: result.en || "" });
       setNotice("已生成中英文反推提示词，原提示词尚未改变");
@@ -616,6 +620,10 @@ function App() {
     const activeN = override.n ?? n;
     const activeProject = override.projectId || projectId;
     const activeTags = override.tags || parseTags(tagsText);
+    if (!imageModel.trim()) {
+      setError("请先在设置中填写图片模型名称");
+      return;
+    }
     const sourceImage = override.image === undefined ? image : override.image;
     let suppliedMask = override.mask === undefined ? (paintedMask || externalMask) : override.mask;
 
@@ -669,7 +677,7 @@ function App() {
           ? outpaintFromPercent(source.naturalWidth, source.naturalHeight, outpaintMargins)
           : outpaintToSize(source.naturalWidth, source.naturalHeight, outpaintTargetSize);
         if (!layoutResult.ok) { setError(layoutResult.error); return; }
-        const validation = await window.pinaic.outpaint.prepare({ sourceWidth: source.naturalWidth, sourceHeight: source.naturalHeight, targetSize: layoutResult.layout.targetSize });
+        const validation = await window.imageStudio.outpaint.prepare({ sourceWidth: source.naturalWidth, sourceHeight: source.naturalHeight, targetSize: layoutResult.layout.targetSize });
         if (!validation.ok) { setError(validation.error || "扩图尺寸无效"); return; }
         const files = await createOutpaintFiles(prepared, layoutResult.layout);
         preparedImage = files.image;
@@ -694,7 +702,7 @@ function App() {
       version: 1,
       prompt: activePrompt,
       negativePrompt: activeNegativePrompt,
-      model: "gpt-image-2",
+      model: imageModel.trim(),
       size: finalSize,
       n: activeMode === "generate" ? activeN : 1,
       quality: activeQuality,
@@ -722,7 +730,7 @@ function App() {
         payload.mask = await fileToPayload(maskFile);
       }
     }
-    const result = await window.pinaic.queue.enqueue({ kind: activeMode === "generate" ? "generate" : "edit", payload });
+    const result = await window.imageStudio.queue.enqueue({ kind: activeMode === "generate" ? "generate" : "edit", payload });
     if (!result.ok || !result.job) {
       setError(result.error || "无法创建任务");
       return;
@@ -737,7 +745,7 @@ function App() {
 
   const cancelActive = async () => {
     if (!activeJobId) return;
-    const result = await window.pinaic.queue.cancel(activeJobId);
+    const result = await window.imageStudio.queue.cancel(activeJobId);
     if (!result.ok) setError(result.error || "取消失败");
     else setNotice("已取消当前任务");
   };
@@ -783,7 +791,7 @@ function App() {
     setMode("edit");
     setPrompt(recipe.prompt);
     setNegativePrompt(recipe.negativePrompt);
-    setImage(b64ToFile(output.b64, "pinaic-source.png"));
+    setImage(b64ToFile(output.b64, "image-studio-source.png"));
     if (recipe.ratio) setRatio(recipe.ratio);
     if (recipe.resolution) setResolution(recipe.resolution);
     if (recipe.quality) setQuality(recipe.quality);
@@ -797,7 +805,7 @@ function App() {
     setMode("outpaint");
     setPrompt(recipe.prompt);
     setNegativePrompt(recipe.negativePrompt);
-    setImage(b64ToFile(output.b64, "pinaic-outpaint-source.png"));
+    setImage(b64ToFile(output.b64, "image-studio-outpaint-source.png"));
     setProjectId(recipe.projectId || "inbox");
     setTagsText(recipe.tags.join("，"));
     setOutpaintStrategy("percent");
@@ -825,9 +833,9 @@ function App() {
   };
 
   const saveOutput = async (output: Output) => {
-    const result = await window.pinaic.saveImage({
+    const result = await window.imageStudio.saveImage({
       dataUrl: dataUrlFor(output),
-      suggestedName: "pinaic-" + new Date(output.createdAt).toISOString().replace(/[:.]/g, "-") + ".png",
+      suggestedName: "image-studio-" + new Date(output.createdAt).toISOString().replace(/[:.]/g, "-") + ".png",
       recipe: output.recipe,
     });
     if (!result.canceled) setNotice("已保存：" + (result.path || ""));
@@ -837,9 +845,9 @@ function App() {
     if (!exportOutput) return;
     try {
       const dataUrl = await exportSocialCanvas(exportOutput, socialPreset, socialFill);
-      const result = await window.pinaic.saveImage({
+      const result = await window.imageStudio.saveImage({
         dataUrl,
-        suggestedName: "pinaic-social-" + socialPreset + ".png",
+        suggestedName: "image-studio-social-" + socialPreset + ".png",
         recipe: { ...exportOutput.recipe, size: socialPreset },
       });
       if (!result.canceled) {
@@ -852,11 +860,24 @@ function App() {
   };
 
   const saveSettings = async () => {
+    if (!baseUrl.trim()) {
+      setError("请输入 API Base URL");
+      return;
+    }
+    try { new URL(baseUrl.trim()); } catch { setError("API Base URL 格式无效"); return; }
     if (!apiKey.trim() && !configured) {
       setError("请输入 API 密钥");
       return;
     }
-    await window.pinaic.settings.save({ apiKey, baseUrl, autoArchive });
+    if (!imageModel.trim()) {
+      setError("请输入图片模型名称");
+      return;
+    }
+    if (!chatModel.trim()) {
+      setError("请输入聊天模型名称");
+      return;
+    }
+    await window.imageStudio.settings.save({ apiKey, baseUrl, imageModel, chatModel, autoArchive });
     setConfigured(true);
     setApiKey("");
     setNotice("设置已保存，密钥不会显示在界面中");
@@ -864,13 +885,13 @@ function App() {
 
   const testSettings = async () => {
     setTestMessage("测试中…");
-    const result = await window.pinaic.settings.test();
+    const result = await window.imageStudio.settings.test();
     setTestMessage(result.message);
   };
 
   const setUpdateStartupPreference = async (enabled: boolean) => {
     setCheckUpdatesAtStartup(enabled);
-    const result = await window.pinaic.updates.setStartup(enabled);
+    const result = await window.imageStudio.updates.setStartup(enabled);
     if (!result.ok) {
       setCheckUpdatesAtStartup(!enabled);
       setError("无法保存更新检查设置");
@@ -879,17 +900,17 @@ function App() {
 
   const checkUpdates = async () => {
     setUpdateStatus((current) => ({ ...current, phase: "checking", message: "正在检查更新…" }));
-    const result = await window.pinaic.updates.check();
+    const result = await window.imageStudio.updates.check();
     if (!result.ok) setUpdateStatus((current) => ({ ...current, phase: "error", message: result.message }));
   };
 
   const downloadUpdate = async () => {
-    const result = await window.pinaic.updates.download();
+    const result = await window.imageStudio.updates.download();
     if (!result.ok) setError(result.message);
   };
 
   const installUpdate = async () => {
-    const result = await window.pinaic.updates.install();
+    const result = await window.imageStudio.updates.install();
     if (!result.ok) setError(result.message);
   };
 
@@ -996,13 +1017,13 @@ function App() {
         <button onClick={() => optimizeLocal("realistic")}>更写实</button>
         <button onClick={() => optimizeLocal("premium")}>更高级</button>
         <button className="assistant-ai" onClick={() => void enhanceOnline()} disabled={enhancing}>
-          {enhancing ? "AI 增强中…" : "AI 增强 · gpt-4o"}
+          {enhancing ? "AI 增强中…" : "AI 增强 · " + chatModel}
         </button>
         {originalPrompt && <button onClick={() => setPrompt(originalPrompt)}>恢复原提示词</button>}
       </div>
 
       <details className="reverse-prompt">
-        <summary>图反推提示词 · gpt-4o</summary>
+        <summary>图反推提示词 · {chatModel}</summary>
         <div className="reverse-upload-row">
           <label className="upload ghost">
             {reverseImage ? "待分析：" + reverseImage.name : "选择需要反推的图片"}
@@ -1014,7 +1035,7 @@ function App() {
           {[{ key: "zh", label: "中文提示词", value: reverseResult.zh }, { key: "en", label: "English Prompt", value: reverseResult.en }].map((item) => item.value && (
             <article key={item.key}>
               <strong>{item.label}</strong><p>{item.value}</p>
-              <div><button onClick={() => applyReversePrompt(item.value, "replace")}>替换当前</button><button onClick={() => applyReversePrompt(item.value, "append")}>追加</button><button onClick={() => void window.pinaic.clipboard.copyText(item.value).then(() => setNotice("反推提示词已复制"))}>复制</button></div>
+              <div><button onClick={() => applyReversePrompt(item.value, "replace")}>替换当前</button><button onClick={() => applyReversePrompt(item.value, "append")}>追加</button><button onClick={() => void window.imageStudio.clipboard.copyText(item.value).then(() => setNotice("反推提示词已复制"))}>复制</button></div>
             </article>
           ))}
         </div>}
@@ -1172,12 +1193,12 @@ function App() {
                 <strong>{output.recipe.variationLabel || (output.recipe.mode === "outpaint" ? "智能扩图" : "新生成图片")}</strong>
                 <small>{output.recipe.size} · {output.recipe.projectId}{output.recipe.seed ? " · Seed " + output.recipe.seed : ""}</small>
               </div>
-              {output.recipe.seed && <button className="seed-chip" onClick={() => void window.pinaic.clipboard.copyText(output.recipe.seed!).then(() => setNotice("Seed 已复制"))}>Seed：{output.recipe.seed} · 点击复制</button>}
+              {output.recipe.seed && <button className="seed-chip" onClick={() => void window.imageStudio.clipboard.copyText(output.recipe.seed!).then(() => setNotice("Seed 已复制"))}>Seed：{output.recipe.seed} · 点击复制</button>}
               <div className="result-actions">
                 <button onClick={() => void saveOutput(output)}>保存 PNG</button>
-                <button onClick={() => void window.pinaic.clipboard.copyImage(output.b64).then(() => setNotice("图片已复制到剪贴板"))}>复制图片</button>
-                <button onClick={() => void window.pinaic.clipboard.copyText(output.recipe.prompt).then(() => setNotice("提示词已复制"))}>复制提示词</button>
-                <button onClick={() => void window.pinaic.clipboard.copyText(formatGenerationParameters(output.recipe)).then(() => setNotice("完整参数已复制"))}>复制参数</button>
+                <button onClick={() => void window.imageStudio.clipboard.copyImage(output.b64).then(() => setNotice("图片已复制到剪贴板"))}>复制图片</button>
+                <button onClick={() => void window.imageStudio.clipboard.copyText(output.recipe.prompt).then(() => setNotice("提示词已复制"))}>复制提示词</button>
+                <button onClick={() => void window.imageStudio.clipboard.copyText(formatGenerationParameters(output.recipe)).then(() => setNotice("完整参数已复制"))}>复制参数</button>
                 <button onClick={() => regenerate(output)}>再生成</button>
                 <button onClick={() => continueEdit(output)}>继续编辑</button>
                 <button onClick={() => startOutpaint(output)}>智能扩图</button>
@@ -1219,13 +1240,13 @@ function App() {
               </div>
               <div className="queue-actions">
                 {["failed", "interrupted", "cancelled"].includes(job.status) && (
-                  <button onClick={() => void window.pinaic.queue.retry(job.id)}>重试</button>
+                  <button onClick={() => void window.imageStudio.queue.retry(job.id)}>重试</button>
                 )}
                 {["queued", "running"].includes(job.status) && (
-                  <button onClick={() => void window.pinaic.queue.cancel(job.id)}>取消</button>
+                  <button onClick={() => void window.imageStudio.queue.cancel(job.id)}>取消</button>
                 )}
                 {job.status !== "running" && (
-                  <button onClick={() => void window.pinaic.queue.remove(job.id)}>移除</button>
+                  <button onClick={() => void window.imageStudio.queue.remove(job.id)}>移除</button>
                 )}
               </div>
             </article>
@@ -1240,17 +1261,21 @@ function App() {
       <span className="eyebrow">CONNECTION & STORAGE</span>
       <h2>连接设置</h2>
       <p className="muted">
-        API 密钥仅通过 Windows 凭据库保存；AI 提示词增强固定使用 gpt-4o，并且只在你点击“AI 增强”时调用。
+        支持符合当前请求格式的 OpenAI 兼容接口。API 密钥仅保存到 Windows 凭据库，不会显示原文或写入项目文件。
       </p>
-      <label>PinAI API 地址<input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} /></label>
+      <label>API Base URL<input placeholder="例如：https://api.example.com/v1" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} /></label>
       <label>API 密钥
         <input
           type="password"
-          placeholder={configured ? "已保存，输入新值可覆盖" : "粘贴你的 PinAI API 密钥"}
+          placeholder={configured ? "已保存，输入新值可覆盖" : "粘贴当前平台提供的 API 密钥"}
           value={apiKey}
           onChange={(event) => setApiKey(event.target.value)}
         />
       </label>
+      <div className="settings-models">
+        <label>图片模型<input placeholder="平台提供的图片模型名称" value={imageModel} onChange={(event) => setImageModel(event.target.value)} /></label>
+        <label>聊天模型<input placeholder="用于提示词增强和图反推" value={chatModel} onChange={(event) => setChatModel(event.target.value)} /></label>
+      </div>
       <label className="archive-toggle">
         <input type="checkbox" checked={autoArchive} onChange={(event) => setAutoArchive(event.target.checked)} />
         自动归档生成图片到本地图库与收件箱
@@ -1293,7 +1318,7 @@ function App() {
     <div className="app">
       <header>
         <div>
-          <span className="eyebrow">PINAI IMAGE STUDIO · V1.2.2</span>
+          <span className="eyebrow">AI IMAGE STUDIO · V1.3.0</span>
           <img className="brand-title" src={imaginationTitle} alt="把想象变成图片" />
           <p>本地创作工作台 · 提示词助手 · 项目图库 · 局部重绘 · 批量交付</p>
         </div>
@@ -1321,8 +1346,8 @@ function App() {
           <button className={mode === "queue" ? "nav active" : "nav"} onClick={() => setMode("queue")}>⇢ 任务队列</button>
           <button className={mode === "settings" ? "nav active" : "nav"} onClick={() => setMode("settings")}>⚙ 设置</button>
           <div className="aside-tip">
-            <span>当前模型</span><strong>gpt-image-2</strong>
-            <p>提示词增强：gpt-4o<br />图片、项目与队列均保存在本机。</p>
+            <span>当前模型</span><strong>{imageModel}</strong>
+            <p>提示词增强：{chatModel}<br />图片、项目与队列均保存在本机。</p>
           </div>
         </aside>
         <main>
@@ -1360,7 +1385,7 @@ function App() {
             >
               <button
                 onClick={() => {
-                  void window.pinaic.clipboard.copyImage(preview.b64).then(() => setNotice("图片已复制到剪贴板"));
+                  void window.imageStudio.clipboard.copyImage(preview.b64).then(() => setNotice("图片已复制到剪贴板"));
                   setPreviewContextMenu(null);
                 }}
               >

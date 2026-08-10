@@ -30,7 +30,7 @@ describe("gallery migration and search", () => {
   });
 
   it("preserves a corrupt index and rebuilds records from PNG recipes", async () => {
-    const directory = await mkdtemp(path.join(os.tmpdir(), "pinaic-gallery-recovery-"));
+    const directory = await mkdtemp(path.join(os.tmpdir(), "image-studio-gallery-recovery-"));
     try {
       const recipe = { version: 1 as const, prompt: "恢复海报", negativePrompt: "", model: "gpt-image-2", size: "1024x1024", n: 1, mode: "generate" as const, projectId: "inbox", tags: [], createdAt: "2025-01-01T00:00:00.000Z" };
       await writeFile(path.join(directory, "recovered.png"), embedRecipeInPng(onePixelPng, recipe));
