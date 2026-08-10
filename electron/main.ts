@@ -87,7 +87,7 @@ function createWindow() {
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false }
   });
   if (process.argv.includes("--dev")) win.loadURL(process.env.VITE_DEV_SERVER_URL || "http://127.0.0.1:5173");
-  else win.loadFile(path.join(__dirname, "../dist/index.html"));
+  else win.loadFile(path.join(__dirname, "../dist-renderer/index.html"));
 }
 
 async function storedCredential(account: string) {

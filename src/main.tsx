@@ -1318,7 +1318,7 @@ function App() {
     <div className="app">
       <header>
         <div>
-          <span className="eyebrow">AI IMAGE STUDIO · V{appVersion || "1.3.1"}</span>
+          <span className="eyebrow">AI IMAGE STUDIO · V{appVersion || "1.3.2"}</span>
           <img className="brand-title" src={imaginationTitle} alt="把想象变成图片" />
           <p>本地创作工作台 · 提示词助手 · 项目图库 · 局部重绘 · 批量交付</p>
         </div>

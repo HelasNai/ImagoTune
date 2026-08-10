@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-renderer/
 dist-electron/
 chat-tool/
 保存图片/

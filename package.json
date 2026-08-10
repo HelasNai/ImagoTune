@@ -1,6 +1,6 @@
 {
   "name": "ai-image-studio",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "description": "OpenAI-compatible local creative workspace for Windows",
   "author": "zztnbnb",
   "repository": {
@@ -13,7 +13,8 @@
     "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron . --dev\"",
     "build": "tsc -p tsconfig.json && vite build && tsc -p tsconfig.electron.json",
     "start": "electron .",
-    "package:win": "npm run build && electron-builder --win nsis --x64",
+    "package:win": "npm run build && electron-builder --win nsis --x64 && npm run package:verify",
+    "package:verify": "node tools/verify-package.cjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "test": "vitest run"
   },
@@ -21,6 +22,7 @@
     "@types/archiver": "^6.0.2",
     "@vitejs/plugin-react": "^4.3.4",
     "archiver": "^7.0.1",
+    "archiver-utils": "^5.0.2",
     "electron-updater": "^6.3.9",
     "keytar": "^7.9.0",
     "react": "^18.3.1",
@@ -68,6 +70,7 @@
     }
   },
   "devDependencies": {
+    "@electron/asar": "^3.4.1",
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",

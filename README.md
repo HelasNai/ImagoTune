@@ -1,6 +1,12 @@
 # AI Image Studio
 
-AI Image Studio v1.3.1 是一款面向 Windows 的本地 AI 图片创作工作台。应用使用 Electron + React，可连接符合当前请求格式的 OpenAI 兼容服务，覆盖图片生成、图片编辑、智能扩图、项目图库、任务队列和成品交付。
+AI Image Studio v1.3.2 是一款面向 Windows 的本地 AI 图片创作工作台。应用使用 Electron + React，可连接符合当前请求格式的 OpenAI 兼容服务，覆盖图片生成、图片编辑、智能扩图、项目图库、任务队列和成品交付。
+
+## v1.3.2 修复
+
+- 修复 GitHub 安装包启动时提示 `Cannot find module 'archiver-utils'` 的主进程崩溃。
+- 分离网页构建目录与安装包输出目录，修复打包后页面资源丢失导致的空白窗口。
+- 新增安装包完整性校验：解开 `app.asar`，验证页面资源链，并实际加载 ZIP 模块创建测试压缩包。
 
 ## v1.3.1 更新
 
@@ -109,7 +115,7 @@ npm.cmd run package:win
 安装包输出示例：
 
 ```text
-dist\AI-Image-Studio-Setup-1.3.1.exe
+dist\AI-Image-Studio-Setup-1.3.2.exe
 ```
 
 ## 项目结构
