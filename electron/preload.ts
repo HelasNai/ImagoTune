@@ -4,6 +4,9 @@ contextBridge.exposeInMainWorld("imageStudio", {
   settings: {
     get: () => ipcRenderer.invoke("settings:get"),
     save: (input: { apiKey: string; baseUrl: string; imageModel: string; chatModel: string; autoArchive?: boolean }) => ipcRenderer.invoke("settings:save", input),
+    chooseSaveDir: () => ipcRenderer.invoke("settings:chooseSaveDir"),
+    resetSaveDir: () => ipcRenderer.invoke("settings:resetSaveDir"),
+    openSaveDir: () => ipcRenderer.invoke("settings:openSaveDir"),
     clear: () => ipcRenderer.invoke("settings:clear"),
     test: () => ipcRenderer.invoke("settings:test")
   },
@@ -31,7 +34,11 @@ contextBridge.exposeInMainWorld("imageStudio", {
     cancel: (id: string) => ipcRenderer.invoke("queue:cancel", id),
     remove: (id: string) => ipcRenderer.invoke("queue:remove", id)
   },
-  clipboard: { copyText: (value: string) => ipcRenderer.invoke("clipboard:copyText", value), copyImage: (b64: string) => ipcRenderer.invoke("clipboard:copyImage", b64) },
+  clipboard: {
+    copyText: (value: string) => ipcRenderer.invoke("clipboard:copyText", value),
+    copyImage: (b64: string) => ipcRenderer.invoke("clipboard:copyImage", b64),
+    readImage: () => ipcRenderer.invoke("clipboard:readImage"),
+  },
   gallery: {
     list: (input?: unknown) => ipcRenderer.invoke("gallery:list", input || {}),
     workspace: () => ipcRenderer.invoke("gallery:workspace"),

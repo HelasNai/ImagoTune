@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shell } from "electron";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { createWriteStream } from "node:fs";
@@ -55,13 +55,38 @@ async function archiveImages(images: ApiImage[], input: RequestInput | EditInput
   return galleryStore.addImages(images, { title: String(input.title || recipe.prompt.slice(0, 48)), recipe }, enabled);
 }
 
+function systemSaveDir() {
+  return path.join(app.getPath("pictures"), "AI Image Studio");
+}
+
 async function resolveSaveDir() {
+  const preferred = await storedCredential(`${ACCOUNT}:saveDir`);
+  if (preferred) {
+    try {
+      await fs.mkdir(preferred, { recursive: true });
+      return path.resolve(preferred);
+    } catch {
+      // The configured drive may be temporarily unavailable. Fall back safely.
+    }
+  }
   try {
     if ((await fs.stat(LEGACY_SAVE_DIR)).isDirectory()) return LEGACY_SAVE_DIR;
   } catch {
     // 新安装设备通常没有开发机的 D 盘目录，改用系统“图片”文件夹。
   }
-  return path.join(app.getPath("pictures"), "AI Image Studio");
+  return systemSaveDir();
+}
+
+async function activateSaveDirectory(directory: string) {
+  const nextSaveDir = path.resolve(directory);
+  const nextGalleryDir = path.join(nextSaveDir, "图库");
+  await fs.mkdir(nextGalleryDir, { recursive: true });
+  const nextGalleryStore = createGalleryStore(nextGalleryDir);
+  await nextGalleryStore.readState();
+  saveDir = nextSaveDir;
+  galleryDir = nextGalleryDir;
+  galleryStore = nextGalleryStore;
+  return saveDir;
 }
 async function templatesFile() { return path.join(app.getPath("userData"), "image-studio-templates.json"); }
 async function readCustomTemplates(): Promise<PromptTemplate[]> {
@@ -415,9 +440,7 @@ async function processQueue() {
   finally { const current = (await queueStore.read()).find(item => item.id === running.id); if (current?.status === "completed") await queueStore.removeAssets(running); activeQueueJobId = null; broadcast("queue:update", await queueStore.read()); void processQueue(); }
 }
 app.whenReady().then(async () => {
-  saveDir = await resolveSaveDir();
-  galleryDir = path.join(saveDir, "图库");
-  galleryStore = createGalleryStore(galleryDir);
+  await activateSaveDirectory(await resolveSaveDir());
   queueStore = createQueueStore(app.getPath("userData")); await queueStore.recover();
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: "文件", submenu: [{ label: "关闭窗口", role: "close" }] },
@@ -436,6 +459,37 @@ app.whenReady().then(async () => {
   ]));
   ipcMain.handle("settings:get", async () => { const c = await config(); return { configured: Boolean(c.apiKey && c.baseUrl), baseUrl: c.baseUrl, imageModel: c.imageModel, chatModel: c.chatModel, autoArchive: c.autoArchive, saveDir }; });
   ipcMain.handle("settings:save", async (_e, value: { apiKey: string; baseUrl: string; imageModel: string; chatModel: string; autoArchive?: boolean }) => { if (value.apiKey.trim()) await keytar.setPassword(SERVICE, ACCOUNT, value.apiKey.trim()); await keytar.setPassword(SERVICE, `${ACCOUNT}:baseUrl`, value.baseUrl.trim()); await keytar.setPassword(SERVICE, `${ACCOUNT}:imageModel`, value.imageModel.trim() || DEFAULT_IMAGE_MODEL); await keytar.setPassword(SERVICE, `${ACCOUNT}:chatModel`, value.chatModel.trim() || DEFAULT_CHAT_MODEL); await keytar.setPassword(SERVICE, `${ACCOUNT}:autoArchive`, value.autoArchive === false ? "false" : "true"); return { ok: true }; });
+  ipcMain.handle("settings:chooseSaveDir", async () => {
+    if (activeQueueJobId) return { ok: false, error: "当前有任务正在生成，请等待完成后再切换保存位置" };
+    const result = await dialog.showOpenDialog({
+      title: "选择 AI Image Studio 保存位置",
+      defaultPath: saveDir,
+      properties: ["openDirectory", "createDirectory"],
+    });
+    if (result.canceled || !result.filePaths[0]) return { ok: true, canceled: true, saveDir };
+    try {
+      const next = await activateSaveDirectory(result.filePaths[0]);
+      await keytar.setPassword(SERVICE, `${ACCOUNT}:saveDir`, next);
+      return { ok: true, canceled: false, saveDir: next };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message || "无法使用所选保存位置" };
+    }
+  });
+  ipcMain.handle("settings:resetSaveDir", async () => {
+    if (activeQueueJobId) return { ok: false, error: "当前有任务正在生成，请等待完成后再切换保存位置" };
+    try {
+      const next = await activateSaveDirectory(systemSaveDir());
+      await keytar.setPassword(SERVICE, `${ACCOUNT}:saveDir`, next);
+      return { ok: true, saveDir: next };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message || "无法恢复系统默认保存位置" };
+    }
+  });
+  ipcMain.handle("settings:openSaveDir", async () => {
+    await fs.mkdir(saveDir, { recursive: true });
+    const error = await shell.openPath(saveDir);
+    return error ? { ok: false, error } : { ok: true };
+  });
   ipcMain.handle("settings:clear", async () => { await Promise.all([keytar.deletePassword(SERVICE, ACCOUNT), keytar.deletePassword(LEGACY_SERVICE, ACCOUNT)]); return { ok: true }; });
   ipcMain.handle("settings:test", async () => { const c = await config(); if (!c.baseUrl) return { ok: false, message: "尚未配置 API Base URL" }; if (!c.apiKey) return { ok: false, message: "尚未配置 API 密钥" }; try { new URL(c.baseUrl); const r = await fetch(`${c.baseUrl.replace(/\/$/, "")}/models`, { headers: { Authorization: `Bearer ${c.apiKey}` }, signal: AbortSignal.timeout(20_000) }); return r.ok ? { ok: true, message: "连接成功" } : { ok: false, message: `接口返回 ${r.status}` }; } catch (e) { return { ok: false, message: (e as Error).message }; } });
   ipcMain.handle("updates:get", async () => ({ ok: true, appVersion: app.getVersion(), checkAtStartup: await checkUpdatesAtStartup(), supported: app.isPackaged, status: updateStatus }));
@@ -515,6 +569,12 @@ app.whenReady().then(async () => {
   ipcMain.handle("queue:remove", async (_e, id: string) => { const items = await queueStore.read(); const job = items.find(value => value.id === id); if (!job || job.status === "running") return { ok: false, error: "运行中的任务不可移除" }; await queueStore.remove(id); broadcast("queue:update", await queueStore.read()); return { ok: true }; });
   ipcMain.handle("clipboard:copyText", async (_e, value: string) => { clipboard.writeText(String(value || "")); return { ok: true }; });
   ipcMain.handle("clipboard:copyImage", async (_e, b64: string) => { const image = nativeImage.createFromBuffer(Buffer.from(String(b64 || "").replace(/^data:image\/\w+;base64,/, ""), "base64")); if (image.isEmpty()) return { ok: false, error: "图片数据无效" }; clipboard.writeImage(image); return { ok: true }; });
+  ipcMain.handle("clipboard:readImage", async () => {
+    const image = clipboard.readImage();
+    if (image.isEmpty()) return { ok: false, error: "剪贴板中没有可用图片" };
+    const png = image.toPNG();
+    return png.length ? { ok: true, b64: png.toString("base64") } : { ok: false, error: "无法读取剪贴板图片" };
+  });
   ipcMain.handle("gallery:exportZip", async (_e, ids: string[]) => {
     const state = await galleryStore.readState(); const selected = state.items.filter(item => (ids || []).includes(item.id)); if (!selected.length) return { ok: false, error: "未选择图片" }; await fs.mkdir(saveDir, { recursive: true }); const dialogResult = await dialog.showSaveDialog({ defaultPath: path.join(saveDir, `image-studio-${Date.now()}.zip`), filters: [{ name: "ZIP 文件", extensions: ["zip"] }] }); if (dialogResult.canceled || !dialogResult.filePath) return { ok: true, canceled: true };
     await new Promise<void>((resolve, reject) => { const output = createWriteStream(dialogResult.filePath!); const archive = archiver("zip", { zlib: { level: 9 } }); output.on("close", resolve); archive.on("error", reject); archive.pipe(output); for (const item of selected) archive.file(path.join(galleryDir, path.basename(item.fileName)), { name: `${item.title.replace(/[\\/:*?\"<>|]/g, "_") || item.id}.png` }); void archive.finalize(); }); return { ok: true, path: dialogResult.filePath, count: selected.length };

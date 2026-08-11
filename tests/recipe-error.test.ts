@@ -12,6 +12,14 @@ describe("recipe and error classification", () => {
     expect(recipe.negativePrompt).toBe("水印、乱码");
   });
 
+  it("preserves reference image metadata and adds the reference constraint once", () => {
+    const recipe = normalizeRecipe({ recipe: { prompt: "高级产品海报", referenceCount: 2 } });
+    const result = composeImagePrompt(recipe);
+    expect(recipe.referenceCount).toBe(2);
+    expect(result).toContain("已提供 2 张参考图");
+    expect(result.match(/参考图使用要求/g)).toHaveLength(1);
+  });
+
   it("classifies balance, content, rate limit and network failures", () => {
     expect(classifyHttpError(402, "insufficient balance").category).toBe("balance");
     expect(classifyHttpError(400, "content policy blocked").category).toBe("content");

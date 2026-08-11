@@ -26,6 +26,7 @@ export type ImageRecipeV1 = {
   createdAt: string;
   sourceId?: string;
   variationLabel?: string;
+  referenceCount?: number;
   seed?: string;
   outpaint?: OutpaintRecipe;
 };
@@ -70,6 +71,7 @@ export function normalizeRecipe(
     createdAt: stringValue(nested.createdAt, new Date().toISOString()),
     sourceId: stringValue(nested.sourceId) || undefined,
     variationLabel: stringValue(nested.variationLabel) || undefined,
+    referenceCount: Math.max(0, Math.min(3, Number(nested.referenceCount) || 0)) || undefined,
     seed: seedValue === undefined || seedValue === null || String(seedValue).trim() === ""
       ? undefined
       : String(seedValue),
@@ -82,6 +84,12 @@ export function composeImagePrompt(recipe: ImageRecipeV1) {
   if (recipe.negativePrompt.trim()) {
     sections.push("必须避免以下内容或缺陷：" + recipe.negativePrompt.trim() + "。不要在画面中呈现这些元素。");
   }
+  if (recipe.referenceCount) {
+    sections.push(
+      `参考图使用要求：已提供 ${recipe.referenceCount} 张参考图。请借鉴其构图、风格、配色或主体特征，` +
+      "但根据正面提示词生成新的完整画面，不要输出参考画板、分格布局、标注文字或图片边框。",
+    );
+  }
   if (recipe.ratio) {
     sections.push(
       "构图要求：严格使用 " + recipe.ratio + " 画面比例（" + recipe.size +
@@ -90,4 +98,3 @@ export function composeImagePrompt(recipe: ImageRecipeV1) {
   }
   return sections.filter(Boolean).join("\n\n");
 }
-

@@ -6,6 +6,9 @@ declare global {
       settings: {
         get: () => Promise<{ configured: boolean; baseUrl: string; imageModel: string; chatModel: string; autoArchive: boolean; saveDir: string }>;
         save: (input: { apiKey: string; baseUrl: string; imageModel: string; chatModel: string; autoArchive?: boolean }) => Promise<{ ok: boolean }>;
+        chooseSaveDir: () => Promise<{ ok: boolean; canceled?: boolean; saveDir?: string; error?: string }>;
+        resetSaveDir: () => Promise<{ ok: boolean; saveDir?: string; error?: string }>;
+        openSaveDir: () => Promise<{ ok: boolean; error?: string }>;
         clear: () => Promise<{ ok: boolean }>;
         test: () => Promise<{ ok: boolean; message: string }>;
       };
@@ -36,6 +39,7 @@ declare global {
       clipboard: {
         copyText: (value: string) => Promise<{ ok: boolean; error?: string }>;
         copyImage: (b64: string) => Promise<{ ok: boolean; error?: string }>;
+        readImage: () => Promise<{ ok: boolean; b64?: string; error?: string }>;
       };
       gallery: {
         list: (input?: unknown) => Promise<{ ok: boolean; items: GalleryItem[]; projects?: GalleryProject[]; total?: number; error?: string }>;
@@ -72,7 +76,7 @@ declare global {
   interface BinaryPayload { name: string; type: string; data: number[] }
   type RecipeMode = "generate" | "edit" | "outpaint";
   interface OutpaintRecipe { sourceSize: string; targetSize: string; top: number; right: number; bottom: number; left: number; preset?: string }
-  interface ImageRecipeV1 { version: 1; prompt: string; negativePrompt: string; model: string; size: string; ratio?: string; resolution?: string; quality?: string; n: number; mode: RecipeMode; projectId: string; tags: string[]; createdAt: string; sourceId?: string; variationLabel?: string; seed?: string; outpaint?: OutpaintRecipe }
+  interface ImageRecipeV1 { version: 1; prompt: string; negativePrompt: string; model: string; size: string; ratio?: string; resolution?: string; quality?: string; n: number; mode: RecipeMode; projectId: string; tags: string[]; createdAt: string; sourceId?: string; variationLabel?: string; referenceCount?: number; seed?: string; outpaint?: OutpaintRecipe }
   type GenerationErrorCategory = "network" | "authentication" | "balance" | "parameters" | "upload" | "content" | "rate_limit" | "timeout" | "server" | "cancelled" | "unknown";
   interface GenerationErrorInfo { category: GenerationErrorCategory; title: string; message: string; suggestion: string; retryable: boolean; status?: number; details?: string }
   interface ApiImage { b64_json?: string; url?: string; seed?: string | number }

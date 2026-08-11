@@ -117,11 +117,12 @@ function recipeFromQueueInput(input: Record<string, unknown>, kind: "generate" |
     createdAt: new Date().toISOString(),
     sourceId: typeof input.sourceId === "string" ? input.sourceId : undefined,
     variationLabel: typeof input.variationLabel === "string" ? input.variationLabel : undefined,
+    referenceCount: Number(input.referenceCount) || undefined,
   };
 }
 
 function recipeModeLabel(recipe: ImageRecipeV1) {
-  return recipe.mode === "outpaint" ? "智能扩图" : recipe.mode === "edit" ? "图片编辑" : "文生图";
+  return recipe.mode === "outpaint" ? "智能扩图" : recipe.referenceCount ? "参考图生成" : recipe.mode === "edit" ? "图片编辑" : "文生图";
 }
 
 function b64ToFile(b64: string, name: string) {
@@ -139,6 +140,15 @@ function fileToPayload(file: File) {
     });
     reader.onerror = () => reject(reader.error);
     reader.readAsArrayBuffer(file);
+  });
+}
+
+function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
   });
 }
 
@@ -235,7 +245,7 @@ function drawContain(
   );
 }
 
-async function createReferenceBoard(main: File, references: File[]) {
+async function createReferenceBoard(main: File, references: File[], kind: "edit" | "generate" = "edit") {
   if (!references.length) return main;
   const images = await Promise.all([main, ...references.slice(0, 3)].map(readImage));
   const canvas = document.createElement("canvas");
@@ -255,9 +265,11 @@ async function createReferenceBoard(main: File, references: File[]) {
     drawContain(context, image, x + 36, y + 80, 952, 896);
     context.fillStyle = "#1b2d4a";
     context.font = "bold 34px sans-serif";
-    const caption = index === 0
-      ? "主图：保持主体"
-      : "参考图 " + String(index) + "：借鉴风格 / 元素";
+    const caption = kind === "generate"
+      ? "参考图 " + String(index + 1) + "：借鉴风格 / 元素"
+      : index === 0
+        ? "主图：保持主体"
+        : "参考图 " + String(index) + "：借鉴风格 / 元素";
     context.fillText(caption, x + 42, y + 55);
   });
   const blob = await new Promise<Blob | null>((resolve) =>
@@ -266,6 +278,31 @@ async function createReferenceBoard(main: File, references: File[]) {
   return blob
     ? new File([blob], "image-studio-reference-board.jpg", { type: "image/jpeg" })
     : main;
+}
+
+function ReferenceThumbnail({
+  file,
+  index,
+  onCopy,
+  onRemove,
+}: {
+  file: File;
+  index: number;
+  onCopy: (file: File) => void;
+  onRemove: () => void;
+}) {
+  const [src, setSrc] = useState("");
+  useEffect(() => {
+    const url = URL.createObjectURL(file);
+    setSrc(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+  return <div className="reference-item">
+    <img src={src} alt={`参考图 ${index + 1}`} />
+    <div><strong>参考图 {index + 1}</strong><span title={file.name}>{file.name}</span></div>
+    <button type="button" onClick={() => onCopy(file)}>复制</button>
+    <button type="button" className="remove-reference" onClick={onRemove} aria-label={`移除参考图 ${index + 1}`}>×</button>
+  </div>;
 }
 
 async function exportSocialCanvas(output: Output, preset: string, fill: "light" | "blur") {
@@ -600,6 +637,39 @@ function App() {
     setNotice(action === "append" ? "反推提示词已追加" : "反推提示词已替换当前内容");
   };
 
+  const addReferenceFiles = (files: File[]) => {
+    const images = files.filter((file) => file.type.startsWith("image/"));
+    if (!images.length) {
+      setError("请选择有效的图片文件");
+      return;
+    }
+    const combined = [...references, ...images].filter((file, index, all) =>
+      all.findIndex((item) => item.name === file.name && item.size === file.size && item.lastModified === file.lastModified) === index,
+    );
+    setReferences(combined.slice(0, 3));
+    setError("");
+    setNotice(combined.length > 3 ? "最多使用 3 张参考图，超出的图片未导入" : `已添加 ${Math.min(combined.length, 3)} 张参考图`);
+  };
+
+  const pasteReferenceImage = async () => {
+    const result = await window.imageStudio.clipboard.readImage();
+    if (!result.ok || !result.b64) {
+      setError(result.error || "剪贴板中没有可用图片");
+      return;
+    }
+    addReferenceFiles([b64ToFile(result.b64, `clipboard-reference-${Date.now()}.png`)]);
+  };
+
+  const copyReferenceImage = async (file: File) => {
+    try {
+      const result = await window.imageStudio.clipboard.copyImage(await fileToDataUrl(file));
+      if (!result.ok) throw new Error(result.error || "复制失败");
+      setNotice("参考图已复制到剪贴板");
+    } catch (cause) {
+      setError((cause as Error).message || "无法复制参考图");
+    }
+  };
+
   const chooseOutpaintPreset = (preset: string) => {
     if (!sourceDimensions) { setError("请先上传扩图原图"); return; }
     const size = targetSizeForRatio(sourceDimensions.width, sourceDimensions.height, preset);
@@ -626,6 +696,8 @@ function App() {
     }
     const sourceImage = override.image === undefined ? image : override.image;
     let suppliedMask = override.mask === undefined ? (paintedMask || externalMask) : override.mask;
+    const referenceGeneration = activeMode === "generate" && references.length > 0;
+    if (referenceGeneration) suppliedMask = null;
 
     if (!activePrompt) {
       setError("请先输入提示词");
@@ -665,6 +737,10 @@ function App() {
     let preparedImage: File | null = null;
     let outpaintRecipe: OutpaintRecipe | undefined;
     try {
+      if (referenceGeneration) {
+        const preparedReferences = await Promise.all(references.map((file) => prepareUpload(file)));
+        preparedImage = await createReferenceBoard(preparedReferences[0], preparedReferences.slice(1), "generate");
+      }
       if (activeMode === "edit" && sourceImage) {
         const prepared = await prepareUpload(sourceImage);
         preparedImage = await createReferenceBoard(prepared, references);
@@ -704,7 +780,7 @@ function App() {
       negativePrompt: activeNegativePrompt,
       model: imageModel.trim(),
       size: finalSize,
-      n: activeMode === "generate" ? activeN : 1,
+      n: activeMode === "generate" && !referenceGeneration ? activeN : 1,
       quality: activeQuality,
       ratio: finalRatio,
       resolution: activeResolution,
@@ -714,6 +790,7 @@ function App() {
       createdAt: new Date().toISOString(),
       sourceId: override.sourceId,
       variationLabel: override.variationLabel,
+      referenceCount: activeMode === "outpaint" ? undefined : references.length || undefined,
       outpaint: outpaintRecipe,
     };
     const payload: Record<string, unknown> = {
@@ -721,7 +798,7 @@ function App() {
       recipe,
       title: activePrompt.slice(0, 48),
     };
-    if (activeMode !== "generate" && preparedImage) {
+    if ((activeMode !== "generate" || referenceGeneration) && preparedImage) {
       payload.image = await fileToPayload(preparedImage);
       if (suppliedMask) {
         const maskFile = suppliedMask.type === "image/png"
@@ -730,7 +807,7 @@ function App() {
         payload.mask = await fileToPayload(maskFile);
       }
     }
-    const result = await window.imageStudio.queue.enqueue({ kind: activeMode === "generate" ? "generate" : "edit", payload });
+    const result = await window.imageStudio.queue.enqueue({ kind: activeMode === "generate" && !referenceGeneration ? "generate" : "edit", payload });
     if (!result.ok || !result.job) {
       setError(result.error || "无法创建任务");
       return;
@@ -883,6 +960,36 @@ function App() {
     setNotice("设置已保存，密钥不会显示在界面中");
   };
 
+  const chooseSaveDirectory = async () => {
+    const result = await window.imageStudio.settings.chooseSaveDir();
+    if (!result.ok) {
+      setError(result.error || "无法修改保存位置");
+      return;
+    }
+    if (result.canceled || !result.saveDir) return;
+    setSaveDir(result.saveDir);
+    setProjectId("inbox");
+    await refreshWorkspace();
+    setNotice("保存位置已切换；原目录文件不会移动或删除");
+  };
+
+  const resetSaveDirectory = async () => {
+    const result = await window.imageStudio.settings.resetSaveDir();
+    if (!result.ok || !result.saveDir) {
+      setError(result.error || "无法恢复系统默认保存位置");
+      return;
+    }
+    setSaveDir(result.saveDir);
+    setProjectId("inbox");
+    await refreshWorkspace();
+    setNotice("已恢复系统“图片”文件夹中的默认保存位置");
+  };
+
+  const openSaveDirectory = async () => {
+    const result = await window.imageStudio.settings.openSaveDir();
+    if (!result.ok) setError(result.error || "无法打开保存位置");
+  };
+
   const testSettings = async () => {
     setTestMessage("测试中…");
     const result = await window.imageStudio.settings.test();
@@ -952,7 +1059,7 @@ function App() {
           <span className="eyebrow">{mode === "outpaint" ? "SMART OUTPAINT" : mode === "edit" ? "IMAGE EDIT" : "CREATE STUDIO"}</span>
           <h2>{mode === "outpaint" ? "智能扩展画面" : mode === "edit" ? "编辑与局部重绘" : "描述你想要的画面"}</h2>
         </div>
-        <span className="pill">{mode === "outpaint" ? "透明画布 + 自动蒙版" : mode === "edit" ? "原图 + 蒙版 + 参考图" : "提示词 + 变体 + 队列"}</span>
+        <span className="pill">{mode === "outpaint" ? "透明画布 + 自动蒙版" : mode === "edit" ? "原图 + 蒙版 + 参考图" : "提示词 + 参考图 + 队列"}</span>
       </div>
 
       <div className="project-strip">
@@ -1052,29 +1159,44 @@ function App() {
               {externalMask ? "外部蒙版：" + externalMask.name : "可选外部蒙版"}
               <input type="file" accept="image/*" onChange={(event) => setExternalMask(event.target.files?.[0] || null)} />
             </label>}
-            {mode === "edit" && <label className="upload ghost">
-              添加参考图（{references.length}/3）
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={(event) => setReferences(Array.from(event.target.files || []).slice(0, 3))}
-              />
-            </label>}
           </div>
-          {mode === "edit" && references.length > 0 && (
-            <div className="reference-list">
-              {references.map((file, index) => (
-                <span key={file.name + String(index)}>
-                  参考图 {index + 1}：{file.name}
-                  <button onClick={() => setReferences((current) => current.filter((_, value) => value !== index))}>×</button>
-                </span>
-              ))}
-            </div>
-          )}
           {mode === "edit" && <MaskPainter image={image} onMaskChange={maskChange} />}
         </>
       )}
+
+      {(mode === "generate" || mode === "edit") && <section className="reference-panel">
+        <div className="reference-head">
+          <div>
+            <strong>参考图片 <span>{references.length}/3</span></strong>
+            <small>{mode === "generate" ? "可参考构图、风格、配色或主体特征生成新画面" : "与原图合成参考画板，帮助模型理解风格和元素"}</small>
+          </div>
+          <div className="reference-actions">
+            <label className="upload ghost">
+              导入图片
+              <input type="file" accept="image/*" multiple onChange={(event) => {
+                addReferenceFiles(Array.from(event.target.files || []));
+                event.currentTarget.value = "";
+              }} />
+            </label>
+            <button type="button" className="secondary" onClick={() => void pasteReferenceImage()}>从剪贴板粘贴</button>
+            {references.length > 0 && <button type="button" className="secondary" onClick={() => setReferences([])}>清空</button>}
+          </div>
+        </div>
+        {references.length > 0 ? <div className="reference-grid">
+          {references.map((file, index) => <ReferenceThumbnail
+            key={`${file.name}-${file.size}-${file.lastModified}`}
+            file={file}
+            index={index}
+            onCopy={(value) => void copyReferenceImage(value)}
+            onRemove={() => setReferences((current) => current.filter((_, value) => value !== index))}
+          />)}
+        </div> : <button type="button" className="reference-empty" onClick={() => void pasteReferenceImage()}>
+          剪贴板中已有图片时，可直接点击这里粘贴
+        </button>}
+        <p>{mode === "generate"
+          ? "添加参考图后会自动使用兼容图片编辑接口，一次生成 1 张；不添加时仍使用普通文生图接口。"
+          : "局部蒙版与多参考图不能同时提交；需要局部修改时请先移除参考图。"}</p>
+      </section>}
 
       {mode === "outpaint" && <section className="outpaint-panel">
         <div className="outpaint-head"><div><strong>扩图画布</strong><small>{sourceDimensions ? `原图 ${sourceDimensions.width}x${sourceDimensions.height}` : "上传原图后可设置目标画布"}</small></div><span>仅扩展，不裁剪</span></div>
@@ -1116,7 +1238,7 @@ function App() {
           </select>
         </label>
         <label>数量
-          <select value={n} onChange={(event) => setN(Number(event.target.value))} disabled={mode !== "generate"}>
+          <select value={references.length && mode === "generate" ? 1 : n} onChange={(event) => setN(Number(event.target.value))} disabled={mode !== "generate" || references.length > 0}>
             {[1, 2, 3, 4].map((value) => <option key={value} value={value}>{value} 张</option>)}
           </select>
         </label>
@@ -1149,7 +1271,7 @@ function App() {
       )}
       <div className="run-row">
         <button className="primary generate" onClick={() => void enqueue()} disabled={isEnqueueing}>
-          {isEnqueueing ? "正在准备任务…" : activeJobId ? "继续加入队列" : mode === "outpaint" ? "加入扩图队列" : mode === "edit" ? "加入编辑队列" : "加入生成队列"}
+          {isEnqueueing ? "正在准备任务…" : activeJobId ? "继续加入队列" : mode === "outpaint" ? "加入扩图队列" : mode === "edit" ? "加入编辑队列" : references.length ? "加入参考图生成队列" : "加入生成队列"}
         </button>
         {activeJobId && <button className="secondary" onClick={() => void cancelActive()}>取消任务</button>}
         <span className="save-note">
@@ -1280,7 +1402,18 @@ function App() {
         <input type="checkbox" checked={autoArchive} onChange={(event) => setAutoArchive(event.target.checked)} />
         自动归档生成图片到本地图库与收件箱
       </label>
-      {saveDir && <div className="storage-path"><strong>本地保存位置</strong><code>{saveDir}</code><small>旧版图库存在时会继续沿用；新安装设备默认使用系统“图片”文件夹。</small></div>}
+      {saveDir && <div className="storage-path">
+        <div className="storage-head">
+          <strong>本地保存位置</strong>
+          <div className="storage-actions">
+            <button type="button" onClick={() => void chooseSaveDirectory()}>选择文件夹</button>
+            <button type="button" onClick={() => void openSaveDirectory()}>打开目录</button>
+            <button type="button" onClick={() => void resetSaveDirectory()}>恢复默认</button>
+          </div>
+        </div>
+        <code>{saveDir}</code>
+        <small>新图片、自动图库和导出文件将使用此位置；切换目录不会移动或删除原目录中的文件。</small>
+      </div>}
       <section className="update-settings">
         <div>
           <span className="eyebrow">APPLICATION UPDATE</span>
