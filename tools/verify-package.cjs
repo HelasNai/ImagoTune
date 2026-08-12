@@ -41,6 +41,14 @@ function verifyRendererAssets(packageRoot) {
       throw new Error(`Packaged renderer asset is missing or invalid: ${reference}`);
     }
   }
+
+  const assetNames = fs.readdirSync(path.join(rendererRoot, "assets"));
+  if (!assetNames.some((name) => name.startsWith("local-ai.worker-") && name.endsWith(".js"))) {
+    throw new Error("Packaged local AI worker bundle is missing.");
+  }
+  if (!assetNames.some((name) => name.startsWith("ort-wasm-") && name.endsWith(".wasm"))) {
+    throw new Error("Packaged ONNX Runtime WASM fallback is missing.");
+  }
 }
 
 async function main() {
@@ -69,7 +77,7 @@ async function main() {
 
     verifyRendererAssets(packageRoot);
     await verifyArchiveModule(packageRoot, tempRoot);
-    console.log("Packaged runtime verification passed: renderer assets load and archiver creates a ZIP file.");
+    console.log("Packaged runtime verification passed: renderer, local AI Worker, ONNX WASM and ZIP runtime are complete.");
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }

@@ -6,10 +6,29 @@ const onePixelPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAA
 
 describe("PNG recipe metadata", () => {
   it("round trips UTF-8 prompts without changing image chunks", () => {
-    const recipe = normalizeRecipe({ recipe: { prompt: "蓝粉色产品海报", negativePrompt: "水印、乱码", size: "1024x1024", seed: "9988" } });
+    const recipe = normalizeRecipe({ recipe: {
+      prompt: "蓝粉色产品海报",
+      negativePrompt: "水印、乱码",
+      size: "1024x1024",
+      seed: "9988",
+      postProcessing: [{
+        tool: "upscale",
+        modelId: "realesrgan-x2",
+        modelVersion: "test-version",
+        parameters: { scale: 2 },
+        device: "wasm",
+        elapsedMs: 1200,
+        createdAt: "2026-08-12T00:00:00.000Z",
+      }],
+    } });
     const output = embedRecipeInPng(onePixelPng, recipe);
     expect(output.length).toBeGreaterThan(onePixelPng.length);
     expect(output.includes(Buffer.from("image-studio.recipe"))).toBe(true);
-    expect(readRecipeFromPng(output)).toMatchObject({ prompt: "蓝粉色产品海报", negativePrompt: "水印、乱码", seed: "9988" });
+    expect(readRecipeFromPng(output)).toMatchObject({
+      prompt: "蓝粉色产品海报",
+      negativePrompt: "水印、乱码",
+      seed: "9988",
+      postProcessing: [{ tool: "upscale", modelId: "realesrgan-x2", device: "wasm" }],
+    });
   });
 });

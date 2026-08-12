@@ -1,6 +1,26 @@
 # AI Image Studio
 
-AI Image Studio v1.3.3 是一款面向 Windows 的本地 AI 图片创作工作台。应用使用 Electron + React，可连接符合当前请求格式的 OpenAI 兼容服务，覆盖图片生成、图片编辑、智能扩图、项目图库、任务队列和成品交付。
+AI Image Studio v1.4.0 是一款面向 Windows 的 AI 图片创作工作台。应用使用 Electron + React，可连接符合当前请求格式的 OpenAI 兼容服务，也提供不依赖 API 的本地 AI 后期工具箱。
+
+## v1.4.0 更新
+
+- 新增本地 AI 工具箱：Real-ESRGAN 2×/4× 高清放大、ISNet 智能抠图、GFPGAN 人脸优化 Beta 和一键组合处理。
+- 本地模型首次按需下载并校验 SHA-256，安装后可离线推理；模型不塞入安装包。
+- 推理优先使用 WebGPU，会话或显存不足时自动缩小分块并回退 WASM/CPU。
+- 支持导入、拖放、剪贴板粘贴、生成结果、图库图片和大图右键快捷入口。
+- 处理进度、取消、原图/结果滑杆对比、100% 细节检查、透明背景预览、保存和复制形成完整工作流。
+- 本地处理结果作为新图片归档，保留来源关系、模型版本、运行设备和耗时；原图永不覆盖。
+
+## 本地工具箱说明
+
+| 工具 | 用途 | 输出与限制 |
+| --- | --- | --- |
+| 高清放大 | 补足生成图、插画和产品图的纹理与边缘 | 原生 2×/4× PNG；最长边 8192 px，总像素不超过 7000 万 |
+| 智能抠图 | 为人物、商品和视觉素材移除背景 | 透明 PNG；保留原始 RGB，仅替换 Alpha，可调 0–8 px 羽化 |
+| 人脸优化 Beta | 修复模糊或轻微畸变的人脸 | 最多 10 张脸；侧脸、遮挡、过小人脸可能停止处理 |
+| 一键优化 | 人脸优化 → 2× 超分 → 智能抠图 | 只保存最终成品，任一步失败即停止 |
+
+本地推理不读取 API 密钥，也不会把待处理图片上传到任何服务。“秒出”仅是支持 WebGPU 时的小图体验目标，不保证所有设备和分辨率都达到相同性能。
 
 ## v1.3.3 更新
 
@@ -60,6 +80,7 @@ POST /chat/completions
 - 项目图库、收件箱、收藏、标签、搜索、缩略图懒加载、批量移动、删除、ZIP 导出和最多 4 张图片对比。
 - PNG 配方元数据、复制图片/提示词/完整参数和社交平台画布导出。
 - 启动时可选检查 GitHub Release 更新，由用户决定是否下载和安装。
+- 完全本地的超分、抠图和人脸优化后期工具，支持 WebGPU/WASM 自动回退与模型管理。
 
 ## 安装
 
@@ -103,7 +124,7 @@ API 密钥由 Electron 主进程写入 Windows 凭据库，不写入源码、项
 
 ## 开发与测试
 
-需要 Windows 10 或更高版本、Node.js 18+。
+需要 Windows 10 或更高版本、Node.js 18+。WebGPU 推理建议使用支持 DirectX 12 的较新显卡与驱动；不满足条件时自动使用 WASM/CPU。
 
 ```powershell
 npm.cmd install
@@ -122,7 +143,7 @@ npm.cmd run package:win
 安装包输出示例：
 
 ```text
-dist\AI-Image-Studio-Setup-1.3.3.exe
+dist\AI-Image-Studio-Setup-1.4.0.exe
 ```
 
 ## 项目结构
@@ -144,3 +165,14 @@ tests/       Vitest 纯逻辑测试
 - `latest.yml`
 
 `latest.yml` 包含更新地址和校验信息；缺少它时，已安装用户无法收到新版本提醒。
+
+## 本地模型与许可证
+
+模型默认保存在 Electron 的 `userData/models` 目录，与软件安装目录和图库目录分离。模型管理页支持更换位置、打开目录和恢复默认；切换时会复制已有模型、校验标记和未完成的 `.part` 下载，原目录暂时保留作为回退。下载支持暂停、继续、失败重试、删除和重新下载；只有 SHA-256 校验通过后才标记为已安装。
+
+- [Real-ESRGAN ONNX](https://huggingface.co/SceneWorks/real-esrgan-onnx)：BSD-3-Clause，固定 2×/4× ONNX 文件与校验值。
+- [ISNet General Use（rembg 分发）](https://github.com/danielgatis/rembg)：rembg 为 MIT；模型来源和使用限制以对应发布说明为准。
+- [OpenCV Zoo YuNet](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet)：MIT。
+- [GFPGAN](https://github.com/TencentARC/GFPGAN)：上游 Apache-2.0；应用使用第三方 ONNX 转换版本，因此该功能标记为 Beta，并在模型管理页显示具体来源。
+
+模型首次下载需要网络，并可能占用数百 MB 磁盘空间。安装完成后推理可离线进行。应用不集成 CodeFormer。

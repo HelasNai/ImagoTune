@@ -10,6 +10,16 @@ export type OutpaintRecipe = {
   preset?: string;
 };
 
+export type PostProcessingStep = {
+  tool: "upscale" | "remove-background" | "face-restore";
+  modelId: string;
+  modelVersion: string;
+  parameters: Record<string, string | number | boolean>;
+  device: "webgpu" | "wasm";
+  elapsedMs: number;
+  createdAt: string;
+};
+
 export type ImageRecipeV1 = {
   version: 1;
   prompt: string;
@@ -29,6 +39,7 @@ export type ImageRecipeV1 = {
   referenceCount?: number;
   seed?: string;
   outpaint?: OutpaintRecipe;
+  postProcessing?: PostProcessingStep[];
 };
 
 function stringValue(value: unknown, fallback = "") {
@@ -76,6 +87,9 @@ export function normalizeRecipe(
       ? undefined
       : String(seedValue),
     outpaint,
+    postProcessing: Array.isArray(nested.postProcessing)
+      ? nested.postProcessing.filter((value) => value && typeof value === "object") as PostProcessingStep[]
+      : undefined,
   };
 }
 

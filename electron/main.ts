@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, net, protocol, shell } from "electron";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { createWriteStream } from "node:fs";
@@ -13,6 +13,10 @@ import { classifyHttpError, classifyRuntimeError, errorInfoMessage, GenerationEr
 import { embedRecipeInPng, readRecipeFromPng } from "./png-metadata";
 import { isVisionInputUnsupported, parseReversePrompt } from "./reverse-prompt";
 import { normalizeImageBase64, prioritizeImageResponses, type ImageResponse } from "./image-response";
+import { LocalAIModelManager } from "./local-ai-model-manager";
+import { LocalAIModelId, localAIModelById } from "./local-ai-models";
+
+protocol.registerSchemesAsPrivileged([{ scheme: "local-ai-model", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }]);
 
 const SERVICE = "ai-image-studio";
 const LEGACY_SERVICE = "pinaic-image-studio";
@@ -48,7 +52,54 @@ let saveDir = "";
 let galleryDir = "";
 let galleryStore: GalleryStore;
 let queueStore: QueueStore;
+let localAIModels: LocalAIModelManager;
 let activeQueueJobId: string | null = null;
+
+function systemModelDir() {
+  return path.join(app.getPath("userData"), "models");
+}
+
+async function resolveModelDir() {
+  const preferred = await storedCredential(`${ACCOUNT}:modelDir`);
+  if (preferred) {
+    try {
+      await fs.mkdir(preferred, { recursive: true });
+      return path.resolve(preferred);
+    } catch {
+      // A removable or network drive may be unavailable. Fall back to userData.
+    }
+  }
+  return systemModelDir();
+}
+
+async function copyModelFiles(source: string, target: string) {
+  if (path.resolve(source).toLowerCase() === path.resolve(target).toLowerCase()) return;
+  await fs.mkdir(target, { recursive: true });
+  const entries = await fs.readdir(source, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (!entry.isFile() || !/\.(onnx|part|json)$/i.test(entry.name)) continue;
+    const sourcePath = path.join(source, entry.name);
+    const targetPath = path.join(target, entry.name);
+    const [sourceStat, targetStat] = await Promise.all([
+      fs.stat(sourcePath),
+      fs.stat(targetPath).catch(() => null),
+    ]);
+    if (!targetStat || sourceStat.size > targetStat.size) await fs.copyFile(sourcePath, targetPath);
+  }
+}
+
+async function activateModelDirectory(directory: string, copyFrom?: string) {
+  const target = path.resolve(directory);
+  await fs.mkdir(target, { recursive: true });
+  if (copyFrom) await copyModelFiles(copyFrom, target);
+  localAIModels = new LocalAIModelManager(
+    target,
+    (progress) => broadcast("localAI:modelProgress", progress),
+    undefined,
+    (url, init) => net.fetch(url, init),
+  );
+  return target;
+}
 
 async function archiveImages(images: ApiImage[], input: RequestInput | EditInput, enabled: boolean) {
   const recipe = normalizeRecipe(input, "image" in input ? "edit" : "generate");
@@ -110,6 +161,10 @@ function createWindow() {
     backgroundColor: "#f7f8fc",
     icon: path.join(__dirname, "../AI Image Studio.ico"),
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false }
+  });
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+    return { action: "deny" };
   });
   if (process.argv.includes("--dev")) win.loadURL(process.env.VITE_DEV_SERVER_URL || "http://127.0.0.1:5173");
   else win.loadFile(path.join(__dirname, "../dist-renderer/index.html"));
@@ -442,6 +497,15 @@ async function processQueue() {
 app.whenReady().then(async () => {
   await activateSaveDirectory(await resolveSaveDir());
   queueStore = createQueueStore(app.getPath("userData")); await queueStore.recover();
+  await activateModelDirectory(await resolveModelDir());
+  protocol.handle("local-ai-model", async (request) => {
+    const id = decodeURIComponent(new URL(request.url).hostname) as LocalAIModelId;
+    const model = localAIModelById(id);
+    if (!model) return new Response("Unknown model", { status: 404 });
+    const status = await localAIModels.status(id);
+    if (!status.installed) return new Response("Model is not installed", { status: 404 });
+    return net.fetch(new URL(`file:///${localAIModels.modelPath(id).replace(/\\/g, "/")}`).toString());
+  });
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: "文件", submenu: [{ label: "关闭窗口", role: "close" }] },
     { label: "编辑", submenu: [
@@ -492,6 +556,70 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("settings:clear", async () => { await Promise.all([keytar.deletePassword(SERVICE, ACCOUNT), keytar.deletePassword(LEGACY_SERVICE, ACCOUNT)]); return { ok: true }; });
   ipcMain.handle("settings:test", async () => { const c = await config(); if (!c.baseUrl) return { ok: false, message: "尚未配置 API Base URL" }; if (!c.apiKey) return { ok: false, message: "尚未配置 API 密钥" }; try { new URL(c.baseUrl); const r = await fetch(`${c.baseUrl.replace(/\/$/, "")}/models`, { headers: { Authorization: `Bearer ${c.apiKey}` }, signal: AbortSignal.timeout(20_000) }); return r.ok ? { ok: true, message: "连接成功" } : { ok: false, message: `接口返回 ${r.status}` }; } catch (e) { return { ok: false, message: (e as Error).message }; } });
+  ipcMain.handle("localAI:capabilities", async () => ({
+    ok: true,
+    webgpu: !app.commandLine.hasSwitch("disable-gpu"),
+    wasm: true,
+    maxOutputEdge: 8192,
+    maxOutputPixels: 70_000_000,
+    modelsDir: localAIModels.modelsDir,
+  }));
+  ipcMain.handle("localAI:models", async () => ({ ok: true, items: await localAIModels.list() }));
+  ipcMain.handle("localAI:chooseModelDir", async () => {
+    if (localAIModels.hasActiveDownloads()) return { ok: false, error: "当前有模型正在下载，请先暂停或等待完成" };
+    const result = await dialog.showOpenDialog({
+      title: "选择本地 AI 模型保存位置",
+      defaultPath: localAIModels.modelsDir,
+      properties: ["openDirectory", "createDirectory"],
+    });
+    if (result.canceled || !result.filePaths[0]) return { ok: true, canceled: true, modelsDir: localAIModels.modelsDir };
+    try {
+      const previous = localAIModels.modelsDir;
+      const next = await activateModelDirectory(result.filePaths[0], previous);
+      await keytar.setPassword(SERVICE, `${ACCOUNT}:modelDir`, next);
+      return { ok: true, canceled: false, modelsDir: next, items: await localAIModels.list() };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message || "无法使用所选模型位置" };
+    }
+  });
+  ipcMain.handle("localAI:resetModelDir", async () => {
+    if (localAIModels.hasActiveDownloads()) return { ok: false, error: "当前有模型正在下载，请先暂停或等待完成" };
+    try {
+      const previous = localAIModels.modelsDir;
+      const next = await activateModelDirectory(systemModelDir(), previous);
+      await keytar.setPassword(SERVICE, `${ACCOUNT}:modelDir`, next);
+      return { ok: true, modelsDir: next, items: await localAIModels.list() };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message || "无法恢复默认模型位置" };
+    }
+  });
+  ipcMain.handle("localAI:openModelDir", async () => {
+    await fs.mkdir(localAIModels.modelsDir, { recursive: true });
+    const error = await shell.openPath(localAIModels.modelsDir);
+    return error ? { ok: false, error } : { ok: true };
+  });
+  ipcMain.handle("localAI:modelUrl", async (_event, id: LocalAIModelId) => {
+    const status = await localAIModels.status(id);
+    return status.installed ? { ok: true, url: `local-ai-model://${id}/${encodeURIComponent(localAIModelById(id)!.fileName)}` } : { ok: false, error: "模型尚未安装" };
+  });
+  ipcMain.handle("localAI:downloadModel", async (_event, id: LocalAIModelId) => {
+    try { return { ok: true, item: await localAIModels.download(id) }; }
+    catch (error) { return { ok: false, error: (error as Error).message || "模型下载失败" }; }
+  });
+  ipcMain.handle("localAI:pauseDownload", async (_event, id: LocalAIModelId) => ({ ok: localAIModels.pause(id) }));
+  ipcMain.handle("localAI:deleteModel", async (_event, id: LocalAIModelId) => {
+    try { await localAIModels.delete(id); return { ok: true }; }
+    catch (error) { return { ok: false, error: (error as Error).message || "无法删除模型" }; }
+  });
+  ipcMain.handle("localAI:archiveResult", async (_event, input: { dataUrl: string; title?: string; recipe: ImageRecipeV1 }) => {
+    try {
+      const base64 = String(input.dataUrl || "").replace(/^data:image\/\w+;base64,/, "");
+      if (!base64) return { ok: false, error: "本地处理结果为空" };
+      const recipe = normalizeRecipe({ recipe: input.recipe }, input.recipe.mode);
+      const created = await galleryStore.addImages([{ b64_json: base64 }], { title: String(input.title || recipe.variationLabel || "本地 AI 处理结果"), recipe }, true);
+      return created[0] ? { ok: true, item: created[0] } : { ok: false, error: "本地处理结果归档失败" };
+    } catch (error) { return { ok: false, error: (error as Error).message || "本地处理结果归档失败" }; }
+  });
   ipcMain.handle("updates:get", async () => ({ ok: true, appVersion: app.getVersion(), checkAtStartup: await checkUpdatesAtStartup(), supported: app.isPackaged, status: updateStatus }));
   ipcMain.handle("updates:setStartup", async (_e, enabled: boolean) => { await keytar.setPassword(SERVICE, ACCOUNT + ":checkUpdatesAtStartup", enabled ? "true" : "false"); return { ok: true, checkAtStartup: enabled }; });
   ipcMain.handle("updates:check", async () => checkForAppUpdate());

@@ -28,6 +28,18 @@ declare global {
         reverse: (input: { image: BinaryPayload }) => Promise<{ ok: boolean; zh?: string; en?: string; error?: string }>;
       };
       outpaint: { prepare: (input: { sourceWidth: number; sourceHeight: number; targetSize: string }) => Promise<{ ok: boolean; size?: string; error?: string }> };
+      localAI: {
+        capabilities: () => Promise<LocalAICapabilities>;
+        models: () => Promise<{ ok: boolean; items: LocalAIModelStatus[] }>;
+        chooseModelDir: () => Promise<{ ok: boolean; canceled?: boolean; modelsDir?: string; items?: LocalAIModelStatus[]; error?: string }>;
+        resetModelDir: () => Promise<{ ok: boolean; modelsDir?: string; items?: LocalAIModelStatus[]; error?: string }>;
+        openModelDir: () => Promise<{ ok: boolean; error?: string }>;
+        modelUrl: (id: LocalAIModelId) => Promise<{ ok: boolean; url?: string; error?: string }>;
+        downloadModel: (id: LocalAIModelId) => Promise<{ ok: boolean; item?: LocalAIModelStatus; error?: string }>;
+        pauseDownload: (id: LocalAIModelId) => Promise<{ ok: boolean }>;
+        deleteModel: (id: LocalAIModelId) => Promise<{ ok: boolean; error?: string }>;
+        archiveResult: (input: { dataUrl: string; title?: string; recipe: ImageRecipeV1 }) => Promise<{ ok: boolean; item?: GalleryItem; error?: string }>;
+      };
       png: { readRecipe: (input: { dataUrl?: string; data?: number[] }) => Promise<{ ok: boolean; recipe?: ImageRecipeV1; error?: string }> };
       queue: {
         list: () => Promise<{ ok: boolean; items: QueueJob[] }>;
@@ -69,6 +81,7 @@ declare global {
       onQueueResult: (callback: (event: { job: QueueJob; result: ApiResult }) => void) => () => void;
       onQueueError: (callback: (event: QueueJob) => void) => () => void;
       onUpdateStatus: (callback: (event: UpdateStatus) => void) => () => void;
+      onLocalAIModelProgress: (callback: (event: LocalAIModelProgress) => void) => () => void;
     };
   }
 
@@ -76,7 +89,13 @@ declare global {
   interface BinaryPayload { name: string; type: string; data: number[] }
   type RecipeMode = "generate" | "edit" | "outpaint";
   interface OutpaintRecipe { sourceSize: string; targetSize: string; top: number; right: number; bottom: number; left: number; preset?: string }
-  interface ImageRecipeV1 { version: 1; prompt: string; negativePrompt: string; model: string; size: string; ratio?: string; resolution?: string; quality?: string; n: number; mode: RecipeMode; projectId: string; tags: string[]; createdAt: string; sourceId?: string; variationLabel?: string; referenceCount?: number; seed?: string; outpaint?: OutpaintRecipe }
+  type LocalAITool = "upscale" | "remove-background" | "face-restore";
+  type LocalAIModelId = "realesrgan-x2" | "realesrgan-x4" | "isnet-general" | "yunet" | "gfpgan-v1.4";
+  interface PostProcessingStep { tool: LocalAITool; modelId: string; modelVersion: string; parameters: Record<string, string | number | boolean>; device: "webgpu" | "wasm"; elapsedMs: number; createdAt: string }
+  interface ImageRecipeV1 { version: 1; prompt: string; negativePrompt: string; model: string; size: string; ratio?: string; resolution?: string; quality?: string; n: number; mode: RecipeMode; projectId: string; tags: string[]; createdAt: string; sourceId?: string; variationLabel?: string; referenceCount?: number; seed?: string; outpaint?: OutpaintRecipe; postProcessing?: PostProcessingStep[] }
+  interface LocalAIModelStatus { id: LocalAIModelId; name: string; version: string; size: number; downloaded: number; progress: number; state: "missing" | "partial" | "downloading" | "verifying" | "installed" | "error"; installed: boolean; license: string; sourceUrl: string; purpose: string; beta?: boolean; error?: string }
+  interface LocalAIModelProgress extends LocalAIModelStatus { message: string }
+  interface LocalAICapabilities { ok: boolean; webgpu: boolean; wasm: boolean; maxOutputEdge: number; maxOutputPixels: number; modelsDir: string }
   type GenerationErrorCategory = "network" | "authentication" | "balance" | "parameters" | "upload" | "content" | "rate_limit" | "timeout" | "server" | "cancelled" | "unknown";
   interface GenerationErrorInfo { category: GenerationErrorCategory; title: string; message: string; suggestion: string; retryable: boolean; status?: number; details?: string }
   interface ApiImage { b64_json?: string; url?: string; seed?: string | number }

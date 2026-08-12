@@ -26,6 +26,18 @@ contextBridge.exposeInMainWorld("imageStudio", {
     reverse: (input: unknown) => ipcRenderer.invoke("prompt:reverse", input)
   },
   outpaint: { prepare: (input: unknown) => ipcRenderer.invoke("outpaint:prepare", input) },
+  localAI: {
+    capabilities: () => ipcRenderer.invoke("localAI:capabilities"),
+    models: () => ipcRenderer.invoke("localAI:models"),
+    chooseModelDir: () => ipcRenderer.invoke("localAI:chooseModelDir"),
+    resetModelDir: () => ipcRenderer.invoke("localAI:resetModelDir"),
+    openModelDir: () => ipcRenderer.invoke("localAI:openModelDir"),
+    modelUrl: (id: string) => ipcRenderer.invoke("localAI:modelUrl", id),
+    downloadModel: (id: string) => ipcRenderer.invoke("localAI:downloadModel", id),
+    pauseDownload: (id: string) => ipcRenderer.invoke("localAI:pauseDownload", id),
+    deleteModel: (id: string) => ipcRenderer.invoke("localAI:deleteModel", id),
+    archiveResult: (input: unknown) => ipcRenderer.invoke("localAI:archiveResult", input),
+  },
   png: { readRecipe: (input: unknown) => ipcRenderer.invoke("png:readRecipe", input) },
   queue: {
     list: () => ipcRenderer.invoke("queue:list"),
@@ -69,5 +81,10 @@ contextBridge.exposeInMainWorld("imageStudio", {
     const listener = (_event: Electron.IpcRendererEvent, value: unknown) => callback(value);
     ipcRenderer.on("update:status", listener);
     return () => ipcRenderer.removeListener("update:status", listener);
-  }
+  },
+  onLocalAIModelProgress: (callback: (event: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, value: unknown) => callback(value);
+    ipcRenderer.on("localAI:modelProgress", listener);
+    return () => ipcRenderer.removeListener("localAI:modelProgress", listener);
+  },
 });

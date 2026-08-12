@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 import imaginationTitle from "./assets/imagination-title-cropped.png";
 import { GalleryWorkspace } from "./components/GalleryWorkspace";
+import { LocalAIAction, LocalAISource, LocalAIToolbox } from "./components/LocalAIToolbox";
 import { MaskPainter } from "./components/MaskPainter";
 import {
   applyLocalPromptAction,
@@ -20,7 +21,7 @@ import {
   targetSizeForRatio,
 } from "./lib/outpaint";
 
-type Mode = "generate" | "edit" | "outpaint" | "gallery" | "queue" | "settings";
+type Mode = "generate" | "edit" | "outpaint" | "gallery" | "local-ai" | "queue" | "settings";
 type Output = {
   id: string;
   b64: string;
@@ -392,6 +393,8 @@ function App() {
   const [error, setError] = useState("");
   const [errorInfo, setErrorInfo] = useState<GenerationErrorInfo | null>(null);
   const [enhancing, setEnhancing] = useState(false);
+  const [localAISource, setLocalAISource] = useState<LocalAISource | null>(null);
+  const [localAIAction, setLocalAIAction] = useState<LocalAIAction>("upscale");
 
   const presetSize = sizeMatrix[resolution][ratio];
   const customCheck = validateCanvasSize(customSize);
@@ -1325,6 +1328,9 @@ function App() {
                 <button onClick={() => continueEdit(output)}>继续编辑</button>
                 <button onClick={() => startOutpaint(output)}>智能扩图</button>
                 <button onClick={() => setExportOutput(output)}>社媒导出</button>
+                <button onClick={() => openLocalAI(output, "upscale")}>高清放大</button>
+                <button onClick={() => openLocalAI(output, "remove-background")}>智能抠图</button>
+                <button onClick={() => openLocalAI(output, "face-restore")}>人脸优化</button>
               </div>
               <div className="variation-row">
                 {variationOptions.map((option) => (
@@ -1447,11 +1453,30 @@ function App() {
     [queueItems],
   );
 
+  function openLocalAI(output: Output, action: LocalAIAction) {
+    setLocalAISource({
+      title: `生成结果-${new Date(output.createdAt).toLocaleString()}`,
+      dataUrl: dataUrlFor(output),
+      recipe: output.recipe,
+      sourceId: output.galleryId,
+    });
+    setLocalAIAction(action);
+    setMode("local-ai");
+    setPreviewContextMenu(null);
+    setPreview(null);
+  }
+
+  function openGalleryLocalAI(item: GalleryItem, b64: string, action: LocalAIAction) {
+    setLocalAISource({ title: item.title || item.id, dataUrl: `data:image/png;base64,${b64}`, recipe: item.recipe, sourceId: item.id });
+    setLocalAIAction(action);
+    setMode("local-ai");
+  }
+
   return (
     <div className="app">
       <header>
         <div>
-          <span className="eyebrow">AI IMAGE STUDIO · V{appVersion || "1.3.2"}</span>
+          <span className="eyebrow">AI IMAGE STUDIO · V{appVersion || "1.4.0"}</span>
           <img className="brand-title" src={imaginationTitle} alt="把想象变成图片" />
           <p>本地创作工作台 · 提示词助手 · 项目图库 · 局部重绘 · 批量交付</p>
         </div>
@@ -1476,6 +1501,7 @@ function App() {
           <button className={mode === "edit" ? "nav active" : "nav"} onClick={() => setMode("edit")}>◌ 图片编辑</button>
           <button className={mode === "outpaint" ? "nav active" : "nav"} onClick={() => setMode("outpaint")}>↗ 智能扩图</button>
           <button className={mode === "gallery" ? "nav active" : "nav"} onClick={() => setMode("gallery")}>▧ 项目图库</button>
+          <button className={mode === "local-ai" ? "nav active" : "nav"} onClick={() => setMode("local-ai")}>◈ 本地工具箱</button>
           <button className={mode === "queue" ? "nav active" : "nav"} onClick={() => setMode("queue")}>⇢ 任务队列</button>
           <button className={mode === "settings" ? "nav active" : "nav"} onClick={() => setMode("settings")}>⚙ 设置</button>
           <div className="aside-tip">
@@ -1488,7 +1514,26 @@ function App() {
             <GalleryWorkspace
               onOpen={galleryOpen}
               onVariation={(item) => createVariation(item)}
+              onLocalAI={openGalleryLocalAI}
               onNotice={setNotice}
+            />
+          ) : mode === "local-ai" ? (
+            <LocalAIToolbox
+              source={localAISource}
+              initialAction={localAIAction}
+              projectId={projectId}
+              onSourceChange={setLocalAISource}
+              onArchived={({ b64, recipe, galleryId }) => setOutputs((current) => [{
+                id: crypto.randomUUID(),
+                b64,
+                createdAt: Date.now(),
+                galleryId,
+                recipe,
+              }, ...current])}
+              onNotice={(message, isError) => {
+                if (isError) { setError(message); setNotice(""); }
+                else { setNotice(message); setError(""); }
+              }}
             />
           ) : mode === "queue" ? queuePanel : <>{composer}{resultPanel}</>}
         </main>
@@ -1504,8 +1549,8 @@ function App() {
               event.preventDefault();
               event.stopPropagation();
               setPreviewContextMenu({
-                x: Math.max(8, Math.min(event.clientX, window.innerWidth - 152)),
-                y: Math.max(8, Math.min(event.clientY, window.innerHeight - 72)),
+                x: Math.max(8, Math.min(event.clientX, window.innerWidth - 220)),
+                y: Math.max(8, Math.min(event.clientY, window.innerHeight - 240)),
               });
             }}
             alt="大图预览"
@@ -1524,6 +1569,10 @@ function App() {
               >
                 复制图片
               </button>
+              <button onClick={() => openLocalAI(preview, "upscale")}>高清放大</button>
+              <button onClick={() => openLocalAI(preview, "remove-background")}>智能抠图</button>
+              <button onClick={() => openLocalAI(preview, "face-restore")}>人脸优化 Beta</button>
+              <button onClick={() => openLocalAI(preview, "pipeline")}>本地组合处理</button>
             </div>
           )}
           <span>右键点击图片可复制；点击空白处或右上角关闭</span>

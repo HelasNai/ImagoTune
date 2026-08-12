@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { parseTags } from "../lib/creative";
+import type { LocalAIAction } from "./LocalAIToolbox";
 
 type OpenAction = "preview" | "reuse" | "edit" | "outpaint";
 type CompareItem = { item: GalleryItem; b64: string };
@@ -7,10 +8,12 @@ type CompareItem = { item: GalleryItem; b64: string };
 export function GalleryWorkspace({
   onOpen,
   onVariation,
+  onLocalAI,
   onNotice,
 }: {
   onOpen: (item: GalleryItem, b64: string, action: OpenAction) => void;
   onVariation: (item: GalleryItem) => void;
+  onLocalAI: (item: GalleryItem, b64: string, action: LocalAIAction) => void;
   onNotice: (message: string) => void;
 }) {
   const [projects, setProjects] = useState<GalleryProject[]>([]);
@@ -118,6 +121,12 @@ export function GalleryWorkspace({
   const open = async (item: GalleryItem, action: OpenAction) => {
     const response = await window.imageStudio.gallery.loadImage(item.id);
     if (response.b64) onOpen(item, response.b64, action);
+    else onNotice(response.error || "无法读取图片");
+  };
+
+  const openLocalAI = async (item: GalleryItem, action: LocalAIAction) => {
+    const response = await window.imageStudio.gallery.loadImage(item.id);
+    if (response.b64) onLocalAI(item, response.b64, action);
     else onNotice(response.error || "无法读取图片");
   };
 
@@ -354,6 +363,10 @@ export function GalleryWorkspace({
                   <summary>更多操作</summary>
                   <div>
                     <button onClick={() => onVariation(item)}>创建变体</button>
+                    <button onClick={() => void openLocalAI(item, "upscale")}>高清放大</button>
+                    <button onClick={() => void openLocalAI(item, "remove-background")}>智能抠图</button>
+                    <button onClick={() => void openLocalAI(item, "face-restore")}>人脸优化 Beta</button>
+                    <button onClick={() => void openLocalAI(item, "pipeline")}>本地组合处理</button>
                     <button onClick={() => void window.imageStudio.gallery.toggleFavorite(item.id).then(() => refresh(0))}>
                       {item.favorite ? "取消收藏" : "收藏"}
                     </button>
