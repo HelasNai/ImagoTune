@@ -519,9 +519,13 @@ app.whenReady().then(async () => {
       { type: "separator" }, { label: "全屏", role: "togglefullscreen" }
     ] },
     { label: "窗口", submenu: [{ label: "最小化", role: "minimize" }, { label: "关闭", role: "close" }] },
-    { label: "帮助", submenu: [{ label: "AI Image Studio 使用说明", click: () => dialog.showMessageBox({ type: "info", title: "AI Image Studio", message: "本地 OpenAI 兼容图片创作工具\n支持自定义基础地址、模型、文生图、图片编辑和常用输出尺寸。" }) }] }
+    { label: "帮助", submenu: [
+      { label: "打开新手教程", click: () => broadcast("tutorial:open", {}) },
+      { type: "separator" },
+      { label: "AI Image Studio 使用说明", click: () => dialog.showMessageBox({ type: "info", title: "AI Image Studio", message: "本地 OpenAI 兼容图片创作工具\n支持自定义基础地址、模型、文生图、图片编辑和常用输出尺寸。" }) }
+    ] }
   ]));
-  ipcMain.handle("settings:get", async () => { const c = await config(); return { configured: Boolean(c.apiKey && c.baseUrl), baseUrl: c.baseUrl, imageModel: c.imageModel, chatModel: c.chatModel, autoArchive: c.autoArchive, saveDir }; });
+  ipcMain.handle("settings:get", async () => { const c = await config(); return { configured: Boolean(c.apiKey && c.baseUrl), hasSavedApiKey: Boolean(c.apiKey), baseUrl: c.baseUrl, imageModel: c.imageModel, chatModel: c.chatModel, autoArchive: c.autoArchive, saveDir }; });
   ipcMain.handle("settings:save", async (_e, value: { apiKey: string; baseUrl: string; imageModel: string; chatModel: string; autoArchive?: boolean }) => { if (value.apiKey.trim()) await keytar.setPassword(SERVICE, ACCOUNT, value.apiKey.trim()); await keytar.setPassword(SERVICE, `${ACCOUNT}:baseUrl`, value.baseUrl.trim()); await keytar.setPassword(SERVICE, `${ACCOUNT}:imageModel`, value.imageModel.trim() || DEFAULT_IMAGE_MODEL); await keytar.setPassword(SERVICE, `${ACCOUNT}:chatModel`, value.chatModel.trim() || DEFAULT_CHAT_MODEL); await keytar.setPassword(SERVICE, `${ACCOUNT}:autoArchive`, value.autoArchive === false ? "false" : "true"); return { ok: true }; });
   ipcMain.handle("settings:chooseSaveDir", async () => {
     if (activeQueueJobId) return { ok: false, error: "当前有任务正在生成，请等待完成后再切换保存位置" };

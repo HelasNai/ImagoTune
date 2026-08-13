@@ -311,7 +311,7 @@ export function LocalAIToolbox({
   const previewStyle = background === "white" ? { background: "#fff" } : background === "gray" ? { background: "#d8dde6" } : background === "custom" ? { background: backgroundColor } : undefined;
   const webgpuAvailable = Boolean(capabilities?.webgpu && "gpu" in navigator);
 
-  return <section className="local-ai-workbench">
+  return <section className="local-ai-workbench" data-tutorial="local-ai-toolbox">
     <div className="local-ai-heading">
       <div><span className="eyebrow">LOCAL AI TOOLBOX</span><h2>本地 AI 后期工具箱</h2><p>图片只在本机处理，不读取 API 密钥，也不会上传到任何服务。</p></div>
       <span className={webgpuAvailable ? "device-chip webgpu" : "device-chip"}>{webgpuAvailable ? "WebGPU 优先" : "WASM / CPU"}</span>

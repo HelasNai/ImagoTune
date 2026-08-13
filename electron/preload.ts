@@ -87,4 +87,9 @@ contextBridge.exposeInMainWorld("imageStudio", {
     ipcRenderer.on("localAI:modelProgress", listener);
     return () => ipcRenderer.removeListener("localAI:modelProgress", listener);
   },
+  onTutorialOpen: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on("tutorial:open", listener);
+    return () => ipcRenderer.removeListener("tutorial:open", listener);
+  },
 });

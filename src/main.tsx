@@ -5,6 +5,7 @@ import imaginationTitle from "./assets/imagination-title-cropped.png";
 import { GalleryWorkspace } from "./components/GalleryWorkspace";
 import { LocalAIAction, LocalAISource, LocalAIToolbox } from "./components/LocalAIToolbox";
 import { MaskPainter } from "./components/MaskPainter";
+import { initialTutorialView, TutorialExperience, TutorialView } from "./components/TutorialExperience";
 import {
   applyLocalPromptAction,
   formatGenerationParameters,
@@ -20,6 +21,13 @@ import {
   outpaintToSize,
   targetSizeForRatio,
 } from "./lib/outpaint";
+import {
+  parseTutorialState,
+  shouldInitializeAsExistingUser,
+  TUTORIAL_STORAGE_KEY,
+  TutorialMode,
+  TutorialState,
+} from "./lib/tutorial";
 
 type Mode = "generate" | "edit" | "outpaint" | "gallery" | "local-ai" | "queue" | "settings";
 type Output = {
@@ -339,7 +347,11 @@ async function exportSocialCanvas(output: Output, preset: string, fill: "light" 
 }
 
 function App() {
+  const initialTutorial = useMemo(() => parseTutorialState(window.localStorage.getItem(TUTORIAL_STORAGE_KEY)), []);
   const [mode, setMode] = useState<Mode>("generate");
+  const [tutorialState, setTutorialState] = useState<TutorialState>(initialTutorial);
+  const [tutorialView, setTutorialView] = useState<TutorialView>(() => initialTutorialView(initialTutorial));
+  const [tutorialReturnMode, setTutorialReturnMode] = useState<Mode>("generate");
   const [prompt, setPrompt] = useState("");
   const [negativePrompt, setNegativePrompt] = useState("");
   const [originalPrompt, setOriginalPrompt] = useState("");
@@ -396,6 +408,13 @@ function App() {
   const [localAISource, setLocalAISource] = useState<LocalAISource | null>(null);
   const [localAIAction, setLocalAIAction] = useState<LocalAIAction>("upscale");
 
+  const updateTutorialState = useCallback((next: TutorialState) => {
+    setTutorialState(next);
+    window.localStorage.setItem(TUTORIAL_STORAGE_KEY, JSON.stringify(next));
+  }, []);
+
+  const tutorialNavigate = useCallback((nextMode: TutorialMode) => setMode(nextMode), []);
+
   const presetSize = sizeMatrix[resolution][ratio];
   const customCheck = validateCanvasSize(customSize);
   const chosenSize = customSizeEnabled && customCheck.ok ? customCheck.size : presetSize;
@@ -435,14 +454,33 @@ function App() {
   }, []);
 
   useEffect(() => {
-    void window.imageStudio.settings.get().then((value) => {
+    const bootstrap = async () => {
+      const [settingsValue, workspaceValue, queueValue] = await Promise.all([
+        window.imageStudio.settings.get(),
+        window.imageStudio.gallery.workspace(),
+        window.imageStudio.queue.list(),
+      ]);
+      const hasTutorialState = window.localStorage.getItem(TUTORIAL_STORAGE_KEY) !== null;
+      if (!hasTutorialState && shouldInitializeAsExistingUser({
+        configured: settingsValue.hasSavedApiKey,
+        galleryCount: workspaceValue.items?.length || 0,
+        queueCount: queueValue.items?.length || 0,
+        localDataSince: performance.timeOrigin,
+      })) {
+        const existingState: TutorialState = { ...initialTutorial, status: "dismissed", updatedAt: new Date().toISOString() };
+        updateTutorialState(existingState);
+        setTutorialView("none");
+      }
+      const value = settingsValue;
       setConfigured(value.configured);
       setBaseUrl(value.baseUrl);
       setImageModel(value.imageModel);
       setChatModel(value.chatModel);
       setAutoArchive(value.autoArchive);
       setSaveDir(value.saveDir || "");
-    });
+      setQueueItems(queueValue.items || []);
+    };
+    void bootstrap().catch(() => { /* Individual panels show their own recoverable errors. */ });
     void window.imageStudio.templates.list().then((value) => setTemplates(value.items));
     void window.imageStudio.updates.get().then((value) => {
       setCheckUpdatesAtStartup(value.checkAtStartup);
@@ -450,8 +488,7 @@ function App() {
       setUpdateStatus(value.status);
     });
     void refreshWorkspace();
-    void refreshQueue();
-  }, [refreshQueue, refreshWorkspace]);
+  }, [initialTutorial, refreshWorkspace, updateTutorialState]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -473,6 +510,8 @@ function App() {
   }, [exportOutput, preview]);
 
   useEffect(() => window.imageStudio.onUpdateStatus((value) => setUpdateStatus(value)), []);
+
+  useEffect(() => window.imageStudio.onTutorialOpen(() => setTutorialView("center")), []);
 
   useEffect(() => {
     const offProgress = window.imageStudio.onProgress((value) => {
@@ -1056,7 +1095,7 @@ function App() {
   };
 
   const composer = (
-    <section className="card composer">
+    <section className="card composer" data-tutorial="creation-form">
       <div className="mode-title">
         <div>
           <span className="eyebrow">{mode === "outpaint" ? "SMART OUTPAINT" : mode === "edit" ? "IMAGE EDIT" : "CREATE STUDIO"}</span>
@@ -1167,7 +1206,7 @@ function App() {
         </>
       )}
 
-      {(mode === "generate" || mode === "edit") && <section className="reference-panel">
+      {(mode === "generate" || mode === "edit") && <section className="reference-panel" data-tutorial="reference-images">
         <div className="reference-head">
           <div>
             <strong>参考图片 <span>{references.length}/3</span></strong>
@@ -1272,7 +1311,7 @@ function App() {
           推荐配置：1K、自动细节、1 张，通常响应更快、失败率更低。
         </p>
       )}
-      <div className="run-row">
+      <div className="run-row" data-tutorial="generation-actions">
         <button className="primary generate" onClick={() => void enqueue()} disabled={isEnqueueing}>
           {isEnqueueing ? "正在准备任务…" : activeJobId ? "继续加入队列" : mode === "outpaint" ? "加入扩图队列" : mode === "edit" ? "加入编辑队列" : references.length ? "加入参考图生成队列" : "加入生成队列"}
         </button>
@@ -1385,7 +1424,7 @@ function App() {
   );
 
   const settingsPanel = (
-    <section className="card settings">
+    <section className="card settings" data-tutorial="connection-settings">
       <span className="eyebrow">CONNECTION & STORAGE</span>
       <h2>连接设置</h2>
       <p className="muted">
@@ -1476,7 +1515,7 @@ function App() {
     <div className="app">
       <header>
         <div>
-          <span className="eyebrow">AI IMAGE STUDIO · V{appVersion || "1.4.0"}</span>
+          <span className="eyebrow">AI IMAGE STUDIO · V{appVersion || "1.5.0"}</span>
           <img className="brand-title" src={imaginationTitle} alt="把想象变成图片" />
           <p>本地创作工作台 · 提示词助手 · 项目图库 · 局部重绘 · 批量交付</p>
         </div>
@@ -1504,6 +1543,7 @@ function App() {
           <button className={mode === "local-ai" ? "nav active" : "nav"} onClick={() => setMode("local-ai")}>◈ 本地工具箱</button>
           <button className={mode === "queue" ? "nav active" : "nav"} onClick={() => setMode("queue")}>⇢ 任务队列</button>
           <button className={mode === "settings" ? "nav active" : "nav"} onClick={() => setMode("settings")}>⚙ 设置</button>
+          <button className="nav tutorial-nav" onClick={() => setTutorialView("center")}>? 新手教程</button>
           <div className="aside-tip">
             <span>当前模型</span><strong>{imageModel}</strong>
             <p>提示词增强：{chatModel}<br />图片、项目与队列均保存在本机。</p>
@@ -1538,6 +1578,17 @@ function App() {
           ) : mode === "queue" ? queuePanel : <>{composer}{resultPanel}</>}
         </main>
       </div>
+
+      <TutorialExperience
+        view={tutorialView}
+        state={tutorialState}
+        currentMode={mode}
+        onViewChange={setTutorialView}
+        onStateChange={updateTutorialState}
+        onNavigate={tutorialNavigate}
+        onTourStart={() => setTutorialReturnMode(mode)}
+        onTourExit={(destination) => { if (destination === "generate") setMode("generate"); else if (destination === "restore") setMode(tutorialReturnMode); }}
+      />
 
       {preview && (
         <div className="lightbox" onClick={() => { setPreviewContextMenu(null); setPreview(null); }}>

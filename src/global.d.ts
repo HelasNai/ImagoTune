@@ -4,7 +4,7 @@ declare global {
   interface Window {
     imageStudio: {
       settings: {
-        get: () => Promise<{ configured: boolean; baseUrl: string; imageModel: string; chatModel: string; autoArchive: boolean; saveDir: string }>;
+        get: () => Promise<{ configured: boolean; hasSavedApiKey: boolean; baseUrl: string; imageModel: string; chatModel: string; autoArchive: boolean; saveDir: string }>;
         save: (input: { apiKey: string; baseUrl: string; imageModel: string; chatModel: string; autoArchive?: boolean }) => Promise<{ ok: boolean }>;
         chooseSaveDir: () => Promise<{ ok: boolean; canceled?: boolean; saveDir?: string; error?: string }>;
         resetSaveDir: () => Promise<{ ok: boolean; saveDir?: string; error?: string }>;
@@ -82,6 +82,7 @@ declare global {
       onQueueError: (callback: (event: QueueJob) => void) => () => void;
       onUpdateStatus: (callback: (event: UpdateStatus) => void) => () => void;
       onLocalAIModelProgress: (callback: (event: LocalAIModelProgress) => void) => () => void;
+      onTutorialOpen: (callback: () => void) => () => void;
     };
   }
 

@@ -222,7 +222,7 @@ export function GalleryWorkspace({
   };
 
   return (
-    <section className="gallery-workbench">
+    <section className="gallery-workbench" data-tutorial="gallery-workspace">
       <section className="workspace-sidebar">
         <span className="eyebrow">PROJECTS</span>
         <h3>创作项目</h3>
