@@ -1550,6 +1550,7 @@ function App() {
           </div>
         </aside>
         <main>
+          <div className="page-transition" key={mode}>
           {mode === "settings" ? settingsPanel : mode === "gallery" ? (
             <GalleryWorkspace
               onOpen={galleryOpen}
@@ -1576,6 +1577,7 @@ function App() {
               }}
             />
           ) : mode === "queue" ? queuePanel : <>{composer}{resultPanel}</>}
+          </div>
         </main>
       </div>
 
