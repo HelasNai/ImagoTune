@@ -522,7 +522,21 @@ app.whenReady().then(async () => {
     { label: "帮助", submenu: [
       { label: "打开新手教程", click: () => broadcast("tutorial:open", {}) },
       { type: "separator" },
-      { label: "AI Image Studio 使用说明", click: () => dialog.showMessageBox({ type: "info", title: "AI Image Studio", message: "本地 OpenAI 兼容图片创作工具\n支持自定义基础地址、模型、文生图、图片编辑和常用输出尺寸。" }) }
+      { label: "AI Image Studio 使用说明", click: () => dialog.showMessageBox({ type: "info", title: "AI Image Studio", message: "本地 OpenAI 兼容图片创作工具\n支持自定义基础地址、模型、文生图、图片编辑和常用输出尺寸。" }) },
+      {
+        label: "开源许可证与源代码",
+        click: () => dialog.showMessageBox({
+          type: "info",
+          title: "开源许可证与源代码",
+          message: "AI Image Studio",
+          detail: "Copyright (C) 2026 zztnbnb\n\n本项目以 GNU Affero General Public License v3.0 only 发布，不提供任何担保。",
+          buttons: ["查看许可证与源代码", "关闭"],
+          defaultId: 0,
+          cancelId: 1,
+        }).then(({ response }) => {
+          if (response === 0) void shell.openExternal("https://github.com/zztnbnb/image-studio/blob/main/LICENSE");
+        }),
+      }
     ] }
   ]));
   ipcMain.handle("settings:get", async () => { const c = await config(); return { configured: Boolean(c.apiKey && c.baseUrl), hasSavedApiKey: Boolean(c.apiKey), baseUrl: c.baseUrl, imageModel: c.imageModel, chatModel: c.chatModel, autoArchive: c.autoArchive, saveDir }; });
