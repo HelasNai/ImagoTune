@@ -20,15 +20,14 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@types/archiver": "^6.0.2",
-    "@vitejs/plugin-react": "^4.3.4",
-    "archiver": "^7.0.1",
+    "@types/archiver": "^8.0.0",
+    "archiver": "^8.0.0",
     "archiver-utils": "^5.0.2",
-    "electron-updater": "^6.3.9",
+    "electron-updater": "6.8.9",
     "keytar": "^7.9.0",
-    "onnxruntime-web": "^1.27.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "onnxruntime-web": "^1.29.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "build": {
     "appId": "com.zztnbnb.pinaic.imagestudio",
@@ -72,17 +71,18 @@
     }
   },
   "devDependencies": {
-    "@electron/asar": "^3.4.1",
-    "@types/node": "^22.10.2",
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
-    "concurrently": "^9.1.2",
-    "electron": "^32.2.7",
-    "electron-builder": "^25.1.8",
+    "@electron/asar": "^4.3.0",
+    "@types/node": "^22.20.1",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^10.0.5",
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3",
     "rcedit": "^5.0.2",
-    "typescript": "^5.7.2",
-    "vite": "^6.0.5",
-    "vitest": "^3.0.5",
-    "wait-on": "^8.0.1"
+    "typescript": "^5.9.3",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11",
+    "wait-on": "^9.1.0"
   }
 }

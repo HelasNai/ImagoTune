@@ -140,7 +140,9 @@ API 密钥由 Electron 主进程写入 Windows 凭据库，不写入源码、项
 
 ## 开发与测试
 
-需要 Windows 10 或更高版本、Node.js 18+。WebGPU 推理建议使用支持 DirectX 12 的较新显卡与驱动；不满足条件时自动使用 WASM/CPU。
+需要 Windows 10 或更高版本、Node.js 22.12+（开发和构建）。WebGPU 推理建议使用支持 DirectX 12 的较新显卡与驱动；不满足条件时自动使用 WASM/CPU。
+
+项目依赖已按兼容性升级至 Electron 44、Vite 8、React 19、Vitest 4、Archiver 8、ONNX Runtime Web 1.29 和 electron-builder 26。生产安装包会锁定 `package-lock.json` 中的确切依赖树；升级后首次安装建议使用 `npm.cmd ci`。
 
 ```powershell
 npm.cmd install
