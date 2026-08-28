@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, net, protocol, shell } from "electron";
+import { app, BrowserWindow, ClipboardItem, clipboard, dialog, ipcMain, Menu, nativeImage, net, protocol, shell } from "electron";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { createWriteStream } from "node:fs";
@@ -714,16 +714,20 @@ app.whenReady().then(async () => {
   ipcMain.handle("queue:cancel", async (_e, id: string) => { const items = await queueStore.read(); const job = items.find(value => value.id === id); if (!job || !["queued", "running"].includes(job.status)) return { ok: false, error: "任务不可取消" }; const errorInfo: GenerationErrorInfo = { category: "cancelled", title: "任务已取消", message: "请求已由用户取消。", suggestion: "修改参数后可重新加入队列。", retryable: false }; const next = { ...job, status: "cancelled" as const, error: errorInfoMessage(errorInfo), errorInfo, updatedAt: new Date().toISOString() }; await queueStore.save(next); if (job.status === "running") { cancelledRequests.add(job.requestId); controllers.get(job.requestId)?.abort(); } broadcast("queue:update", await queueStore.read()); return { ok: true, job: next }; });
   ipcMain.handle("queue:remove", async (_e, id: string) => { const items = await queueStore.read(); const job = items.find(value => value.id === id); if (!job || job.status === "running") return { ok: false, error: "运行中的任务不可移除" }; await queueStore.remove(id); broadcast("queue:update", await queueStore.read()); return { ok: true }; });
   ipcMain.handle("clipboard:copyText", async (_e, value: string) => { clipboard.writeText(String(value || "")); return { ok: true }; });
-  ipcMain.handle("clipboard:copyImage", async (_e, b64: string) => { const image = nativeImage.createFromBuffer(Buffer.from(String(b64 || "").replace(/^data:image\/\w+;base64,/, ""), "base64")); if (image.isEmpty()) return { ok: false, error: "图片数据无效" }; clipboard.writeImage(image); return { ok: true }; });
+  ipcMain.handle("clipboard:copyImage", async (_e, b64: string) => { const image = nativeImage.createFromBuffer(Buffer.from(String(b64 || "").replace(/^data:image\/\w+;base64,/, ""), "base64")); if (image.isEmpty()) return { ok: false, error: "图片数据无效" }; const png = image.toPNG(); const pngArrayBuffer = png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) as ArrayBuffer; await clipboard.write([new ClipboardItem({ "image/png": new Blob([pngArrayBuffer], { type: "image/png" }) })]); return { ok: true }; });
   ipcMain.handle("clipboard:readImage", async () => {
-    const image = clipboard.readImage();
-    if (image.isEmpty()) return { ok: false, error: "剪贴板中没有可用图片" };
-    const png = image.toPNG();
+    const items = await clipboard.read();
+    const imageItem = items.find((item) => item.types.some((type) => type === "image/png" || type.startsWith("image/")));
+    if (!imageItem) return { ok: false, error: "剪贴板中没有可用图片" };
+    const imageType = imageItem.types.find((type) => type === "image/png" || type.startsWith("image/"));
+    if (!imageType) return { ok: false, error: "无法读取剪贴板图片" };
+    const blob = await imageItem.getType(imageType) as Blob;
+    const png = Buffer.from(await blob.arrayBuffer());
     return png.length ? { ok: true, b64: png.toString("base64") } : { ok: false, error: "无法读取剪贴板图片" };
   });
   ipcMain.handle("gallery:exportZip", async (_e, ids: string[]) => {
     const state = await galleryStore.readState(); const selected = state.items.filter(item => (ids || []).includes(item.id)); if (!selected.length) return { ok: false, error: "未选择图片" }; await fs.mkdir(saveDir, { recursive: true }); const dialogResult = await dialog.showSaveDialog({ defaultPath: path.join(saveDir, `image-studio-${Date.now()}.zip`), filters: [{ name: "ZIP 文件", extensions: ["zip"] }] }); if (dialogResult.canceled || !dialogResult.filePath) return { ok: true, canceled: true };
-    await new Promise<void>((resolve, reject) => { const output = createWriteStream(dialogResult.filePath!); const archive = archiver("zip", { zlib: { level: 9 } }); output.on("close", resolve); archive.on("error", reject); archive.pipe(output); for (const item of selected) archive.file(path.join(galleryDir, path.basename(item.fileName)), { name: `${item.title.replace(/[\\/:*?\"<>|]/g, "_") || item.id}.png` }); void archive.finalize(); }); return { ok: true, path: dialogResult.filePath, count: selected.length };
+    await new Promise<void>((resolve, reject) => { const output = createWriteStream(dialogResult.filePath!); const archive = new archiver.ZipArchive({ zlib: { level: 9 } }); output.on("close", resolve); archive.on("error", reject); archive.pipe(output); for (const item of selected) archive.file(path.join(galleryDir, path.basename(item.fileName)), { name: `${item.title.replace(/[\\/:*?\"<>|]/g, "_") || item.id}.png` }); void archive.finalize(); }); return { ok: true, path: dialogResult.filePath, count: selected.length };
   });
   ipcMain.handle("templates:list", async () => ({ ok: true, items: [...DEFAULT_TEMPLATES, ...(await readCustomTemplates())] }));
   ipcMain.handle("templates:save", async (_e, input: Partial<PromptTemplate>) => { if (!input.title?.trim() || !input.prompt?.trim()) return { ok: false, error: "模板标题和提示词不能为空" }; const items = await readCustomTemplates(); const item: PromptTemplate = { id: input.id && !input.id.startsWith("builtin-") ? input.id : `custom-${randomUUID()}`, title: input.title.trim(), category: input.category?.trim() || "自定义", prompt: input.prompt.trim(), kind: input.kind === "negative" ? "negative" : "positive", ratio: input.ratio, resolution: input.resolution, quality: input.quality }; const next = [...items.filter(value => value.id !== item.id), item]; await fs.mkdir(path.dirname(await templatesFile()), { recursive: true }); await fs.writeFile(await templatesFile(), JSON.stringify(next, null, 2), "utf8"); return { ok: true, item }; });

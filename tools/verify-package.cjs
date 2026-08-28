@@ -4,12 +4,12 @@ const path = require("node:path");
 const { extractAll } = require("@electron/asar");
 
 async function verifyArchiveModule(packageRoot, tempRoot) {
-  const archiver = require(path.join(packageRoot, "node_modules", "archiver"));
+  const archiverModule = require(path.join(packageRoot, "node_modules", "archiver"));
   const outputPath = path.join(tempRoot, "package-verification.zip");
 
   await new Promise((resolve, reject) => {
     const output = fs.createWriteStream(outputPath);
-    const archive = archiver("zip", { zlib: { level: 1 } });
+    const archive = new archiverModule.ZipArchive({ zlib: { level: 1 } });
 
     output.once("close", resolve);
     output.once("error", reject);
