@@ -6,3 +6,11 @@ chat-tool/
 保存图片/
 *.log
 .DS_Store
+
+# 个人/本地工具与标记文件（勿提交）
+Open-Opencode.exe
+.npmrc
+.vscode/
+.sisyphus/
+0
+
