@@ -1514,9 +1514,11 @@ function App() {
   return (
     <div className="app">
       <header>
-        <div>
-          <span className="eyebrow">AI IMAGE STUDIO · V{appVersion || "1.5.0"}</span>
-          <img className="brand-title" src={imaginationTitle} alt="把想象变成图片" />
+        <div className="header-brand">
+          <img className="brand-watermark" src={imaginationTitle} alt="" aria-hidden="true" />
+          <div className="header-title-row">
+            <span className="eyebrow">AI IMAGE STUDIO · V{appVersion || "1.5.0"}</span>
+          </div>
           <p>本地创作工作台 · 提示词助手 · 项目图库 · 局部重绘 · 批量交付</p>
         </div>
         <div className="header-stack">
