@@ -84,5 +84,10 @@
     "vite": "^8.2.2",
     "vitest": "^4.1.11",
     "wait-on": "^9.1.0"
+  },
+  "allowScripts": {
+    "keytar@7.9.0": true,
+    "protobufjs@7.6.5": true,
+    "electron-winstaller@5.4.0": true
   }
 }
