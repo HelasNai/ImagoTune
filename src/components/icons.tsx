@@ -18,6 +18,7 @@ export type NavIconName =
   | "x"
   | "plus"
   | "minus"
+  | "square"
   | "check"
   | "chevron-right"
   | "chevron-down"
@@ -127,6 +128,8 @@ const paths: Record<NavIconName, ReactNode> = {
   plus: <path d="M5 12h14m-7-7v14" />,
   // 减少
   minus: <path d="M5 12h14" />,
+  // 正方形
+  square: <rect width="18" height="18" x="3" y="3" rx="2" />,
   // 完成：对勾
   check: <path d="M20 6L9 17l-5-5" />,
 
