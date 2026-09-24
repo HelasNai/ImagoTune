@@ -4399,3 +4399,62 @@ html {
 .export-modal > section::-webkit-scrollbar-track {
   margin-block: 24px;
 }
+
+/* v1.7 无边框窗口：header 承担拖拽；窗口控制按钮固定于右上角，不与折叠动画联动。 */
+header {
+  -webkit-app-region: drag;
+  app-region: drag;
+  user-select: none;
+  padding-right: 158px; /* 为右上角 3×46px 控件 + 呼吸留白；折叠态被 .app[data-condensed] header 覆盖 */
+}
+header button,
+header input,
+header select,
+header textarea,
+header a,
+header [role="button"] {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+.window-controls {
+  position: fixed;
+  top: 0;
+  right: var(--scrollbar-w); /* 让出滚动条预留槽位（gutter），避免覆盖滚动条与透出色带 */
+  z-index: 41;               /* 高于 header(40)，低于页面浮层(45/50/60/90/130/140) */
+  display: flex;
+  align-items: stretch;
+  height: 32px;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  user-select: none;
+}
+.window-controls button {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  background: transparent;
+  color: #43506b;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  transition: background 120ms ease, color 120ms ease;
+}
+.window-controls button:hover {
+  background: rgba(23, 32, 42, 0.08);
+}
+.window-controls button:active {
+  background: rgba(23, 32, 42, 0.14);
+}
+.window-controls button[data-action="close"]:hover {
+  background: #e81123;
+  color: #fff;
+}
+.window-controls button[data-action="close"]:active {
+  background: #c50f1f;
+  color: #fff;
+}
+
+/* v1.7 设置页补充：整站无通用 a 规则；「关于与帮助」外链复用 .update-settings 区块内的
+   .update-actions 行与 .secondary 按钮外观，仅复位 a 元素的下划线，避免默认蓝链接破坏视觉语言。 */
+.update-settings a.secondary {
+  text-decoration: none;
+}
