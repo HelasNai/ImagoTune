@@ -179,6 +179,8 @@ async function migrateLegacyUserData() {
 function createWindow() {
   const win = new BrowserWindow({
     width: 1180, height: 820, minWidth: 980, minHeight: 680,
+    // 无边框窗口：标题栏与窗口按钮改由渲染层自绘（最小化/最大化/关闭），保留系统阴影与边缘 resize。
+    frame: false,
     // 取页面/header 右缘的浅粉白：scrollbar-gutter 槽位与滚动条透明轨道都透出此色，
     // 取此值可让槽位与页面、header 融为一体（原 #f7f8fc 偏冷灰，会在右上角形成色差带）。
     backgroundColor: "#fdf5f9",
@@ -189,6 +191,29 @@ function createWindow() {
     if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
     return { action: "deny" };
   });
+  // 最大化状态推送给渲染层，供自绘窗口按钮切换图标（还原 / 最大化）。
+  win.on("maximize", () => win.webContents.send("window:maximized-changed", true));
+  win.on("unmaximize", () => win.webContents.send("window:maximized-changed", false));
+  if (process.argv.includes("--dev")) {
+    // 移除原生菜单后，开发期仍需 F12/Ctrl+Shift+I 开发者工具与刷新快捷键。
+    // 用 before-input-event 只在当前窗口聚焦时拦截，不使用 globalShortcut（避免全局生效）。
+    win.webContents.on("before-input-event", (event, input) => {
+      const key = input.key.toLowerCase();
+      if (input.key === "F12" || (input.control && input.shift && key === "i")) {
+        event.preventDefault();
+        win.webContents.toggleDevTools();
+      } else if (input.control && input.shift && key === "r") {
+        event.preventDefault();
+        win.webContents.reloadIgnoringCache();
+      } else if (input.control && !input.shift && key === "r") {
+        event.preventDefault();
+        win.webContents.reload();
+      } else if (input.key === "F5") {
+        event.preventDefault();
+        win.webContents.reload();
+      }
+    });
+  }
   if (process.argv.includes("--dev")) win.loadURL(process.env.VITE_DEV_SERVER_URL || "http://127.0.0.1:5173");
   else win.loadFile(path.join(__dirname, "../dist-renderer/index.html"));
 }
@@ -556,39 +581,8 @@ app.whenReady().then(async () => {
     if (!status.installed) return new Response("Model is not installed", { status: 404 });
     return net.fetch(new URL(`file:///${localAIModels.modelPath(id).replace(/\\/g, "/")}`).toString());
   });
-  Menu.setApplicationMenu(Menu.buildFromTemplate([
-    { label: "文件", submenu: [{ label: "关闭窗口", role: "close" }] },
-    { label: "编辑", submenu: [
-      { label: "撤销", role: "undo" }, { label: "重做", role: "redo" }, { type: "separator" },
-      { label: "剪切", role: "cut" }, { label: "复制", role: "copy" }, { label: "粘贴", role: "paste" }, { label: "全选", role: "selectAll" }
-    ] },
-    { label: "查看", submenu: [
-      { label: "重新加载", role: "reload" }, { label: "强制重新加载", role: "forceReload" },
-      { label: "开发者工具", role: "toggleDevTools" }, { type: "separator" },
-      { label: "实际大小", role: "resetZoom" }, { label: "放大", role: "zoomIn" }, { label: "缩小", role: "zoomOut" },
-      { type: "separator" }, { label: "全屏", role: "togglefullscreen" }
-    ] },
-    { label: "窗口", submenu: [{ label: "最小化", role: "minimize" }, { label: "关闭", role: "close" }] },
-    { label: "帮助", submenu: [
-      { label: "打开新手教程", click: () => broadcast("tutorial:open", {}) },
-      { type: "separator" },
-      { label: "ImagoTune 使用说明", click: () => dialog.showMessageBox({ type: "info", title: "ImagoTune", message: "本地 OpenAI 兼容图片创作工具\n支持自定义基础地址、模型、文生图、图片编辑和常用输出尺寸。" }) },
-      {
-        label: "开源许可证与源代码",
-        click: () => dialog.showMessageBox({
-          type: "info",
-          title: "开源许可证与源代码",
-          message: "ImagoTune",
-          detail: "Copyright (C) 2026 zztnbnb\n\n本项目以 GNU Affero General Public License v3.0 only 发布，不提供任何担保。",
-          buttons: ["查看许可证与源代码", "关闭"],
-          defaultId: 0,
-          cancelId: 1,
-        }).then(({ response }) => {
-          if (response === 0) void shell.openExternal("https://github.com/zztnbnb/image-studio/blob/main/LICENSE");
-        }),
-      }
-    ] }
-  ]));
+  // 无边框窗口由渲染层自绘标题栏，移除原生应用菜单（菜单项功能迁移至设置页 / 窗口快捷键）。
+  Menu.setApplicationMenu(null);
   ipcMain.handle("settings:get", async () => { const c = await config(); return { configured: Boolean(c.apiKey && c.baseUrl), hasSavedApiKey: Boolean(c.apiKey), baseUrl: c.baseUrl, imageModel: c.imageModel, chatModel: c.chatModel, autoArchive: c.autoArchive, saveDir }; });
   ipcMain.handle("settings:save", async (_e, value: { apiKey: string; baseUrl: string; imageModel: string; chatModel: string; autoArchive?: boolean }) => { if (value.apiKey.trim()) await keytar.setPassword(SERVICE, ACCOUNT, value.apiKey.trim()); await keytar.setPassword(SERVICE, `${ACCOUNT}:baseUrl`, value.baseUrl.trim()); await keytar.setPassword(SERVICE, `${ACCOUNT}:imageModel`, value.imageModel.trim() || DEFAULT_IMAGE_MODEL); await keytar.setPassword(SERVICE, `${ACCOUNT}:chatModel`, value.chatModel.trim() || DEFAULT_CHAT_MODEL); await keytar.setPassword(SERVICE, `${ACCOUNT}:autoArchive`, value.autoArchive === false ? "false" : "true"); return { ok: true }; });
   ipcMain.handle("settings:chooseSaveDir", async () => {
@@ -605,6 +599,67 @@ app.whenReady().then(async () => {
       return { ok: true, canceled: false, saveDir: next };
     } catch (error) {
       return { ok: false, error: (error as Error).message || "无法使用所选保存位置" };
+    }
+  });
+  ipcMain.handle("window:minimize", async (event) => {
+    try {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (!win) return { ok: false, error: "窗口不存在" };
+      win.minimize();
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message || "无法最小化窗口" };
+    }
+  });
+  ipcMain.handle("window:toggleMaximize", async (event) => {
+    try {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (!win) return { ok: false, error: "窗口不存在" };
+      if (win.isMaximized()) win.unmaximize();
+      else win.maximize();
+      return { ok: true, maximized: win.isMaximized() };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message || "无法切换窗口最大化状态" };
+    }
+  });
+  ipcMain.handle("window:close", async (event) => {
+    try {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (!win) return { ok: false, error: "窗口不存在" };
+      win.close();
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message || "无法关闭窗口" };
+    }
+  });
+  ipcMain.handle("window:isMaximized", async (event) => {
+    try {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (!win) return { ok: false, error: "窗口不存在" };
+      return { ok: true, maximized: win.isMaximized() };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message || "无法读取窗口最大化状态" };
+    }
+  });
+  ipcMain.handle("window:getZoom", async (event) => {
+    try {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (!win) return { ok: false, error: "窗口不存在" };
+      return { ok: true, factor: win.webContents.getZoomFactor() };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message || "无法读取界面缩放" };
+    }
+  });
+  ipcMain.handle("window:setZoom", async (event, factor: number) => {
+    try {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (!win) return { ok: false, error: "窗口不存在" };
+      if (!Number.isFinite(factor)) return { ok: false, error: "缩放比例无效" };
+      const clamped = Math.min(2, Math.max(0.5, factor));
+      win.webContents.setZoomFactor(clamped);
+      return { ok: true, factor: clamped };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message || "无法设置界面缩放" };
     }
   });
   ipcMain.handle("settings:resetSaveDir", async () => {
