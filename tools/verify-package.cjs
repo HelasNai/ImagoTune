@@ -15,7 +15,7 @@ async function verifyArchiveModule(packageRoot, tempRoot) {
     output.once("error", reject);
     archive.once("error", reject);
     archive.pipe(output);
-    archive.append("AI Image Studio package verification", { name: "verification.txt" });
+    archive.append("ImagoTune package verification", { name: "verification.txt" });
     void archive.finalize();
   });
 
@@ -58,7 +58,7 @@ async function main() {
     throw new Error(`Packaged app archive was not found: ${asarPath}`);
   }
 
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ai-image-studio-package-"));
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "imagotune-package-"));
   try {
     const packageRoot = path.join(tempRoot, "app");
     extractAll(asarPath, packageRoot);

@@ -1,4 +1,4 @@
-# AI Image Studio — PROJECT KNOWLEDGE BASE
+# ImagoTune — PROJECT KNOWLEDGE BASE
 
 **Generated:** 2026-08-30
 **Commit:** 4ad073a

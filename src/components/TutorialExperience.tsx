@@ -12,6 +12,7 @@ import {
   TutorialState,
   tutorialProgress,
 } from "../lib/tutorial";
+import { NavIcon } from "./icons";
 
 export type TutorialView = "none" | "welcome" | "tour" | "center";
 
@@ -188,9 +189,9 @@ export function TutorialExperience({
   if (view === "welcome") return (
     <div className="tutorial-modal" ref={overlayRef} role="dialog" aria-modal="true" aria-labelledby="tutorial-welcome-title">
       <section className="tutorial-welcome-card">
-        <button className="tutorial-close" aria-label="稍后再看" onClick={() => { onStateChange(postponeTutorial(state)); onViewChange("none"); }}>×</button>
-        <span className="tutorial-spark">✦</span>
-        <span className="eyebrow">WELCOME TO AI IMAGE STUDIO</span>
+        <button className="tutorial-close" aria-label="稍后再看" onClick={() => { onStateChange(postponeTutorial(state)); onViewChange("none"); }}><NavIcon name="x" size={18} /></button>
+        <span className="tutorial-spark"><NavIcon name="sparkles" size={30} /></span>
+        <span className="eyebrow">WELCOME TO IMAGOTUNE</span>
         <h2 id="tutorial-welcome-title">用 2–3 分钟熟悉创作流程</h2>
         <p>教程会带你查看连接设置、提示词、参考图片、生成队列、图库和本地 AI 工具箱。</p>
         <div className="tutorial-privacy"><strong>不会产生费用</strong><span>教程只高亮和说明功能，不会生成图片、测试连接、下载模型或读取你的输入。</span></div>
@@ -206,24 +207,26 @@ export function TutorialExperience({
   if (view === "center") return (
     <div className="tutorial-modal tutorial-center-modal" ref={overlayRef} role="dialog" aria-modal="true" aria-labelledby="tutorial-center-title">
       <section className="tutorial-center">
-        <button className="tutorial-close" aria-label="关闭教程中心" onClick={() => onViewChange("none")}>×</button>
-        <div className="tutorial-center-sticky-head"><div className="tutorial-center-head">
-          <div><span className="eyebrow">LEARNING CENTER</span><h2 id="tutorial-center-title">新手教程中心</h2><p>按主题快速了解用途、步骤和常见问题。</p></div>
-          <div className="tutorial-progress-card"><strong>{progress}%</strong><span>{state.status === "completed" ? "核心教程已完成" : state.status === "in_progress" ? `已学习 ${state.currentStep + 1}/${TUTORIAL_STEPS.length}` : "尚未开始核心教程"}</span><i><b style={{ width: `${progress}%` }} /></i></div>
-        </div></div>
-        <div className="tutorial-topic-grid">
-          {TUTORIAL_TOPICS.map((topic) => <article key={topic.id}>
-            <span className="tutorial-topic-icon">{topic.icon}</span>
-            <div><h3>{topic.title}</h3><p>{topic.purpose}</p></div>
-            <ol>{topic.steps.map((item) => <li key={item}>{item}</li>)}</ol>
-            <details><summary>常见问题</summary><p>{topic.commonIssue}</p></details>
-            <button onClick={() => { onNavigate(topic.mode); onViewChange("none"); }}>前往该功能</button>
-          </article>)}
-        </div>
-        <div className="tutorial-center-actions">
-          {state.status === "in_progress" && <button className="primary" onClick={() => beginTour(false)}>继续上次进度</button>}
-          <button className={state.status === "in_progress" ? "secondary" : "primary"} onClick={() => beginTour(true)}>重新开始完整引导</button>
-          <button className="secondary" onClick={() => onViewChange("none")}>关闭</button>
+        <button className="tutorial-close" aria-label="关闭教程中心" onClick={() => onViewChange("none")}><NavIcon name="x" size={18} /></button>
+        <div className="tutorial-center-scroll">
+          <div className="tutorial-center-sticky-head"><div className="tutorial-center-head">
+            <div><span className="eyebrow">LEARNING CENTER</span><h2 id="tutorial-center-title">新手教程中心</h2><p>按主题快速了解用途、步骤和常见问题。</p></div>
+            <div className="tutorial-progress-card"><strong>{progress}%</strong><span>{state.status === "completed" ? "核心教程已完成" : state.status === "in_progress" ? `已学习 ${state.currentStep + 1}/${TUTORIAL_STEPS.length}` : "尚未开始核心教程"}</span><i><b style={{ width: `${progress}%` }} /></i></div>
+          </div></div>
+          <div className="tutorial-topic-grid">
+            {TUTORIAL_TOPICS.map((topic) => <article key={topic.id}>
+              <span className="tutorial-topic-icon"><NavIcon name={topic.icon} size={20} /></span>
+              <div><h3>{topic.title}</h3><p>{topic.purpose}</p></div>
+              <ol>{topic.steps.map((item) => <li key={item}>{item}</li>)}</ol>
+              <details><summary>常见问题</summary><p>{topic.commonIssue}</p></details>
+              <button onClick={() => { onNavigate(topic.mode); onViewChange("none"); }}>前往该功能</button>
+            </article>)}
+          </div>
+          <div className="tutorial-center-actions">
+            {state.status === "in_progress" && <button className="primary" onClick={() => beginTour(false)}>继续上次进度</button>}
+            <button className={state.status === "in_progress" ? "secondary" : "primary"} onClick={() => beginTour(true)}>重新开始完整引导</button>
+            <button className="secondary" onClick={() => onViewChange("none")}>关闭</button>
+          </div>
         </div>
       </section>
     </div>

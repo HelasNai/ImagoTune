@@ -1,4 +1,4 @@
-# AI Image Studio
+# ImagoTune
 
 当前版本：**v1.5.0**
 
@@ -16,7 +16,7 @@
 - 左侧“新手教程”和应用顶部“帮助”菜单均可随时重新打开教程中心。
 - 教程进度只保存在本机，不记录 API 密钥、提示词或图片内容。
 
-AI Image Studio v1.4.0 是一款面向 Windows 的 AI 图片创作工作台。应用使用 Electron + React，可连接符合当前请求格式的 OpenAI 兼容服务，也提供不依赖 API 的本地 AI 后期工具箱。
+ImagoTune v1.4.0 是一款面向 Windows 的 AI 图片创作工作台。应用使用 Electron + React，可连接符合当前请求格式的 OpenAI 兼容服务，也提供不依赖 API 的本地 AI 后期工具箱。
 
 ## v1.4.0 更新
 
@@ -95,7 +95,7 @@ POST /chat/completions
 - 持久化顺序任务队列，一次只发送一个请求；失败任务由用户手动重试，避免重复计费。
 - 项目图库、收件箱、收藏、标签、搜索、缩略图懒加载、批量移动、删除、ZIP 导出和最多 4 张图片对比。
 - PNG 配方元数据、复制图片/提示词/完整参数和社交平台画布导出。
-- 启动时可选检查 GitHub Release 更新，由用户决定是否下载和安装。
+- 软件更新支持「正式版 / 测试版 Beta」渠道与「自动更新」开关：开启后启动时自动检查并在后台下载新版本，安装前仍会询问；关闭后仅在你手动检查时提示下载。
 - 完全本地的超分、抠图和人脸优化后期工具，支持 WebGPU/WASM 自动回退与模型管理。
 
 ## 安装
@@ -127,7 +127,7 @@ API 密钥由 Electron 主进程写入 Windows 凭据库，不写入源码、项
 
 ```text
 旧版目录存在时：继续使用原目录，避免图库丢失
-新安装设备：系统“图片”文件夹\AI Image Studio
+新安装设备：系统“图片”文件夹\ImagoTune
 ```
 
 自动图库位于手动保存目录下的“图库”子目录：
@@ -161,7 +161,7 @@ npm.cmd run package:win
 安装包输出示例：
 
 ```text
-dist\AI-Image-Studio-Setup-1.4.0.exe
+dist\ImagoTune-Setup-1.4.0.exe
 ```
 
 ## 项目结构
@@ -178,17 +178,26 @@ tests/       Vitest 纯逻辑测试
 
 每个 GitHub Release 需要同时上传：
 
-- `AI-Image-Studio-Setup-版本号.exe`
-- `AI-Image-Studio-Setup-版本号.exe.blockmap`
+- `ImagoTune-Setup-版本号.exe`
+- `ImagoTune-Setup-版本号.exe.blockmap`
 - `latest.yml`
 
 `latest.yml` 包含更新地址和校验信息；缺少它时，已安装用户无法收到新版本提醒。
+
+### 发布 Beta 测试版
+
+测试版与正式版共用同一套安装包，但只有把更新渠道选为「测试版 Beta」的用户才会收到：
+
+- Beta 构建必须以 GitHub prerelease 发布，例如 electron-builder 发布时设置 `EP_PRE_RELEASE=true`，或在 `publish` 配置中设置 `releaseType: "prerelease"`。正式版用户读取的是 GitHub 的 `/releases/latest`，因此不会看到 prerelease。
+- Beta 版本号必须带预发布后缀，例如 `2.1.0-beta.1`，否则会被当作正式版。
+- 客户端通过 electron-updater 的 `channel = "beta"` 加 `allowPrerelease = true` 进入测试版渠道；应用内「测试版 Beta」选项做的就是这件事。
+- 如果没有上传 `beta.yml` 资产，beta 渠道会回退读取该 Release 自己的 `latest.yml`。所以每个 Release 至少仍要上传 `latest.yml`、`.exe` 和 `.exe.blockmap` 三件套。
 
 ## 开源许可证
 
 Copyright (C) 2026 zztnbnb
 
-AI Image Studio 自本许可证声明起，以 [GNU Affero General Public License v3.0 only](LICENSE) 发布，SPDX 标识为 `AGPL-3.0-only`。
+ImagoTune 自本许可证声明起，以 [GNU Affero General Public License v3.0 only](LICENSE) 发布，SPDX 标识为 `AGPL-3.0-only`。
 
 你可以运行、研究、修改、收费分发本项目。分发原版或修改版时，必须遵守 AGPL-3.0：保留许可证与版权声明，向接收者提供对应源代码，并将基于本项目形成的衍生作品继续以 AGPL-3.0 许可。修改版通过网络向用户提供服务时，也必须向这些用户提供对应源代码。
 

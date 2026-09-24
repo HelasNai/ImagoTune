@@ -1,6 +1,6 @@
 {
-  "name": "ai-image-studio",
-  "version": "1.5.1",
+  "name": "imagotune",
+  "version": "2.0.0",
   "description": "OpenAI-compatible local creative workspace for Windows",
   "author": "zztnbnb",
   "license": "AGPL-3.0-only",
@@ -31,8 +31,8 @@
   },
   "build": {
     "appId": "com.zztnbnb.pinaic.imagestudio",
-    "productName": "AI Image Studio",
-    "artifactName": "AI-Image-Studio-Setup-${version}.${ext}",
+    "productName": "ImagoTune",
+    "artifactName": "ImagoTune-Setup-${version}.${ext}",
     "asar": true,
     "afterPack": "tools/after-pack.cjs",
     "npmRebuild": false,
@@ -59,7 +59,7 @@
           ]
         }
       ],
-      "icon": "AI Image Studio.ico",
+      "icon": "ImagoTune.ico",
       "signAndEditExecutable": false
     },
     "nsis": {
@@ -67,7 +67,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "AI Image Studio"
+      "shortcutName": "ImagoTune"
     }
   },
   "devDependencies": {

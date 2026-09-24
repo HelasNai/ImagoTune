@@ -4,8 +4,8 @@ from PIL import Image
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PNG_PATH = ROOT / "AI Image Studio.png"
-ICO_PATH = ROOT / "AI Image Studio.ico"
+PNG_PATH = ROOT / "ImagoTune.png"
+ICO_PATH = ROOT / "ImagoTune.ico"
 ICON_SIZES = [
     (16, 16),
     (24, 24),

@@ -16,10 +16,14 @@ import { normalizeImageBase64, prioritizeImageResponses, type ImageResponse } fr
 import { LocalAIModelManager } from "./local-ai-model-manager";
 import { LocalAIModelId, localAIModelById } from "./local-ai-models";
 
+// 注：曾尝试 Chromium overlay 滚动条（--enable-features=OverlayScrollbar）以避免 scrollbar-gutter 槽位，
+// 但 Electron 44 存在回归（electron#53350）：appendSwitch / appendArgument 均不生效，反而回落到经典滚动条。
+// 现改为：渲染层用自定义滚动条 + scrollbar-gutter 不抖动，槽位与轨道透出「窗口底色」，
+// 故把窗口底色取成页面右缘近似色，使槽位与页面/header 融为一体。
 protocol.registerSchemesAsPrivileged([{ scheme: "local-ai-model", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }]);
 
-const SERVICE = "ai-image-studio";
-const LEGACY_SERVICE = "pinaic-image-studio";
+const SERVICE = "imagotune";
+const LEGACY_SERVICES = ["ai-image-studio", "pinaic-image-studio"];
 const ACCOUNT = "default";
 const DEFAULT_BASE_URL = "";
 const DEFAULT_IMAGE_MODEL = "gpt-image-2";
@@ -29,6 +33,7 @@ const controllers = new Map<string, AbortController>();
 const cancelledRequests = new Set<string>();
 const timedOutRequests = new Set<string>();
 type UpdatePhase = "idle" | "checking" | "available" | "downloading" | "downloaded" | "not-available" | "error";
+type UpdateChannel = "stable" | "beta";
 type UpdateStatus = { phase: UpdatePhase; version?: string; progress?: number; message: string };
 let updateStatus: UpdateStatus = { phase: "idle", message: "尚未检查更新" };
 let updateCheckInFlight = false;
@@ -107,7 +112,7 @@ async function archiveImages(images: ApiImage[], input: RequestInput | EditInput
 }
 
 function systemSaveDir() {
-  return path.join(app.getPath("pictures"), "AI Image Studio");
+  return path.join(app.getPath("pictures"), "ImagoTune");
 }
 
 async function resolveSaveDir() {
@@ -155,11 +160,29 @@ async function readCustomTemplates(): Promise<PromptTemplate[]> {
   }
 }
 
+async function migrateLegacyUserData() {
+  try {
+    const newDir = app.getPath("userData");
+    const oldDir = path.join(app.getPath("appData"), "AI Image Studio");
+    if (path.resolve(newDir) === path.resolve(oldDir)) return;
+    const existing = await fs.readdir(newDir).catch(() => [] as string[]);
+    if (existing.length > 0) return;
+    const legacy = await fs.stat(oldDir).catch(() => null);
+    if (!legacy || !legacy.isDirectory()) return;
+    await fs.cp(oldDir, newDir, { recursive: true, force: true, errorOnExist: false });
+  } catch (error) {
+    // 迁移失败只告警，绝不删除旧目录，也绝不阻断启动。
+    console.warn("迁移旧版 ImagoTune 用户数据目录失败：", error);
+  }
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1180, height: 820, minWidth: 980, minHeight: 680,
-    backgroundColor: "#f7f8fc",
-    icon: path.join(__dirname, "../AI Image Studio.ico"),
+    // 取页面/header 右缘的浅粉白：scrollbar-gutter 槽位与滚动条透明轨道都透出此色，
+    // 取此值可让槽位与页面、header 融为一体（原 #f7f8fc 偏冷灰，会在右上角形成色差带）。
+    backgroundColor: "#fdf5f9",
+    icon: path.join(__dirname, "../ImagoTune.ico"),
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false }
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -173,9 +196,18 @@ function createWindow() {
 async function storedCredential(account: string) {
   const current = await keytar.getPassword(SERVICE, account);
   if (current !== null) return current;
-  const legacy = await keytar.getPassword(LEGACY_SERVICE, account);
-  if (legacy !== null) await keytar.setPassword(SERVICE, account, legacy);
-  return legacy;
+  for (const legacyService of LEGACY_SERVICES) {
+    const legacy = await keytar.getPassword(legacyService, account);
+    if (legacy !== null) {
+      try {
+        await keytar.setPassword(SERVICE, account, legacy);
+      } catch {
+        // 回写失败也要返回读到的旧值，避免用户凭据丢失。
+      }
+      return legacy;
+    }
+  }
+  return null;
 }
 
 async function config() {
@@ -189,8 +221,15 @@ async function config() {
   };
 }
 
-async function checkUpdatesAtStartup() {
-  return (await storedCredential(ACCOUNT + ":checkUpdatesAtStartup")) !== "false";
+async function updateChannelPref(): Promise<UpdateChannel> {
+  return (await storedCredential(`${ACCOUNT}:updateChannel`)) === "beta" ? "beta" : "stable";
+}
+
+async function autoUpdatePref(): Promise<boolean> {
+  const current = await storedCredential(`${ACCOUNT}:autoUpdate`);
+  if (current !== null) return current !== "false";
+  // 向后兼容旧键 checkUpdatesAtStartup：仅显式 "false" 视为关闭，缺失或其它值视为开启。
+  return (await storedCredential(`${ACCOUNT}:checkUpdatesAtStartup`)) !== "false";
 }
 
 function publishUpdateStatus(next: UpdateStatus) {
@@ -225,7 +264,7 @@ async function promptForDownload(info: UpdateInfo) {
     const result = await dialog.showMessageBox(win, {
       type: "info",
       title: "发现新版本",
-      message: "AI Image Studio " + info.version + " 已可更新",
+      message: "ImagoTune " + info.version + " 已可更新",
       detail: "是否现在下载？下载完成后仍由你选择是否重启安装。",
       buttons: ["稍后再说", "下载更新"],
       defaultId: 1,
@@ -258,13 +297,23 @@ async function checkForAppUpdate() {
   }
 }
 
+async function applyUpdatePreferences() {
+  const channel = await updateChannelPref();
+  autoUpdater.channel = channel === "beta" ? "beta" : "latest";
+  autoUpdater.allowPrerelease = channel === "beta";
+  // electron-updater's channel setter unconditionally flips allowDowngrade to true.
+  // Force it back off so switching beta -> stable never silently downgrades.
+  autoUpdater.allowDowngrade = false;
+  autoUpdater.autoDownload = await autoUpdatePref(); // on = background auto-download; off = manual
+}
+
 function configureAutoUpdater() {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.on("checking-for-update", () => publishUpdateStatus({ phase: "checking", message: "正在检查更新…" }));
   autoUpdater.on("update-available", (info) => {
     publishUpdateStatus({ phase: "available", version: info.version, message: "发现新版本 v" + info.version });
-    void promptForDownload(info);
+    if (!autoUpdater.autoDownload) void promptForDownload(info);
   });
   autoUpdater.on("update-not-available", () => publishUpdateStatus({ phase: "not-available", message: "当前已是最新版本。" }));
   autoUpdater.on("download-progress", (progress: ProgressInfo) => {
@@ -278,7 +327,7 @@ function configureAutoUpdater() {
     const result = await dialog.showMessageBox(win, {
       type: "info",
       title: "更新已下载",
-      message: "AI Image Studio " + info.version + " 已准备好",
+      message: "ImagoTune " + info.version + " 已准备好",
       detail: "是否现在重启并安装？你也可以稍后在“设置”中执行安装。",
       buttons: ["稍后安装", "重启并安装"],
       defaultId: 1,
@@ -495,6 +544,7 @@ async function processQueue() {
   finally { const current = (await queueStore.read()).find(item => item.id === running.id); if (current?.status === "completed") await queueStore.removeAssets(running); activeQueueJobId = null; broadcast("queue:update", await queueStore.read()); void processQueue(); }
 }
 app.whenReady().then(async () => {
+  await migrateLegacyUserData();
   await activateSaveDirectory(await resolveSaveDir());
   queueStore = createQueueStore(app.getPath("userData")); await queueStore.recover();
   await activateModelDirectory(await resolveModelDir());
@@ -522,13 +572,13 @@ app.whenReady().then(async () => {
     { label: "帮助", submenu: [
       { label: "打开新手教程", click: () => broadcast("tutorial:open", {}) },
       { type: "separator" },
-      { label: "AI Image Studio 使用说明", click: () => dialog.showMessageBox({ type: "info", title: "AI Image Studio", message: "本地 OpenAI 兼容图片创作工具\n支持自定义基础地址、模型、文生图、图片编辑和常用输出尺寸。" }) },
+      { label: "ImagoTune 使用说明", click: () => dialog.showMessageBox({ type: "info", title: "ImagoTune", message: "本地 OpenAI 兼容图片创作工具\n支持自定义基础地址、模型、文生图、图片编辑和常用输出尺寸。" }) },
       {
         label: "开源许可证与源代码",
         click: () => dialog.showMessageBox({
           type: "info",
           title: "开源许可证与源代码",
-          message: "AI Image Studio",
+          message: "ImagoTune",
           detail: "Copyright (C) 2026 zztnbnb\n\n本项目以 GNU Affero General Public License v3.0 only 发布，不提供任何担保。",
           buttons: ["查看许可证与源代码", "关闭"],
           defaultId: 0,
@@ -544,7 +594,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("settings:chooseSaveDir", async () => {
     if (activeQueueJobId) return { ok: false, error: "当前有任务正在生成，请等待完成后再切换保存位置" };
     const result = await dialog.showOpenDialog({
-      title: "选择 AI Image Studio 保存位置",
+      title: "选择 ImagoTune 保存位置",
       defaultPath: saveDir,
       properties: ["openDirectory", "createDirectory"],
     });
@@ -572,7 +622,7 @@ app.whenReady().then(async () => {
     const error = await shell.openPath(saveDir);
     return error ? { ok: false, error } : { ok: true };
   });
-  ipcMain.handle("settings:clear", async () => { await Promise.all([keytar.deletePassword(SERVICE, ACCOUNT), keytar.deletePassword(LEGACY_SERVICE, ACCOUNT)]); return { ok: true }; });
+  ipcMain.handle("settings:clear", async () => { await Promise.all([keytar.deletePassword(SERVICE, ACCOUNT), ...LEGACY_SERVICES.map((service) => keytar.deletePassword(service, ACCOUNT))]); return { ok: true }; });
   ipcMain.handle("settings:test", async () => { const c = await config(); if (!c.baseUrl) return { ok: false, message: "尚未配置 API Base URL" }; if (!c.apiKey) return { ok: false, message: "尚未配置 API 密钥" }; try { new URL(c.baseUrl); const r = await fetch(`${c.baseUrl.replace(/\/$/, "")}/models`, { headers: { Authorization: `Bearer ${c.apiKey}` }, signal: AbortSignal.timeout(20_000) }); return r.ok ? { ok: true, message: "连接成功" } : { ok: false, message: `接口返回 ${r.status}` }; } catch (e) { return { ok: false, message: (e as Error).message }; } });
   ipcMain.handle("localAI:capabilities", async () => ({
     ok: true,
@@ -638,8 +688,24 @@ app.whenReady().then(async () => {
       return created[0] ? { ok: true, item: created[0] } : { ok: false, error: "本地处理结果归档失败" };
     } catch (error) { return { ok: false, error: (error as Error).message || "本地处理结果归档失败" }; }
   });
-  ipcMain.handle("updates:get", async () => ({ ok: true, appVersion: app.getVersion(), checkAtStartup: await checkUpdatesAtStartup(), supported: app.isPackaged, status: updateStatus }));
-  ipcMain.handle("updates:setStartup", async (_e, enabled: boolean) => { await keytar.setPassword(SERVICE, ACCOUNT + ":checkUpdatesAtStartup", enabled ? "true" : "false"); return { ok: true, checkAtStartup: enabled }; });
+  ipcMain.handle("updates:get", async () => ({ ok: true, appVersion: app.getVersion(), channel: await updateChannelPref(), autoUpdate: await autoUpdatePref(), supported: app.isPackaged, status: updateStatus }));
+  ipcMain.handle("updates:setChannel", async (_e, channel: UpdateChannel) => {
+    try {
+      const next: UpdateChannel = channel === "beta" ? "beta" : "stable";
+      await keytar.setPassword(SERVICE, `${ACCOUNT}:updateChannel`, next);
+      await applyUpdatePreferences();
+      if ((await autoUpdatePref()) && app.isPackaged) void checkForAppUpdate();
+      return { ok: true, channel: next };
+    } catch (error) { return { ok: false, error: (error as Error).message || "无法保存更新通道设置" }; }
+  });
+  ipcMain.handle("updates:setAutoUpdate", async (_e, enabled: boolean) => {
+    try {
+      await keytar.setPassword(SERVICE, `${ACCOUNT}:autoUpdate`, enabled ? "true" : "false");
+      await applyUpdatePreferences();
+      if (enabled && app.isPackaged && updateStatus.phase === "available") void downloadAppUpdate();
+      return { ok: true, autoUpdate: enabled };
+    } catch (error) { return { ok: false, error: (error as Error).message || "无法保存自动更新设置" }; }
+  });
   ipcMain.handle("updates:check", async () => checkForAppUpdate());
   ipcMain.handle("updates:download", async () => downloadAppUpdate());
   ipcMain.handle("updates:install", async () => {
@@ -670,7 +736,7 @@ app.whenReady().then(async () => {
     try {
       const raw = value.data ? Buffer.from(value.data) : Buffer.from(String(value.dataUrl || "").replace(/^data:image\/\w+;base64,/, ""), "base64");
       const recipe = readRecipeFromPng(raw);
-      return recipe ? { ok: true, recipe } : { ok: false, error: "PNG 中没有 Image Studio 配方元数据" };
+      return recipe ? { ok: true, recipe } : { ok: false, error: "PNG 中没有 ImagoTune 配方元数据" };
     } catch (error) { return { ok: false, error: (error as Error).message || "无法读取 PNG 元数据" }; }
   });
   ipcMain.handle("outpaint:prepare", async (_e, input: { sourceWidth: number; sourceHeight: number; targetSize: string }) => {
@@ -733,8 +799,9 @@ app.whenReady().then(async () => {
   ipcMain.handle("templates:save", async (_e, input: Partial<PromptTemplate>) => { if (!input.title?.trim() || !input.prompt?.trim()) return { ok: false, error: "模板标题和提示词不能为空" }; const items = await readCustomTemplates(); const item: PromptTemplate = { id: input.id && !input.id.startsWith("builtin-") ? input.id : `custom-${randomUUID()}`, title: input.title.trim(), category: input.category?.trim() || "自定义", prompt: input.prompt.trim(), kind: input.kind === "negative" ? "negative" : "positive", ratio: input.ratio, resolution: input.resolution, quality: input.quality }; const next = [...items.filter(value => value.id !== item.id), item]; await fs.mkdir(path.dirname(await templatesFile()), { recursive: true }); await fs.writeFile(await templatesFile(), JSON.stringify(next, null, 2), "utf8"); return { ok: true, item }; });
   ipcMain.handle("templates:delete", async (_e, id: string) => { if (id.startsWith("builtin-")) return { ok: false, error: "内置模板不能删除" }; const items = await readCustomTemplates(); await fs.writeFile(await templatesFile(), JSON.stringify(items.filter(item => item.id !== id), null, 2), "utf8"); return { ok: true }; });
   configureAutoUpdater();
+  await applyUpdatePreferences();
   createWindow();
-  if (app.isPackaged && await checkUpdatesAtStartup()) setTimeout(() => { void checkForAppUpdate(); }, 5_000);
+  if (app.isPackaged && await autoUpdatePref()) setTimeout(() => { void checkForAppUpdate(); }, 5_000);
   app.on("activate", () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
 });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });

@@ -2,8 +2,32 @@
 :root {
   font-family: "DM Sans", "Noto Sans SC", sans-serif;
   color: #17202a;
-  background: #f7f8fc;
+  /* 页面底色由 html 承担（见文件末尾 v2.0 分区），body 不设 background。 */
   font-synthesis: none;
+  /* v1.5.2 布局 token：侧栏宽度 / 主区最大宽度 / 主区横向内边距。
+     顶部早期的 .layout/aside/main 会被下方 v1.2 分区再次覆盖，
+     这里取“实际生效值”作为单一来源，供固定底栏 .run-row 对齐 .composer 卡片。 */
+  --aside-width: 238px;
+  --layout-max-width: 1440px;
+  --main-pad-x: clamp(26px, 3vw, 46px);
+  /* v1.6 折叠头部 token：--header-h 恒用于占位（spacer / .layout min-height）；
+     --header-h-current 为实时值，仅驱动 header 高度与 aside 的 sticky top。
+     动画只过渡真实几何属性（left/width/height/padding），严禁 transform。 */
+  --header-h: 88px;
+  /* 折叠态保持与静态同高：浓缩只体现在“收窄 + 精简内容”，不矮化高度，
+     否则 header 底与侧栏顶之间必然出现缝隙或空白。 */
+  --header-h-condensed: var(--header-h);
+  --header-h-current: var(--header-h);
+  --header-anim: 240ms;
+  --header-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --layout-offset: max(0px, calc((100% - var(--layout-max-width)) / 2));
+  /* v2.0 滚动条槽位宽度：::-webkit-scrollbar 宽与 scrollbar-gutter 槽宽共用，保证一致。 */
+  --scrollbar-w: 12px;
+  /* v2.0 header 背景：抽为变量供 header 复用（保持单一来源）。 */
+  --header-bg:
+    radial-gradient(circle at 78% 23%, rgba(133, 208, 255, 0.44), transparent 18%),
+    radial-gradient(circle at 91% 78%, rgba(255, 175, 211, 0.48), transparent 24%),
+    linear-gradient(116deg, #f8fdff 0%, #f8f4ff 53%, #fff5f8 100%);
 }
 * {
   box-sizing: border-box;
@@ -60,17 +84,19 @@ header p {
 }
 .layout {
   display: flex;
-  max-width: 1240px;
+  max-width: var(--layout-max-width);
   margin: 0 auto;
 }
 aside {
-  width: 215px;
+  width: var(--aside-width);
   padding: 32px 20px;
   border-right: 1px solid #e8e9f0;
   min-height: calc(100vh - 158px);
 }
 .nav {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   width: 100%;
   text-align: left;
   background: none;
@@ -79,6 +105,10 @@ aside {
   border-radius: 12px;
   color: #687180;
   font-weight: 600;
+}
+/* 导航图标：内联 SVG（NavIcon），继承 .nav / .nav.active 的 currentColor，禁止被压缩 */
+.nav > svg {
+  flex: none;
 }
 .nav.active {
   background: #eae7ff;
@@ -278,7 +308,8 @@ label {
   color: #9ba2b0;
 }
 .empty span {
-  display: block;
+  display: grid;
+  place-items: center;
   color: #b6adeb;
   font-size: 40px;
 }
@@ -326,6 +357,7 @@ label {
     display: block;
   }
   aside {
+    position: static;
     width: auto;
     min-height: 0;
     border-right: 0;
@@ -385,6 +417,8 @@ label {
   width: 42px;
   height: 42px;
   border-radius: 50%;
+  display: grid;
+  place-items: center;
   background: rgba(255, 255, 255, 0.16);
   color: #fff;
   font-size: 30px;
@@ -396,9 +430,7 @@ label {
   color: rgba(255, 255, 255, 0.7);
   font-size: 12px;
 }
-body {
-  background: linear-gradient(135deg, #f3fbff 0%, #fff2f8 52%, #f6f3ff 100%);
-}
+/* 页面背景已上移至 html（v2.0）：让根背景填充 scrollbar-gutter 槽位，见文件末尾 html 规则。 */
 header {
   background: linear-gradient(135deg, #f5fcff 0%, #fff0f8 100%);
 }
@@ -541,9 +573,12 @@ main,
 .check input,
 .archive-toggle input {
   width: auto;
+  flex: 0 0 auto;
 }
 .archive-toggle {
   display: flex;
+  flex-direction: row;
+  flex: 0 0 auto;
   align-items: center;
   gap: 8px;
   margin: 18px 0;
@@ -685,20 +720,7 @@ main,
 .error button:hover {
   background: #fff8f8;
 }
-body {
-  background:
-    radial-gradient(
-      circle at 9% 21%,
-      rgba(131, 211, 255, 0.22),
-      transparent 28%
-    ),
-    radial-gradient(
-      circle at 91% 30%,
-      rgba(255, 169, 205, 0.2),
-      transparent 31%
-    ),
-    linear-gradient(135deg, #f3fbff 0%, #fbf8ff 49%, #fff5f9 100%);
-}
+/* （页面渐变已移至 html 的 background-image，见文件末尾 v2.0 分区。） */
 .app {
   background: linear-gradient(
     180deg,
@@ -707,23 +729,22 @@ body {
   );
 }
 header {
-  position: relative;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 40;
+  width: 100%;
+  height: var(--header-h-current);
+  min-height: 0;
   isolation: isolate;
   overflow: hidden;
-  min-height: 88px;
   padding: 12px 48px 10px;
-  background:
-    radial-gradient(
-      circle at 78% 23%,
-      rgba(133, 208, 255, 0.44),
-      transparent 18%
-    ),
-    radial-gradient(
-      circle at 91% 78%,
-      rgba(255, 175, 211, 0.48),
-      transparent 24%
-    ),
-    linear-gradient(116deg, #f8fdff 0%, #f8f4ff 53%, #fff5f8 100%);
+  transition:
+    left var(--header-anim) var(--header-ease),
+    width var(--header-anim) var(--header-ease),
+    height var(--header-anim) var(--header-ease),
+    padding var(--header-anim) var(--header-ease);
+  background: var(--header-bg);
   border-bottom: 1px solid rgba(139, 156, 209, 0.22);
 }
 header::before {
@@ -762,14 +783,24 @@ header p {
   backdrop-filter: blur(12px);
 }
 .layout {
-  max-width: 1440px;
-  min-height: calc(100vh - 88px);
+  max-width: var(--layout-max-width);
+  min-height: calc(100vh - var(--header-h));
   margin: 0 auto;
   background: rgba(255, 255, 255, 0.28);
 }
 aside {
-  width: 238px;
-  padding: 26px 18px;
+  position: sticky;
+  /* 顶部紧贴 header 底部（无间隙）；padding-top 与 min-height 反向补偿，
+     使侧栏内容位置与底部在折叠前后保持恒定，只有顶部背景跟随 header 移动。 */
+  top: var(--header-h-current);
+  align-self: flex-start;
+  padding: calc(26px + var(--header-h) - var(--header-h-current)) 18px 26px;
+  min-height: calc(100vh - var(--header-h-current) - 70px);
+  transition:
+    top var(--header-anim) var(--header-ease),
+    padding var(--header-anim) var(--header-ease),
+    min-height var(--header-anim) var(--header-ease);
+  width: var(--aside-width);
   background: linear-gradient(
     180deg,
     rgba(246, 252, 255, 0.88),
@@ -780,8 +811,8 @@ aside {
 }
 .nav {
   position: relative;
-  padding: 15px 16px;
-  margin: 5px 0;
+  padding: 9px 14px;
+  margin: 2px 0;
   border: 1px solid transparent;
   transition:
     transform 0.18s ease,
@@ -815,7 +846,7 @@ aside {
 }
 main {
   max-width: none;
-  padding: 30px clamp(26px, 3vw, 46px) 72px;
+  padding: 30px var(--main-pad-x) 72px;
   background: linear-gradient(
     130deg,
     rgba(250, 253, 255, 0.5),
@@ -922,16 +953,19 @@ textarea {
 }
 .empty {
   padding: 62px 20px;
+  /* v2.1 修复：光晕半径改用 closest-side。默认 farthest-corner 会让渐变的透明终点
+     落在盒子之外，宽而矮的空态在上/下边缘仍是半透明，于是盒边界出现生硬分界线。
+     closest-side 保证透明度在盒内完全归零，任何宽高比都不会被截断。 */
   background: radial-gradient(
-    circle at 50% 28%,
+    circle closest-side at 50% 45%,
     rgba(211, 244, 255, 0.34),
-    transparent 34%
+    transparent
   );
 }
 @media (max-width: 900px) {
   header {
-    min-height: 0;
-    padding: 26px 30px 22px;
+    min-height: 88px;
+    padding: 12px 30px 10px;
   }
   .layout {
     min-height: 0;
@@ -942,8 +976,11 @@ textarea {
   }
 }
 @media (max-width: 700px) {
+  :root {
+    --main-pad-x: 16px;
+  }
   header {
-    padding: 24px 22px 20px;
+    padding: 12px 22px 10px;
   }
   header::before {
     right: -220px;
@@ -954,7 +991,7 @@ textarea {
     font-size: 12px;
   }
   main {
-    padding: 16px 16px 54px;
+    padding: 16px var(--main-pad-x) 54px;
   }
   .card {
     border-radius: 20px;
@@ -1323,6 +1360,9 @@ textarea {
 }
 
 .update-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
   margin: 25px 0 4px;
   padding: 17px;
   border: 1px solid rgba(140, 184, 224, 0.27);
@@ -1344,8 +1384,43 @@ textarea {
   font-size: 12px;
   line-height: 1.6;
 }
+.update-channel {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0;
+}
+.update-channel-label {
+  color: #75849a;
+  font-size: 12px;
+  font-weight: 700;
+}
+.update-channel-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 5px;
+  border-radius: 12px;
+  background: #eff4fa;
+}
+.update-channel-options button {
+  min-width: 0;
+  min-height: 36px;
+  padding: 7px 5px;
+  border-radius: 9px;
+  background: transparent;
+  color: #75849a;
+  font-size: 12px;
+  font-weight: 700;
+}
+.update-channel-options button.active {
+  background: #fff;
+  color: #526bbb;
+  box-shadow: 0 5px 13px rgba(89, 112, 165, 0.13);
+}
 .update-settings .archive-toggle {
-  margin: 13px 0 10px;
+  margin: 0;
+  line-height: 1.5;
 }
 .update-actions {
   display: flex;
@@ -1367,7 +1442,10 @@ textarea {
   font-weight: 700;
 }
 .update-status {
-  margin-top: 10px !important;
+  margin: 0 !important;
+}
+.update-status:empty {
+  display: none;
 }
 .update-status.error-text {
   color: #b25e6c;
@@ -2007,6 +2085,8 @@ textarea {
   width: 28px;
   height: 28px;
   border-radius: 8px;
+  display: grid;
+  place-items: center;
   background: transparent;
   color: #8796aa;
   font-weight: 700;
@@ -2383,9 +2463,18 @@ textarea {
 .run-row {
   position: fixed;
   z-index: 45;
-  left: calc(50% + 119px);
+  /* 居中于 main 内容区：.layout 水平居中且 main 紧邻侧栏，
+     故内容区中心 = 视口中心 + 侧栏宽度 / 2（无需再硬编码 119px） */
+  left: calc(50% + var(--aside-width) / 2);
   bottom: 18px;
-  width: min(850px, calc(100vw - 300px));
+  /* 与 .composer 卡片同宽（左右边缘完全重合，不从卡片中部起始）：
+     card_width = min(视口内容宽, 布局上限) - 侧栏宽 - 2·主区内边距。
+     不再设 850px 上限——上限会让长条比卡片窄而留下两侧等宽空隙。
+     用 100%（视口内容宽度，不含滚动条）而非 100vw（含滚动条），避免右侧溢出 */
+  width: min(
+    calc(100% - var(--aside-width) - 2 * var(--main-pad-x)),
+    calc(var(--layout-max-width) - var(--aside-width) - 2 * var(--main-pad-x))
+  );
   margin: 0;
   padding: 10px 14px;
   border: 1px solid rgba(151, 180, 220, 0.3);
@@ -2435,6 +2524,8 @@ textarea {
   height: 24px;
   flex: 0 0 auto;
   border-radius: 50%;
+  display: grid;
+  place-items: center;
   background: #f2f6fb;
   color: #6e82a2;
   font-size: 17px;
@@ -2505,16 +2596,18 @@ textarea {
   font-size: 10px;
   font-weight: 700;
   list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.card-more summary svg {
+  transition: transform 150ms ease;
+}
+.card-more[open] summary svg {
+  transform: rotate(90deg);
 }
 .card-more summary::-webkit-details-marker {
   display: none;
-}
-.card-more summary::before {
-  content: "＋ ";
-  color: #9aaed0;
-}
-.card-more[open] summary::before {
-  content: "− ";
 }
 .card-more > div {
   display: flex;
@@ -2535,7 +2628,7 @@ textarea {
 @media (min-width: 901px) and (max-width: 1180px) {
   header {
     min-height: 88px;
-    padding: 24px 38px 20px;
+    padding: 12px 38px 10px;
   }
   main {
     padding-top: 22px;
@@ -2544,7 +2637,9 @@ textarea {
 @media (max-width: 900px) {
   .run-row {
     left: 50%;
-    width: calc(100vw - 48px);
+    /* ≤900：.layout 变为 block，aside{width:auto} 是整行条、不再横向占位，
+       卡片宽 = 布局宽 - 2·主区内边距（不减去侧栏宽），此处与之同宽 */
+    width: calc(100% - 2 * var(--main-pad-x));
     transform: translateX(-50%);
   }
 }
@@ -2554,7 +2649,8 @@ textarea {
   }
   .run-row {
     bottom: 10px;
-    width: calc(100vw - 24px);
+    /* ≤700：--main-pad-x 覆盖为 16px，卡片 = 布局宽 - 32px，长条与之同宽 */
+    width: calc(100% - 2 * var(--main-pad-x));
     padding: 9px 10px;
     gap: 7px;
   }
@@ -2679,14 +2775,16 @@ select:focus-visible {
 .empty span {
   animation: empty-float 2.8s ease-in-out infinite;
 }
+/* v1.5.2 修复：.page-transition 不得使用 transform 动画。
+   任何非 none 的 transform（含 fill:both 残留的 identity matrix）都会让它成为
+   position:fixed 后代（如 .run-row 浮动操作栏）的包含块，使其 left/width 百分比
+   相对该容器而非视口，导致浮动条错位/溢出。故页面切换仅保留淡入。 */
 @keyframes page-enter {
   from {
     opacity: 0;
-    transform: translateY(10px);
   }
   to {
     opacity: 1;
-    transform: none;
   }
 }
 @keyframes feedback-in {
@@ -2933,7 +3031,8 @@ select:focus-visible {
   background: #f4f7fb;
   color: #8393aa;
   font-size: 16px;
-  line-height: 1;
+  display: grid;
+  place-items: center;
 }
 .reference-item .remove-reference:hover {
   background: #fff0f3;
@@ -3273,13 +3372,16 @@ select:focus-visible {
   justify-content: center;
   text-align: center;
   color: #8a98ab;
+  /* v2.1 修复：同 .empty，closest-side 避免光晕在盒子边缘被硬切 */
   background: radial-gradient(
-    circle at 50% 42%,
+    circle closest-side at 50% 50%,
     rgba(199, 235, 255, 0.35),
-    transparent 36%
+    transparent
   );
 }
 .local-result-empty span {
+  display: grid;
+  place-items: center;
   font-size: 42px;
   color: #8fcbea;
 }
@@ -3528,7 +3630,7 @@ select:focus-visible {
 
 /* v1.5 onboarding and learning center */
 .tutorial-nav {
-  margin-top: 14px;
+  margin-top: 8px;
   border-top: 1px solid rgba(144, 169, 210, 0.18);
   border-radius: 0 0 12px 12px;
   color: #6279b5;
@@ -3579,6 +3681,8 @@ select:focus-visible {
   width: 34px;
   height: 34px;
   border-radius: 50%;
+  display: grid;
+  place-items: center;
   background: #eef5fb;
   color: #6c7e9d;
   font-size: 23px;
@@ -4121,6 +4225,16 @@ select:focus-visible {
 .tutorial-center {
   height: calc(100vh - 48px);
   min-height: 520px;
+  /* 卡片自身只负责圆角裁剪；滚动交给内层 .tutorial-center-scroll，
+     否则经典滚动条（矩形）会越出卡片圆角。 */
+  overflow: hidden;
+}
+.tutorial-center-scroll {
+  position: absolute;
+  inset: 0;
+  /* 继承卡片在各媒体查询下的 padding（32 / 26 / 24px 15px 18px），
+     使粘性头尾（.tutorial-center-sticky-head / -actions）的负外边距仍精确贴合卡片边缘。 */
+  padding: inherit;
   overflow-x: hidden;
   overflow-y: auto;
 }
@@ -4166,4 +4280,122 @@ select:focus-visible {
   .brand-watermark {
     display: none;
   }
+}
+
+/* v1.6 折叠头部：向下滚动后 header 固定并平滑浓缩到左侧栏上方。
+   sentinel = .header-spacer（恒 88px），由 IntersectionObserver 驱动 .app[data-condensed]。 */
+.header-spacer {
+  height: var(--header-h);
+  pointer-events: none;
+}
+.app[data-condensed="true"] {
+  --header-h-current: var(--header-h-condensed);
+}
+.app[data-condensed="true"] header {
+  left: var(--layout-offset);
+  width: var(--aside-width);
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 14px;
+}
+header::before {
+  transition: opacity var(--header-anim) var(--header-ease);
+}
+.app[data-condensed="true"] header::before {
+  opacity: 0;
+}
+.brand-watermark,
+.header-brand > p {
+  transition:
+    opacity var(--header-anim) var(--header-ease),
+    visibility var(--header-anim) var(--header-ease);
+}
+.app[data-condensed="true"] .brand-watermark {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+/* 副标题必须真正出流，否则 visibility:hidden 仍占高度，把内容挤出 56px 后被裁掉 */
+.app[data-condensed="true"] .header-brand > p {
+  display: none;
+}
+/* 折叠态两行布局：第一行品牌名，第二行“状态 + 队列”两个扁按钮（保留文字）。
+   238px 窄栏内需压扁按钮纵向 padding 并禁止换行。 */
+.app[data-condensed="true"] .header-brand,
+.app[data-condensed="true"] .header-title-row {
+  min-width: 0;
+}
+.app[data-condensed="true"] .header-title-row,
+.app[data-condensed="true"] .header-stack {
+  flex-wrap: nowrap;
+}
+.app[data-condensed="true"] .eyebrow {
+  font-size: 14px;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+.app[data-condensed="true"] .header-stack {
+  gap: 6px;
+}
+.app[data-condensed="true"] .status {
+  padding: 4px 9px;
+  font-size: 11px;
+}
+.app[data-condensed="true"] .queue-chip {
+  padding: 4px 9px;
+  font-size: 11px;
+}
+.app[data-condensed="true"] .queue-chip strong {
+  font-size: 11px;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --header-anim: 0.001ms;
+  }
+}
+
+/* v2.0 滚动条：scrollbar-gutter 恒定 viewport 宽度，消除页面切换时的横向抖动；
+   外观由 ::-webkit-scrollbar 定制（常态 6px、悬停加粗到 10px、蓝紫、颜色不变）。
+   槽位与透明轨道会透出「窗口底色」——故 main.ts 的 BrowserWindow.backgroundColor 取页面右缘近似色，
+   让槽位与页面/header 融为一体，消除右上角色差带（纯 CSS 画不到槽位，这是唯一可控途径）。 */
+html {
+  scrollbar-gutter: stable;
+  background-image:
+    radial-gradient(circle at 9% 21%, rgba(131, 211, 255, 0.22), transparent 28%),
+    radial-gradient(circle at 91% 30%, rgba(255, 169, 205, 0.2), transparent 31%),
+    linear-gradient(135deg, #f3fbff 0%, #fbf8ff 49%, #fff5f9 100%);
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+::-webkit-scrollbar {
+  width: var(--scrollbar-w);
+  height: var(--scrollbar-w);
+  background: transparent;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-track-piece {
+  background: transparent;
+}
+/* 常态可见 6px：12px 轨道内用 3px 透明边框内缩；悬停收窄边框加粗到 10px，颜色不变。 */
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: rgba(151, 181, 218, 0.6);
+  background-clip: padding-box;
+  transition: border-width 150ms ease;
+}
+::-webkit-scrollbar-thumb:hover {
+  border-width: 1px;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+/* 圆角滚动容器内：给轨道加上下内缩，缩短滑块行程，使滑块不顶到圆角、更精致。
+   （track 的 margin-block 会同步收缩 thumb 的行程，Chromium 支持。） */
+.tutorial-center-scroll::-webkit-scrollbar-track,
+.compare-modal > section::-webkit-scrollbar-track,
+.export-modal > section::-webkit-scrollbar-track {
+  margin-block: 24px;
 }

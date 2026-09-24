@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { validateUpscaleOutput } from "../lib/local-ai";
+import { NavIcon } from "./icons";
 
 export type LocalAISource = {
   dataUrl: string;
@@ -366,7 +367,7 @@ export function LocalAIToolbox({
             <img className="compare-after" style={{ clipPath: `inset(0 ${100 - compare}% 0 0)` }} src={result.dataUrl} alt="处理图" />
             <i style={{ left: `${compare}%` }} /><input aria-label="对比位置" type="range" min="0" max="100" value={compare} onChange={(event) => setCompare(Number(event.target.value))} />
           </div>
-        </div> : <div className="local-result-empty"><span>◇</span><strong>处理结果会显示在这里</strong><p>完成后自动生成新的图库记录，绝不覆盖原图。</p></div>}
+        </div> : <div className="local-result-empty"><span><NavIcon name="image" size={40} /></span><strong>处理结果会显示在这里</strong><p>完成后自动生成新的图库记录，绝不覆盖原图。</p></div>}
         {result && <><div className="result-dimensions"><strong>{result.width} × {result.height}</strong><span>{result.recipe.postProcessing?.at(-1)?.device.toUpperCase()}</span></div><div className="local-result-actions"><button className="primary" onClick={() => void saveResult()}>保存 PNG</button><button className="secondary" onClick={() => void copyResult()}>复制图片</button></div>{action === "remove-background" || action === "pipeline" ? <div className="background-controls"><span>背景预览</span>{(["checker", "white", "gray", "custom"] as const).map((value) => <button className={background === value ? "active" : ""} key={value} onClick={() => setBackground(value)}>{({ checker: "棋盘格", white: "白色", gray: "浅灰", custom: "自定义" })[value]}</button>)}{background === "custom" && <input type="color" value={backgroundColor} onChange={(event) => setBackgroundColor(event.target.value)} />}</div> : null}</>}
       </section>
     </div>

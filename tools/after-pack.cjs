@@ -6,7 +6,7 @@ module.exports = async function applyWindowsResources(context) {
 
   const { appInfo } = context.packager;
   const executable = path.join(context.appOutDir, `${appInfo.productFilename}.exe`);
-  const icon = path.join(context.packager.projectDir, "AI Image Studio.ico");
+  const icon = path.join(context.packager.projectDir, "ImagoTune.ico");
 
   const options = {
     icon,
@@ -14,11 +14,11 @@ module.exports = async function applyWindowsResources(context) {
     "product-version": appInfo.version,
     "version-string": {
       CompanyName: "zztnbnb",
-      FileDescription: "AI Image Studio",
-      InternalName: "AI Image Studio",
+      FileDescription: "ImagoTune",
+      InternalName: "ImagoTune",
       LegalCopyright: "Copyright (c) zztnbnb",
       OriginalFilename: `${appInfo.productFilename}.exe`,
-      ProductName: "AI Image Studio",
+      ProductName: "ImagoTune",
     },
     "requested-execution-level": "asInvoker",
   };

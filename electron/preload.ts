@@ -12,7 +12,8 @@ contextBridge.exposeInMainWorld("imageStudio", {
   },
   updates: {
     get: () => ipcRenderer.invoke("updates:get"),
-    setStartup: (enabled: boolean) => ipcRenderer.invoke("updates:setStartup", enabled),
+    setChannel: (channel: string) => ipcRenderer.invoke("updates:setChannel", channel),
+    setAutoUpdate: (enabled: boolean) => ipcRenderer.invoke("updates:setAutoUpdate", enabled),
     check: () => ipcRenderer.invoke("updates:check"),
     download: () => ipcRenderer.invoke("updates:download"),
     install: () => ipcRenderer.invoke("updates:install")

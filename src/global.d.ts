@@ -13,8 +13,9 @@ declare global {
         test: () => Promise<{ ok: boolean; message: string }>;
       };
       updates: {
-        get: () => Promise<{ ok: boolean; appVersion: string; checkAtStartup: boolean; supported: boolean; status: UpdateStatus }>;
-        setStartup: (enabled: boolean) => Promise<{ ok: boolean; checkAtStartup: boolean }>;
+        get: () => Promise<{ ok: boolean; appVersion: string; channel: UpdateChannel; autoUpdate: boolean; supported: boolean; status: UpdateStatus }>;
+        setChannel: (channel: UpdateChannel) => Promise<{ ok: boolean; channel?: UpdateChannel; error?: string }>;
+        setAutoUpdate: (enabled: boolean) => Promise<{ ok: boolean; autoUpdate?: boolean; error?: string }>;
         check: () => Promise<{ ok: boolean; message: string }>;
         download: () => Promise<{ ok: boolean; message: string }>;
         install: () => Promise<{ ok: boolean; message: string }>;
@@ -89,6 +90,7 @@ declare global {
   interface AppProgress { requestId: string; progress?: number; status: string; message?: string }
   interface BinaryPayload { name: string; type: string; data: number[] }
   type RecipeMode = "generate" | "edit" | "outpaint";
+  type UpdateChannel = "stable" | "beta";
   interface OutpaintRecipe { sourceSize: string; targetSize: string; top: number; right: number; bottom: number; left: number; preset?: string }
   type LocalAITool = "upscale" | "remove-background" | "face-restore";
   type LocalAIModelId = "realesrgan-x2" | "realesrgan-x4" | "isnet-general" | "yunet" | "gfpgan-v1.4";

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import imaginationTitle from "./assets/imagination-title-cropped.png";
@@ -6,6 +6,7 @@ import { GalleryWorkspace } from "./components/GalleryWorkspace";
 import { LocalAIAction, LocalAISource, LocalAIToolbox } from "./components/LocalAIToolbox";
 import { MaskPainter } from "./components/MaskPainter";
 import { initialTutorialView, TutorialExperience, TutorialView } from "./components/TutorialExperience";
+import { NavIcon } from "./components/icons";
 import {
   applyLocalPromptAction,
   formatGenerationParameters,
@@ -310,7 +311,7 @@ function ReferenceThumbnail({
     <img src={src} alt={`参考图 ${index + 1}`} />
     <div><strong>参考图 {index + 1}</strong><span title={file.name}>{file.name}</span></div>
     <button type="button" onClick={() => onCopy(file)}>复制</button>
-    <button type="button" className="remove-reference" onClick={onRemove} aria-label={`移除参考图 ${index + 1}`}>×</button>
+    <button type="button" className="remove-reference" onClick={onRemove} aria-label={`移除参考图 ${index + 1}`}><NavIcon name="x" size={14} /></button>
   </div>;
 }
 
@@ -348,6 +349,8 @@ async function exportSocialCanvas(output: Output, preset: string, fill: "light" 
 
 function App() {
   const initialTutorial = useMemo(() => parseTutorialState(window.localStorage.getItem(TUTORIAL_STORAGE_KEY)), []);
+  const [headerCondensed, setHeaderCondensed] = useState(false);
+  const headerSpacerRef = useRef<HTMLDivElement | null>(null);
   const [mode, setMode] = useState<Mode>("generate");
   const [tutorialState, setTutorialState] = useState<TutorialState>(initialTutorial);
   const [tutorialView, setTutorialView] = useState<TutorialView>(() => initialTutorialView(initialTutorial));
@@ -379,7 +382,8 @@ function App() {
   const [autoArchive, setAutoArchive] = useState(true);
   const [saveDir, setSaveDir] = useState("");
   const [testMessage, setTestMessage] = useState("");
-  const [checkUpdatesAtStartup, setCheckUpdatesAtStartup] = useState(true);
+  const [updateChannel, setUpdateChannel] = useState<UpdateChannel>("stable");
+  const [autoUpdate, setAutoUpdate] = useState(true);
   const [appVersion, setAppVersion] = useState("");
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ phase: "idle", message: "尚未检查更新" });
   const [templates, setTemplates] = useState<PromptTemplate[]>([]);
@@ -483,7 +487,8 @@ function App() {
     void bootstrap().catch(() => { /* Individual panels show their own recoverable errors. */ });
     void window.imageStudio.templates.list().then((value) => setTemplates(value.items));
     void window.imageStudio.updates.get().then((value) => {
-      setCheckUpdatesAtStartup(value.checkAtStartup);
+      setUpdateChannel(value.channel);
+      setAutoUpdate(value.autoUpdate);
       setAppVersion(value.appVersion);
       setUpdateStatus(value.status);
     });
@@ -497,6 +502,17 @@ function App() {
     setNotice("");
     setErrorInfo(null);
   }, [mode]);
+
+  useEffect(() => {
+    const el = headerSpacerRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setHeaderCondensed(!entry.isIntersecting),
+      { threshold: 0 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1038,12 +1054,22 @@ function App() {
     setTestMessage(result.message);
   };
 
-  const setUpdateStartupPreference = async (enabled: boolean) => {
-    setCheckUpdatesAtStartup(enabled);
-    const result = await window.imageStudio.updates.setStartup(enabled);
+  const setUpdateChannelPreference = async (channel: UpdateChannel) => {
+    const previous = updateChannel;
+    setUpdateChannel(channel);
+    const result = await window.imageStudio.updates.setChannel(channel);
     if (!result.ok) {
-      setCheckUpdatesAtStartup(!enabled);
-      setError("无法保存更新检查设置");
+      setUpdateChannel(previous);
+      setError("无法保存更新渠道设置");
+    }
+  };
+
+  const setAutoUpdatePreference = async (enabled: boolean) => {
+    setAutoUpdate(enabled);
+    const result = await window.imageStudio.updates.setAutoUpdate(enabled);
+    if (!result.ok) {
+      setAutoUpdate(!enabled);
+      setError("无法保存自动更新设置");
     }
   };
 
@@ -1344,7 +1370,7 @@ function App() {
       {notice && <div className="notice">{notice}</div>}
       {outputs.length === 0 ? (
         <div className="empty">
-          <span>✦</span>
+          <span><NavIcon name="sparkles" size={40} /></span>
           <p>生成后的图片会显示在这里</p>
           <small>队列、项目、变体与交付工具会保留你的创作过程。</small>
         </div>
@@ -1394,7 +1420,7 @@ function App() {
         <button className="secondary" onClick={() => void refreshQueue()}>刷新</button>
       </div>
       {queueItems.length === 0 ? (
-        <div className="empty"><span>◌</span><p>队列为空</p><small>提交生成或变体后，任务会显示在这里。</small></div>
+        <div className="empty"><span><NavIcon name="list-todo" size={40} /></span><p>队列为空</p><small>提交生成或变体后，任务会显示在这里。</small></div>
       ) : (
         <div className="queue-list">
           {queueItems.map((job) => (
@@ -1463,11 +1489,18 @@ function App() {
         <div>
           <span className="eyebrow">APPLICATION UPDATE</span>
           <h3>软件更新</h3>
-          <p>当前版本：v{appVersion || "—"}。发现新版本时会先询问你是否下载，不会强制更新。</p>
+          <p>当前版本：v{appVersion || "—"}。开启自动更新后会在后台检查并下载新版本，安装前仍会询问，不会强制重启；关闭后仅在你手动检查时提示下载。</p>
+        </div>
+        <div className="update-channel">
+          <span className="update-channel-label">更新渠道</span>
+          <div className="update-channel-options">
+            <button type="button" className={updateChannel === "stable" ? "active" : ""} onClick={() => void setUpdateChannelPreference("stable")}>正式版</button>
+            <button type="button" className={updateChannel === "beta" ? "active" : ""} onClick={() => void setUpdateChannelPreference("beta")}>测试版 Beta</button>
+          </div>
         </div>
         <label className="archive-toggle">
-          <input type="checkbox" checked={checkUpdatesAtStartup} onChange={(event) => void setUpdateStartupPreference(event.target.checked)} />
-          启动时检查 GitHub 更新
+          <input type="checkbox" checked={autoUpdate} onChange={(event) => void setAutoUpdatePreference(event.target.checked)} />
+          自动检查并在后台下载更新（安装前询问）
         </label>
         <div className="update-actions">
           <button className="secondary" onClick={() => void checkUpdates()} disabled={updateStatus.phase === "checking"}>
@@ -1512,12 +1545,13 @@ function App() {
   }
 
   return (
-    <div className="app">
+    <div className="app" data-condensed={headerCondensed}>
+      <div ref={headerSpacerRef} className="header-spacer" aria-hidden="true" />
       <header>
         <div className="header-brand">
           <img className="brand-watermark" src={imaginationTitle} alt="" aria-hidden="true" />
           <div className="header-title-row">
-            <span className="eyebrow">AI IMAGE STUDIO · V{appVersion || "1.5.0"}</span>
+            <span className="eyebrow">IMAGOTUNE · V{appVersion || "2.0.0"}</span>
           </div>
           <p>本地创作工作台 · 提示词助手 · 项目图库 · 局部重绘 · 批量交付</p>
         </div>
@@ -1533,19 +1567,19 @@ function App() {
             <span>{error || errorInfo?.message || notice}</span>
             {errorInfo?.suggestion && <small>{errorInfo.suggestion}</small>}
           </div>
-          <button aria-label="关闭提示" onClick={() => { setError(""); setNotice(""); setErrorInfo(null); }}>×</button>
+          <button aria-label="关闭提示" onClick={() => { setError(""); setNotice(""); setErrorInfo(null); }}><NavIcon name="x" size={16} /></button>
         </div>
       )}
       <div className="layout">
         <aside>
-          <button className={mode === "generate" ? "nav active" : "nav"} onClick={() => setMode("generate")}>✦ 创作生成</button>
-          <button className={mode === "edit" ? "nav active" : "nav"} onClick={() => setMode("edit")}>◌ 图片编辑</button>
-          <button className={mode === "outpaint" ? "nav active" : "nav"} onClick={() => setMode("outpaint")}>↗ 智能扩图</button>
-          <button className={mode === "gallery" ? "nav active" : "nav"} onClick={() => setMode("gallery")}>▧ 项目图库</button>
-          <button className={mode === "local-ai" ? "nav active" : "nav"} onClick={() => setMode("local-ai")}>◈ 本地工具箱</button>
-          <button className={mode === "queue" ? "nav active" : "nav"} onClick={() => setMode("queue")}>⇢ 任务队列</button>
-          <button className={mode === "settings" ? "nav active" : "nav"} onClick={() => setMode("settings")}>⚙ 设置</button>
-          <button className="nav tutorial-nav" onClick={() => setTutorialView("center")}>? 新手教程</button>
+          <button className={mode === "generate" ? "nav active" : "nav"} onClick={() => setMode("generate")}><NavIcon name="sparkles" />创作生成</button>
+          <button className={mode === "edit" ? "nav active" : "nav"} onClick={() => setMode("edit")}><NavIcon name="pen-line" />图片编辑</button>
+          <button className={mode === "outpaint" ? "nav active" : "nav"} onClick={() => setMode("outpaint")}><NavIcon name="expand" />智能扩图</button>
+          <button className={mode === "gallery" ? "nav active" : "nav"} onClick={() => setMode("gallery")}><NavIcon name="images" />项目图库</button>
+          <button className={mode === "local-ai" ? "nav active" : "nav"} onClick={() => setMode("local-ai")}><NavIcon name="package" />本地工具箱</button>
+          <button className={mode === "queue" ? "nav active" : "nav"} onClick={() => setMode("queue")}><NavIcon name="list-todo" />任务队列</button>
+          <button className={mode === "settings" ? "nav active" : "nav"} onClick={() => setMode("settings")}><NavIcon name="settings" />设置</button>
+          <button className="nav tutorial-nav" onClick={() => setTutorialView("center")}><NavIcon name="graduation-cap" />新手教程</button>
           <div className="aside-tip">
             <span>当前模型</span><strong>{imageModel}</strong>
             <p>提示词增强：{chatModel}<br />图片、项目与队列均保存在本机。</p>
@@ -1596,7 +1630,7 @@ function App() {
 
       {preview && (
         <div className="lightbox" onClick={() => { setPreviewContextMenu(null); setPreview(null); }}>
-          <button className="lightbox-close" onClick={() => { setPreviewContextMenu(null); setPreview(null); }} aria-label="关闭预览">×</button>
+          <button className="lightbox-close" onClick={() => { setPreviewContextMenu(null); setPreview(null); }} aria-label="关闭预览"><NavIcon name="x" size={20} /></button>
           <img
             src={dataUrlFor(preview)}
             onClick={(event) => { event.stopPropagation(); setPreviewContextMenu(null); }}
@@ -1636,7 +1670,7 @@ function App() {
       {exportOutput && (
         <div className="export-modal" onClick={() => setExportOutput(null)}>
           <section onClick={(event) => event.stopPropagation()}>
-            <button className="lightbox-close" onClick={() => setExportOutput(null)}>×</button>
+            <button className="lightbox-close" onClick={() => setExportOutput(null)}><NavIcon name="x" size={20} /></button>
             <span className="eyebrow">SOCIAL EXPORT</span>
             <h2>社交平台画布适配</h2>
             <img src={dataUrlFor(exportOutput)} alt="待导出图片" />

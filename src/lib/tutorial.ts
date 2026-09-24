@@ -1,5 +1,5 @@
 export const TUTORIAL_CONTENT_VERSION = 1;
-export const TUTORIAL_STORAGE_KEY = "ai-image-studio:tutorial-state";
+export const TUTORIAL_STORAGE_KEY = "imagotune:tutorial-state";
 export const TUTORIAL_REMIND_DELAY_MS = 24 * 60 * 60 * 1000;
 export const TUTORIAL_EXISTING_USER_GRACE_MS = 10 * 60 * 1000;
 
@@ -23,9 +23,12 @@ export interface TutorialStep {
   target?: string;
 }
 
+// 教程主题图标：复用侧栏同一套内联图标（见 components/icons.tsx 的 NavIcon），保持两处风格一致
+export type TutorialIconName = "settings" | "sparkles" | "pen-line" | "images" | "package";
+
 export interface TutorialTopic {
   id: string;
-  icon: string;
+  icon: TutorialIconName;
   title: string;
   purpose: string;
   steps: string[];
@@ -36,7 +39,7 @@ export interface TutorialTopic {
 export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: "welcome",
-    title: "欢迎来到 AI Image Studio",
+    title: "欢迎来到 ImagoTune",
     description: "这里把图片生成、编辑、归档和本地后期处理集中在一个工作台中。图库、任务和模型都保存在本机。",
     hint: "教程只展示功能位置，不会测试连接、生成图片或下载模型，因此不会消耗 API 额度。",
   },
@@ -99,7 +102,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
 export const TUTORIAL_TOPICS: TutorialTopic[] = [
   {
     id: "connection",
-    icon: "⚙",
+    icon: "settings",
     title: "连接与模型配置",
     purpose: "连接任意符合当前请求格式的 OpenAI 兼容图片平台。",
     steps: ["填写 API Base URL", "保存 API 密钥", "填写平台提供的图片模型名称", "保存后按需测试连接"],
@@ -108,7 +111,7 @@ export const TUTORIAL_TOPICS: TutorialTopic[] = [
   },
   {
     id: "first-image",
-    icon: "✦",
+    icon: "sparkles",
     title: "第一次生成图片",
     purpose: "从一句自然语言描述生成第一张图片。",
     steps: ["输入画面主体与风格", "选择 1K、自动质量和常用比例", "保持数量为 1 张", "加入生成队列并等待结果"],
@@ -117,7 +120,7 @@ export const TUTORIAL_TOPICS: TutorialTopic[] = [
   },
   {
     id: "references",
-    icon: "◌",
+    icon: "pen-line",
     title: "参考图与图片编辑",
     purpose: "基于已有图片继续生成、修改局部或参考视觉风格。",
     steps: ["在创作页添加最多 3 张参考图", "或切换图片编辑并上传原图", "局部修改时涂抹蒙版", "用提示词明确说明保留与修改内容"],
@@ -126,7 +129,7 @@ export const TUTORIAL_TOPICS: TutorialTopic[] = [
   },
   {
     id: "gallery",
-    icon: "▧",
+    icon: "images",
     title: "保存、图库与参数复用",
     purpose: "让生成结果可搜索、可复用，并按项目持续迭代。",
     steps: ["在设置中开启自动归档", "在图库创建项目和标签", "从历史图片复用参数或继续编辑", "批量收藏、移动或导出 ZIP"],
@@ -135,7 +138,7 @@ export const TUTORIAL_TOPICS: TutorialTopic[] = [
   },
   {
     id: "local-ai",
-    icon: "◈",
+    icon: "package",
     title: "本地 AI 工具箱与模型",
     purpose: "不消耗图片 API 额度完成高清化、抠图和人脸优化。",
     steps: ["导入或从图库打开图片", "选择处理工具", "首次使用时下载对应模型", "对比结果后复制、保存或归档"],

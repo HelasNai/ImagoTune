@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { parseTags } from "../lib/creative";
 import type { LocalAIAction } from "./LocalAIToolbox";
+import { NavIcon } from "./icons";
 
 type OpenAction = "preview" | "reuse" | "edit" | "outpaint";
 type CompareItem = { item: GalleryItem; b64: string };
@@ -237,8 +238,8 @@ export function GalleryWorkspace({
               </button>
               {project.id !== "inbox" && (
                 <>
-                  <button className="project-action" onClick={() => void renameProject(project)}>✎</button>
-                  <button className="project-action" onClick={() => void deleteProject(project)}>×</button>
+                  <button className="project-action" onClick={() => void renameProject(project)}><NavIcon name="pen-line" size={14} /></button>
+                  <button className="project-action" onClick={() => void deleteProject(project)}><NavIcon name="trash" size={14} /></button>
                 </>
               )}
             </div>
@@ -333,7 +334,7 @@ export function GalleryWorkspace({
 
         {items.length === 0 ? (
           <div className="empty">
-            <span>▧</span>
+            <span><NavIcon name="images" size={40} /></span>
             <p>这里还没有图片</p>
             <small>生成完成后会自动归档到收件箱或你选择的项目。</small>
           </div>
@@ -360,7 +361,7 @@ export function GalleryWorkspace({
                   <button onClick={() => void open(item, "outpaint")}>智能扩图</button>
                 </div>
                 <details className="card-more">
-                  <summary>更多操作</summary>
+                  <summary><NavIcon name="chevron-right" size={12} />更多操作</summary>
                   <div>
                     <button onClick={() => onVariation(item)}>创建变体</button>
                     <button onClick={() => void openLocalAI(item, "upscale")}>高清放大</button>
@@ -386,7 +387,7 @@ export function GalleryWorkspace({
       {compare.length > 0 && (
         <div className="compare-modal" onClick={() => setCompare([])}>
           <section onClick={(event) => event.stopPropagation()}>
-            <button className="lightbox-close" onClick={() => setCompare([])}>×</button>
+            <button className="lightbox-close" onClick={() => setCompare([])}><NavIcon name="x" size={20} /></button>
             <span className="eyebrow">COMPARE</span>
             <h2>图片对比</h2>
             <div className="compare-grid">
