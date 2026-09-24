@@ -6,7 +6,7 @@ Electron 主进程：窗口、IPC、本地存储、OpenAI 兼容 API、本地 AI
 ## STRUCTURE
 | 文件 | 职责 |
 |------|------|
-| `main.ts` | 入口(~795 行)：窗口(1180x820)、`local-ai-model://` 协议、app 菜单、electron-updater 双偏好(更新通道 stable/beta + 自动更新)、全部 ~55 个 `ipcMain.handle` |
+| `main.ts` | 入口(~864 行)：无边框窗口(1180x820、`frame:false`)、`local-ai-model://` 协议、已移除应用菜单(`Menu.setApplicationMenu(null)`)、窗口控制 IPC(`window:*` 6 个 handler + `window:maximized-changed` 推送)、electron-updater 双偏好(更新通道 stable/beta + 自动更新)、全部 62 个 `ipcMain.handle` |
 | `preload.ts` | `contextBridge` 暴露 `window.imageStudio`(~15 组方法 + 事件订阅) |
 | `gallery-store.ts` | 图库持久化：原子写(tmp+rename)、损坏项隔离恢复 |
 | `queue-store.ts` | 持久串行队列(上限 100)、legacy 迁移、附件存 `.bin`；禁止自动重试 |
@@ -40,3 +40,6 @@ Electron 主进程：窗口、IPC、本地存储、OpenAI 兼容 API、本地 AI
 - Dev 走 `http://127.0.0.1:5173`(`--dev` + VITE_DEV_SERVER_URL)，prod 走 `../dist-renderer/index.html`
 - `main.ts` 硬编码 `LEGACY_SAVE_DIR`(行 27)，仅 try/catch 降级
 - `BrowserWindow.backgroundColor` 取页面右缘近似浅粉白（`#fdf5f9`）：`scrollbar-gutter` 槽位与滚动条透明轨道透出此色，须与渲染层页面底色协调，否则右上角出现色差带。（Electron 44 的 overlay 滚动条 electron#53350 不可用，勿再走该方案）
+- 本应用为无边框窗口（`frame:false`）：禁止 `transparent:true`/`hasShadow:false`/`thickFrame:false`（会丢阴影与边缘 resize 能力），保留 `backgroundColor:"#fdf5f9"`；窗口拖拽由渲染层 `header` 的 `app-region: drag` 承担。
+- 应用菜单已移除（`Menu.setApplicationMenu(null)`）：编辑类快捷键依赖输入框内 Chromium 原生行为；dev 快捷键（F12 / Ctrl+Shift+I / Ctrl+R / Ctrl+Shift+R / F5）经 `win.webContents.on("before-input-event")` 保留，且仅在 `--dev` 下注册，不用 `globalShortcut`（避免全局生效）。
+- 窗口控制走 `window:*` 通道（`minimize`/`toggleMaximize`/`close`/`isMaximized`/`getZoom`/`setZoom`，均以 `BrowserWindow.fromWebContents(event.sender)` 判空后操作），并在 `maximize`/`unmaximize` 时向渲染层 `send("window:maximized-changed", boolean)`。

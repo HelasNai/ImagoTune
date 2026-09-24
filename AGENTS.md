@@ -20,7 +20,7 @@ image-studio/
 ## WHERE TO LOOK
 | 任务 | 位置 | 说明 |
 |------|------|------|
-| 启动 / 窗口 / IPC 生命周期 | `electron/main.ts` | 约 55 个 `ipcMain.handle` 集中在此 + `webContents.send` 推送 |
+| 启动 / 窗口 / IPC 生命周期 | `electron/main.ts` | 62 个 `ipcMain.handle` 集中在此 + `webContents.send` 推送 |
 | preload 桥 | `electron/preload.ts` | `contextBridge` 暴露 `window.imageStudio` |
 | IPC 类型契约 | `src/global.d.ts` | `window.imageStudio` 单一来源 + 共享类型 |
 | 图库/队列持久化 | `electron/{gallery,queue}-store.ts` | 原子写入、损坏恢复 |
@@ -45,6 +45,7 @@ image-studio/
 - 构建产物三分：`dist-renderer`（vite）/ `dist-electron`（tsc）/ `dist`（electron-builder）——勿合并（v1.3.2 空白窗修复）
 - 安全基线：`contextIsolation(true)`/`nodeIntegration(false)`；API 密钥仅经 `keytar` 存 Windows 凭据库，绝不落盘源码/渲染层
 - IPC 全部返回 `{ ok: boolean; error?: string }`
+- 窗口无边框（`frame:false`）+ 应用内自绘窗口控制（`.window-controls`）：原生应用菜单已移除（`Menu.setApplicationMenu(null)`），其「使用说明 / 开源许可证 / 新手教程 / 界面缩放」入口迁至设置页
 - 测试是纯逻辑，无 DOM/UI/electron 运行时测试；React 组件与 main.ts/preload.ts 无测试
 
 ## ANTI-PATTERNS（行为边界，源自代码而非注释）
