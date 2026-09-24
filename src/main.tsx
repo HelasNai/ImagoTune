@@ -6,6 +6,7 @@ import { GalleryWorkspace } from "./components/GalleryWorkspace";
 import { LocalAIAction, LocalAISource, LocalAIToolbox } from "./components/LocalAIToolbox";
 import { MaskPainter } from "./components/MaskPainter";
 import { initialTutorialView, TutorialExperience, TutorialView } from "./components/TutorialExperience";
+import { WindowControls } from "./components/WindowControls";
 import { NavIcon } from "./components/icons";
 import {
   applyLocalPromptAction,
@@ -350,6 +351,8 @@ async function exportSocialCanvas(output: Output, preset: string, fill: "light" 
 function App() {
   const initialTutorial = useMemo(() => parseTutorialState(window.localStorage.getItem(TUTORIAL_STORAGE_KEY)), []);
   const [headerCondensed, setHeaderCondensed] = useState(false);
+  const [windowMaximized, setWindowMaximized] = useState(false);
+  const [zoomFactor, setZoomFactor] = useState(1);
   const headerSpacerRef = useRef<HTMLDivElement | null>(null);
   const [mode, setMode] = useState<Mode>("generate");
   const [tutorialState, setTutorialState] = useState<TutorialState>(initialTutorial);
@@ -528,6 +531,23 @@ function App() {
   useEffect(() => window.imageStudio.onUpdateStatus((value) => setUpdateStatus(value)), []);
 
   useEffect(() => window.imageStudio.onTutorialOpen(() => setTutorialView("center")), []);
+
+  useEffect(() => {
+    void window.imageStudio.windowControls.isMaximized().then((r) => setWindowMaximized(!!r.maximized));
+    return window.imageStudio.windowControls.onMaximizedChange(setWindowMaximized);
+  }, []);
+
+  useEffect(() => {
+    void window.imageStudio.windowControls.getZoom().then((r) => {
+      if (r.ok && typeof r.factor === "number") setZoomFactor(r.factor);
+    });
+  }, []);
+
+  const applyZoom = (next: number) => {
+    void window.imageStudio.windowControls.setZoom(next).then((r) => {
+      if (r.ok && typeof r.factor === "number") setZoomFactor(r.factor);
+    });
+  };
 
   useEffect(() => {
     const offProgress = window.imageStudio.onProgress((value) => {
@@ -1512,6 +1532,30 @@ function App() {
         </div>
         <p className={updateStatus.phase === "error" ? "update-status error-text" : "update-status"}>{updateStatus.message}</p>
       </section>
+      <section className="update-settings">
+        <div>
+          <span className="eyebrow">INTERFACE ZOOM</span>
+          <h3>界面缩放</h3>
+          <p>调整整个界面的缩放比例，当前缩放：{Math.round(zoomFactor * 100)}%。范围为 50%–200%。</p>
+        </div>
+        <div className="update-actions">
+          <button type="button" className="secondary" onClick={() => applyZoom(Math.max(0.5, Number((zoomFactor - 0.1).toFixed(2))))}>缩小</button>
+          <button type="button" className="secondary" onClick={() => applyZoom(1)}>重置</button>
+          <button type="button" className="secondary" onClick={() => applyZoom(Math.min(2, Number((zoomFactor + 0.1).toFixed(2))))}>放大</button>
+        </div>
+      </section>
+      <section className="update-settings">
+        <div>
+          <span className="eyebrow">ABOUT & HELP</span>
+          <h3>关于与帮助</h3>
+          <p>本地 OpenAI 兼容图片创作工具，支持自定义基础地址、模型、文生图、图片编辑和常用输出尺寸。</p>
+          <p>Copyright (C) 2026 zztnbnb。本项目以 GNU Affero General Public License v3.0 only 发布，不提供任何担保。</p>
+        </div>
+        <div className="update-actions">
+          <button type="button" className="secondary" onClick={() => setTutorialView("center")}>打开新手教程</button>
+          <a href="https://github.com/zztnbnb/image-studio/blob/main/LICENSE" target="_blank" rel="noreferrer" className="secondary">查看许可证与源代码</a>
+        </div>
+      </section>
       <div className="actions">
         <button className="primary" onClick={() => void saveSettings()}>保存设置</button>
         <button className="secondary" onClick={() => void testSettings()}>测试连接</button>
@@ -1560,6 +1604,16 @@ function App() {
           <button className="queue-chip" onClick={() => setMode("queue")}>任务队列 <strong>{runningCount}</strong></button>
         </div>
       </header>
+      <WindowControls
+        maximized={windowMaximized}
+        onMinimize={() => void window.imageStudio.windowControls.minimize()}
+        onToggleMaximize={() => {
+          void window.imageStudio.windowControls.toggleMaximize().then((r) => {
+            if (r.ok && typeof r.maximized === "boolean") setWindowMaximized(r.maximized);
+          });
+        }}
+        onClose={() => void window.imageStudio.windowControls.close()}
+      />
       {(error || notice || errorInfo) && (
         <div className={error || errorInfo ? "feedback-toast feedback-error" : "feedback-toast feedback-success"} role={error || errorInfo ? "alert" : "status"}>
           <div>
