@@ -52,6 +52,20 @@ contextBridge.exposeInMainWorld("imageStudio", {
     copyImage: (b64: string) => ipcRenderer.invoke("clipboard:copyImage", b64),
     readImage: () => ipcRenderer.invoke("clipboard:readImage"),
   },
+  windowControls: {
+    minimize: () => ipcRenderer.invoke("window:minimize"),
+    toggleMaximize: () => ipcRenderer.invoke("window:toggleMaximize"),
+    close: () => ipcRenderer.invoke("window:close"),
+    isMaximized: () => ipcRenderer.invoke("window:isMaximized"),
+    getZoom: () => ipcRenderer.invoke("window:getZoom"),
+    setZoom: (factor: number) => ipcRenderer.invoke("window:setZoom", factor),
+    onMaximizedChange: (callback: (maximized: boolean) => void) => {
+      const channel = "window:maximized-changed";
+      const listener = (_event: Electron.IpcRendererEvent, value: boolean) => callback(value);
+      ipcRenderer.on(channel, listener);
+      return () => ipcRenderer.removeListener(channel, listener);
+    },
+  },
   gallery: {
     list: (input?: unknown) => ipcRenderer.invoke("gallery:list", input || {}),
     workspace: () => ipcRenderer.invoke("gallery:workspace"),

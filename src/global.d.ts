@@ -54,6 +54,15 @@ declare global {
         copyImage: (b64: string) => Promise<{ ok: boolean; error?: string }>;
         readImage: () => Promise<{ ok: boolean; b64?: string; error?: string }>;
       };
+      windowControls: {
+        minimize: () => Promise<{ ok: boolean; error?: string }>;
+        toggleMaximize: () => Promise<{ ok: boolean; maximized?: boolean; error?: string }>;
+        close: () => Promise<{ ok: boolean; error?: string }>;
+        isMaximized: () => Promise<{ ok: boolean; maximized?: boolean; error?: string }>;
+        getZoom: () => Promise<{ ok: boolean; factor?: number; error?: string }>;
+        setZoom: (factor: number) => Promise<{ ok: boolean; factor?: number; error?: string }>;
+        onMaximizedChange: (callback: (maximized: boolean) => void) => () => void;
+      };
       gallery: {
         list: (input?: unknown) => Promise<{ ok: boolean; items: GalleryItem[]; projects?: GalleryProject[]; total?: number; error?: string }>;
         workspace: () => Promise<{ ok: boolean; projects: GalleryProject[]; items: GalleryItem[] }>;
