@@ -1042,13 +1042,6 @@ textarea {
   padding: 4px 2px 10px;
 }
 .gallery-toolbar {
-  display: grid;
-  grid-template-columns: minmax(260px, 1.7fr) minmax(150px, 0.7fr) auto minmax(
-      150px,
-      0.65fr
-    );
-  gap: 12px;
-  align-items: end;
   padding: 16px;
   border: 1px solid rgba(153, 182, 218, 0.22);
   border-radius: 16px;
@@ -1061,12 +1054,8 @@ textarea {
 .gallery-toolbar .favorite-toggle {
   width: auto;
   min-height: 44px;
-  display: flex;
   flex: none;
-  flex-direction: row;
-  align-items: center;
   justify-content: center;
-  gap: 8px;
   padding: 0 13px;
   border: 1px solid #dce5f0;
   border-radius: 11px;
@@ -1082,23 +1071,6 @@ textarea {
 }
 .gallery-toolbar .toolbar-sort {
   min-width: 150px;
-}
-.bulk-toolbar {
-  display: grid;
-  grid-template-columns:
-    minmax(160px, 0.65fr) minmax(220px, 1fr) minmax(220px, 1fr)
-    auto;
-  gap: 12px;
-  align-items: end;
-  margin: 14px 0 18px;
-  padding: 15px 16px;
-  border: 1px solid rgba(140, 190, 222, 0.28);
-  border-radius: 16px;
-  background: linear-gradient(
-    105deg,
-    rgba(236, 249, 255, 0.96),
-    rgba(248, 246, 255, 0.94)
-  );
 }
 .bulk-summary {
   display: flex;
@@ -1151,13 +1123,8 @@ textarea {
 .bulk-actions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   gap: 7px;
   flex-wrap: wrap;
-}
-.bulk-actions .danger {
-  color: #b55c6d;
-  background: #fff4f6;
 }
 .bulk-group button:hover,
 .bulk-actions button:hover {
@@ -1169,17 +1136,6 @@ textarea {
   color: #a64e61;
 }
 @media (max-width: 1240px) {
-  .gallery-toolbar {
-    grid-template-columns:
-      minmax(220px, 1.4fr) minmax(150px, 0.8fr)
-      auto minmax(145px, 0.65fr);
-  }
-  .bulk-toolbar {
-    grid-template-columns: minmax(150px, 0.65fr) minmax(210px, 1fr) minmax(
-        210px,
-        1fr
-      );
-  }
   .bulk-actions {
     grid-column: 1 / -1;
     justify-content: flex-start;
@@ -1187,17 +1143,8 @@ textarea {
   }
 }
 @media (max-width: 850px) {
-  .gallery-toolbar {
-    grid-template-columns: 1fr 1fr;
-  }
-  .gallery-toolbar .toolbar-search {
-    grid-column: 1 / -1;
-  }
   .gallery-toolbar .favorite-toggle {
     justify-self: start;
-  }
-  .bulk-toolbar {
-    grid-template-columns: 1fr 1fr;
   }
   .bulk-summary {
     grid-column: 1 / -1;
@@ -1210,19 +1157,9 @@ textarea {
   }
 }
 @media (max-width: 560px) {
-  .gallery-toolbar {
-    grid-template-columns: 1fr;
-  }
-  .gallery-toolbar .toolbar-search {
-    grid-column: auto;
-  }
   .gallery-toolbar .favorite-toggle {
     width: 100%;
     justify-content: flex-start;
-  }
-  .bulk-toolbar {
-    grid-template-columns: 1fr;
-    padding: 12px;
   }
   .bulk-group {
     grid-template-columns: 1fr;
@@ -1268,9 +1205,6 @@ textarea {
 }
 .bulk-toolbar {
   grid-template-columns: 190px minmax(240px, 1fr) minmax(240px, 1fr);
-  row-gap: 12px;
-  column-gap: 16px;
-  align-items: end;
 }
 .bulk-summary {
   grid-row: span 2;
@@ -1698,20 +1632,11 @@ textarea {
   font-size: 10px;
   font-weight: 700;
 }
-.gallery-toolbar {
-  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
-}
 .gallery-toolbar .toolbar-search {
   grid-column: span 2;
 }
 .gallery-toolbar .favorite-toggle {
   align-self: end;
-}
-.archive-card .card-actions {
-  grid-template-columns: repeat(2, 1fr);
-}
-.archive-card .card-actions button:last-child {
-  grid-column: auto;
 }
 @media (max-width: 760px) {
   .negative-head {
@@ -1735,9 +1660,6 @@ textarea {
   }
   .outpaint-margins {
     grid-template-columns: 1fr 1fr;
-  }
-  .gallery-toolbar .toolbar-search {
-    grid-column: auto;
   }
 }
 
@@ -2104,7 +2026,6 @@ textarea {
 }
 .gallery-toolbar {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(120px, 0.42fr));
   gap: 10px;
   align-items: end;
   margin-bottom: 12px;
@@ -2210,7 +2131,6 @@ textarea {
 }
 .archive-card .card-actions {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
   gap: 5px;
   margin-top: 9px;
 }
@@ -2221,9 +2141,6 @@ textarea {
   color: #5e78a5;
   font-size: 10px;
   font-weight: 700;
-}
-.archive-card .card-actions button:last-child {
-  grid-column: span 3;
 }
 .archive-card .card-actions button:hover {
   background: #e6eefc;
@@ -2343,9 +2260,6 @@ textarea {
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     max-height: none;
   }
-  .gallery-toolbar {
-    grid-template-columns: 1fr 1fr;
-  }
   .gallery-toolbar > label:first-child {
     grid-column: span 2;
   }
@@ -2382,9 +2296,6 @@ textarea {
   .queue-list p {
     white-space: normal;
   }
-  .gallery-toolbar {
-    grid-template-columns: 1fr;
-  }
   .gallery-toolbar > label:first-child {
     grid-column: auto;
   }
@@ -2397,9 +2308,6 @@ textarea {
   }
   .archive-preview {
     height: 130px;
-  }
-  .archive-card .card-actions {
-    grid-template-columns: 1fr 1fr;
   }
   .archive-card .card-actions button:last-child {
     grid-column: span 2;
