@@ -11,7 +11,7 @@
   "private": true,
   "main": "dist-electron/main.js",
   "scripts": {
-    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron . --dev\"",
+    "dev": "tsc -p tsconfig.electron.json && concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron . --dev\"",
     "build": "tsc -p tsconfig.json && vite build && tsc -p tsconfig.electron.json",
     "start": "electron .",
     "package:win": "npm run build && electron-builder --win nsis --x64 && npm run package:verify",
