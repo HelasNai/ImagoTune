@@ -25,7 +25,7 @@ image-studio/
 | IPC 类型契约 | `src/global.d.ts` | `window.imageStudio` 单一来源 + 共享类型 |
 | 图库/队列持久化 | `electron/{gallery,queue}-store.ts` | 原子写入、损坏恢复 |
 | 本地 AI 模型管理 | `electron/local-ai-model-manager.ts` | 下载 / SHA-256 校验 / 断点续传 |
-| React UI | `src/main.tsx` + `src/components/*` | main.tsx 为 1662 行巨型单文件 |
+| React UI | `src/main.tsx` + `src/components/*` | main.tsx 为 1739 行巨型单文件 |
 | WebGPU 推理 | `src/workers/local-ai.worker.ts` | Worker 内 WebGPU→WASM 回退 |
 | 纯函数逻辑 | `src/lib/*.ts` | creative / outpaint / local-ai / tutorial |
 | 纯逻辑测试 | `tests/*.test.ts` | 与 electron/、src/lib 一一对应 |

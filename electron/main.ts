@@ -181,8 +181,8 @@ function createWindow() {
     width: 1180, height: 820, minWidth: 980, minHeight: 680,
     // 无边框窗口：标题栏与窗口按钮改由渲染层自绘（最小化/最大化/关闭），保留系统阴影与边缘 resize。
     frame: false,
-    // 取页面/header 右缘的浅粉白：scrollbar-gutter 槽位与滚动条透明轨道都透出此色，
-    // 取此值可让槽位与页面、header 融为一体（原 #f7f8fc 偏冷灰，会在右上角形成色差带）。
+    // 仅兜底窗口首帧底色（页面加载前防白闪）：滚动条槽位与透明轨道现由渲染层
+    // .app 自身背景绘制（见 src/styles.css v2.1 四层背景），不再依赖此值配色。
     backgroundColor: "#fdf5f9",
     icon: path.join(__dirname, "../ImagoTune.ico"),
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false }

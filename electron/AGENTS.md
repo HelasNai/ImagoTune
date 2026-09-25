@@ -39,7 +39,7 @@ Electron 主进程：窗口、IPC、本地存储、OpenAI 兼容 API、本地 AI
 - GitHub provider 无 `beta.yml` 时 beta 通道会 404 并回落到 `latest.yml`；beta 通道依赖 `allowPrerelease=true`。
 - Dev 走 `http://127.0.0.1:5173`(`--dev` + VITE_DEV_SERVER_URL)，prod 走 `../dist-renderer/index.html`
 - `main.ts` 硬编码 `LEGACY_SAVE_DIR`(行 27)，仅 try/catch 降级
-- `BrowserWindow.backgroundColor` 取页面右缘近似浅粉白（`#fdf5f9`）：`scrollbar-gutter` 槽位与滚动条透明轨道透出此色，须与渲染层页面底色协调，否则右上角出现色差带。（Electron 44 的 overlay 滚动条 electron#53350 不可用，勿再走该方案）
+- `BrowserWindow.backgroundColor`（`#fdf5f9`）现仅兜底窗口首帧底色（页面加载前防白闪）：`scrollbar-gutter` 槽位与透明滚动条轨道由渲染层 `.app` 自身背景绘制（见 `src/styles.css` v2.1 四层背景），不再依赖此值配色；保留它用于启动过渡。（Electron 44 的 overlay 滚动条 electron#53350 不可用，勿再走该方案）
 - 本应用为无边框窗口（`frame:false`）：禁止 `transparent:true`/`hasShadow:false`/`thickFrame:false`（会丢阴影与边缘 resize 能力），保留 `backgroundColor:"#fdf5f9"`；窗口拖拽由渲染层 `header` 的 `app-region: drag` 承担。
 - 应用菜单已移除（`Menu.setApplicationMenu(null)`）：编辑类快捷键依赖输入框内 Chromium 原生行为；dev 快捷键（F12 / Ctrl+Shift+I / Ctrl+R / Ctrl+Shift+R / F5）经 `win.webContents.on("before-input-event")` 保留，且仅在 `--dev` 下注册，不用 `globalShortcut`（避免全局生效）。
 - 窗口控制走 `window:*` 通道（`minimize`/`toggleMaximize`/`close`/`isMaximized`/`getZoom`/`setZoom`，均以 `BrowserWindow.fromWebContents(event.sender)` 判空后操作），并在 `maximize`/`unmaximize` 时向渲染层 `send("window:maximized-changed", boolean)`。
