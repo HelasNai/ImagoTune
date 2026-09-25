@@ -1,5 +1,5 @@
 /*
- * T8 — 无边框窗口 chrome 的 CDP 验证脚本（零依赖）。
+ * T8 — 系统原生 WCO 窗口 chrome 的 CDP 验证脚本（零依赖）。
  *
  * 运行方式：
  *   node tools/verify-window-chrome.cjs
@@ -157,10 +157,10 @@ async function waitForRenderer(cdp) {
   for (let i = 0; i < 40; i++) {
     try {
       const raw = await cdp.evaluate(
-        `JSON.stringify({bridge: !!(window.imageStudio && window.imageStudio.windowControls), controls: !!document.querySelector('.window-controls'), buttons: document.querySelectorAll('.window-controls button').length})`
+        `JSON.stringify({bridge: !!(window.imageStudio && window.imageStudio.windowControls)})`
       );
       const state = JSON.parse(raw);
-      if (state.bridge && state.controls && state.buttons === 3) {
+      if (state.bridge) {
         log(`renderer ready after ~${i * 250}ms: ${raw}`);
         return true;
       }
@@ -252,136 +252,128 @@ async function runAssertions(cdp, initialShotBytes) {
   );
 
   // -------------------------------------------------------------------------
-  // DRAG：header 拖拽，.queue-chip / .window-controls 不拖拽
+  // DRAG：header 拖拽（.queue-chip no-drag）；header::after 作为原生按钮条挖除区 no-drag
   // -------------------------------------------------------------------------
   log("");
   log("--- DRAG ---");
   const dragRaw = await evaluate(
-    `(function(){function g(sel){var el=document.querySelector(sel);if(!el)return null;var cs=getComputedStyle(el);return cs['-webkit-app-region']||cs.getPropertyValue('-webkit-app-region')||cs.getPropertyValue('app-region');}return JSON.stringify({header:g('header'),queueChip:g('.queue-chip'),windowControls:g('.window-controls')});})()`
+    `(function(){function g(sel){var el=document.querySelector(sel);if(!el)return null;var cs=getComputedStyle(el);return cs['-webkit-app-region']||cs.getPropertyValue('-webkit-app-region')||cs.getPropertyValue('app-region');}var after=getComputedStyle(document.querySelector('header'),'::after');var afterRegion=after['-webkit-app-region']||after.getPropertyValue('-webkit-app-region')||after.getPropertyValue('app-region');return JSON.stringify({header:g('header'),queueChip:g('.queue-chip'),headerAfter:afterRegion});})()`
   );
   const drag = JSON.parse(dragRaw);
   check(
-    "DRAG header=drag, .queue-chip=.window-controls=no-drag",
-    drag.header === "drag" && drag.queueChip === "no-drag" && drag.windowControls === "no-drag",
+    "DRAG header=drag, .queue-chip=no-drag, header::after=no-drag (native button strip carve-out)",
+    drag.header === "drag" && drag.queueChip === "no-drag" && drag.headerAfter === "no-drag",
     dragRaw
   );
 
   // -------------------------------------------------------------------------
-  // CONTROLS：3 个按钮、data-action 集合、type/aria-label/svg
+  // WCO：窗口按钮改由系统原生 Window Controls Overlay 承载——
+  // DOM 内不再有 .window-controls；navigator.windowControlsOverlay 可见。
+  // 注意：Electron 44 未实现 navigator.windowControlsOverlay.getTitleBarAreaRect()
+  // （实测 typeof === "undefined"），标题栏区域改用 CSS env(titlebar-area-*) 探测，
+  // 与 styles.css v1.8 的挖除逻辑同源。
   // -------------------------------------------------------------------------
   log("");
-  log("--- CONTROLS ---");
-  const controlsRaw = await evaluate(
-    `(function(){return JSON.stringify(Array.from(document.querySelectorAll('.window-controls button')).map(function(b){return {action:b.dataset.action,type:b.getAttribute('type'),label:b.getAttribute('aria-label'),hasSvg:!!b.querySelector('svg'),svgInner:b.querySelector('svg')?b.querySelector('svg').innerHTML:null};}));})()`
-  );
-  const buttons = JSON.parse(controlsRaw);
-  const actionSet = new Set(buttons.map((b) => b.action));
-  const controlsOk =
-    buttons.length === 3 &&
-    actionSet.size === 3 &&
-    ["minimize", "maximize", "close"].every((a) => actionSet.has(a)) &&
-    buttons.every((b) => b.type === "button" && typeof b.label === "string" && b.label.length > 0 && b.hasSvg === true);
-  check(
-    "CONTROLS 3 buttons, actions {minimize,maximize,close}, type=button, aria-label, svg",
-    controlsOk,
-    controlsRaw
-  );
-
-  // -------------------------------------------------------------------------
-  // NO-OVERLAP：.window-controls 与 .header-stack / .queue-chip 交集为 0 且贴窗口右缘
-  // （v2.1：滚动条槽位只在 .app 内、从 header 下方开始，窗口右上角无需再留 12px 槽位）
-  // -------------------------------------------------------------------------
-  log("");
-  log("--- NO-OVERLAP ---");
-  const overlapRaw = await evaluate(
+  log("--- WCO ---");
+  const wcoRaw = await evaluate(
     `(function(){
-      function rect(el){var b=el.getBoundingClientRect();return {x:+b.x.toFixed(2),y:+b.y.toFixed(2),width:+b.width.toFixed(2),height:+b.height.toFixed(2),right:+b.right.toFixed(2),bottom:+b.bottom.toFixed(2)};}
-      function area(a,b){var w=Math.min(a.right,b.right)-Math.max(a.x,b.x);var h=Math.min(a.bottom,b.bottom)-Math.max(a.y,b.y);return (w>0&&h>0)?+(w*h).toFixed(2):0;}
-      var controls=document.querySelector('.window-controls');
+      function rect(r){return {x:+r.x.toFixed(2),y:+r.y.toFixed(2),width:+r.width.toFixed(2),height:+r.height.toFixed(2)};}
+      var overlay=navigator.windowControlsOverlay;
+      var probe=document.createElement('div');
+      probe.style.paddingRight='env(titlebar-area-width, 0px)';
+      probe.style.paddingTop='env(titlebar-area-height, 0px)';
+      document.body.appendChild(probe);
+      var cs=getComputedStyle(probe);
+      var areaWidth=parseFloat(cs.paddingRight)||0;
+      var areaHeight=parseFloat(cs.paddingTop)||0;
+      probe.remove();
       var stack=document.querySelector('.header-stack');
       var chip=document.querySelector('.queue-chip');
-      var cr=rect(controls);
-      return JSON.stringify({controls:cr,headerStack:rect(stack),queueChip:rect(chip),interStack:area(cr,rect(stack)),interChip:area(cr,rect(chip)),clientWidth:document.documentElement.clientWidth,flushRight:Math.abs(cr.x+cr.width-document.documentElement.clientWidth)<=1});
+      return JSON.stringify({hasControls:!!document.querySelector('.window-controls'),overlayType:typeof overlay,visible:overlay?overlay.visible:null,titlebarAreaWidth:areaWidth,titlebarAreaHeight:areaHeight,headerStack:stack?rect(stack.getBoundingClientRect()):null,queueChip:chip?rect(chip.getBoundingClientRect()):null,clientWidth:document.documentElement.clientWidth});
     })()`
   );
-  const overlap = JSON.parse(overlapRaw);
+  const wco = JSON.parse(wcoRaw);
   check(
-    "NO-OVERLAP intersections = 0 and controls flush to right edge (no top-right scrollbar gutter anymore)",
-    overlap.interStack === 0 && overlap.interChip === 0 && overlap.flushRight === true,
-    overlapRaw
+    "WCO no .window-controls in DOM; navigator.windowControlsOverlay visible; titlebar-area width/height > 0",
+    wco.hasControls === false &&
+      wco.overlayType === "object" &&
+      wco.visible === true &&
+      wco.titlebarAreaWidth > 0 &&
+      wco.titlebarAreaHeight > 0,
+    wcoRaw
+  );
+  // 几何 sanity：header-stack / .queue-chip 必须落在原生按钮条左侧。
+  // 按钮条左缘 = clientWidth - titlebar-area-width（按钮条宽约为 3×46px）。
+  const buttonStripLeft = wco.clientWidth - wco.titlebarAreaWidth;
+  const stackRight = wco.headerStack ? wco.headerStack.x + wco.headerStack.width : 0;
+  const chipRight = wco.queueChip ? wco.queueChip.x + wco.queueChip.width : 0;
+  check(
+    "WCO header-stack / .queue-chip clear of native button strip (right edge <= button strip left)",
+    wco.headerStack !== null &&
+      wco.queueChip !== null &&
+      wco.titlebarAreaWidth > 0 &&
+      stackRight <= buttonStripLeft + 1 &&
+      chipRight <= buttonStripLeft + 1,
+    JSON.stringify({ stackRight: +stackRight.toFixed(2), chipRight: +chipRight.toFixed(2), buttonStripLeft: +buttonStripLeft.toFixed(2) })
   );
 
   // -------------------------------------------------------------------------
-  // MAX-ROUNDTRIP：点击 maximize -> isMaximized true + aria-label 还原窗口，再点回
+  // MAX-ROUNDTRIP：toggleMaximize 走 IPC -> isMaximized true，再 toggle 回 false
+  // （原生 WCO 按钮由系统绘制、无法从 DOM 点击，改用桥方法驱动）
   // -------------------------------------------------------------------------
   log("");
   log("--- MAX-ROUNDTRIP ---");
-  const labelExpr =
-    "document.querySelector('.window-controls button[data-action=\"maximize\"]').getAttribute('aria-label')";
-  const initialLabel = await evaluate(labelExpr);
-  check(
-    "MAX-ROUNDTRIP initial aria-label === 最大化窗口",
-    initialLabel === "最大化窗口",
-    JSON.stringify(initialLabel)
-  );
-
-  await evaluate("document.querySelector('.window-controls button[data-action=\"maximize\"]').click()");
+  await evaluate("window.imageStudio.windowControls.toggleMaximize()");
   await sleep(450);
   const maximizeState = JSON.parse(
     await evaluate("window.imageStudio.windowControls.isMaximized().then(function(r){return JSON.stringify(r);})")
   );
-  const maximizedLabel = await evaluate(labelExpr);
   check(
-    "MAX-ROUNDTRIP after click: isMaximized()=true and aria-label === 还原窗口",
-    maximizeState.ok === true && maximizeState.maximized === true && maximizedLabel === "还原窗口",
-    JSON.stringify({ state: maximizeState, label: maximizedLabel })
+    "MAX-ROUNDTRIP after toggle: isMaximized()=true",
+    maximizeState.ok === true && maximizeState.maximized === true,
+    JSON.stringify({ state: maximizeState })
   );
   const maximizedShotBytes = await screenshot(path.join(evidenceDir, "task-8-maximized.png"));
   log(`SCREENSHOT task-8-maximized.png bytes=${maximizedShotBytes}`);
 
-  await evaluate("document.querySelector('.window-controls button[data-action=\"maximize\"]').click()");
+  await evaluate("window.imageStudio.windowControls.toggleMaximize()");
   await sleep(450);
   const restoreState = JSON.parse(
     await evaluate("window.imageStudio.windowControls.isMaximized().then(function(r){return JSON.stringify(r);})")
   );
-  const restoredLabel = await evaluate(labelExpr);
   check(
-    "MAX-ROUNDTRIP after second click: isMaximized()=false and aria-label === 最大化窗口",
-    restoreState.ok === true && restoreState.maximized === false && restoredLabel === "最大化窗口",
-    JSON.stringify({ state: restoreState, label: restoredLabel })
+    "MAX-ROUNDTRIP after second toggle: isMaximized()=false",
+    restoreState.ok === true && restoreState.maximized === false,
+    JSON.stringify({ state: restoreState })
   );
 
   // -------------------------------------------------------------------------
   // SCROLL-STABLE：.app 为页面滚动容器（顶部从 header 下方开始），滚动后 window 不滚动、
-  // 无 data-condensed、header 保持全宽、控件 rect 不变
+  // 无 data-condensed、header 保持全宽（原生 WCO 按钮不参与 DOM，无需再比对控件 rect）
   // -------------------------------------------------------------------------
   log("");
   log("--- SCROLL-STABLE ---");
   await evaluate("document.querySelector('.app').scrollTo(0,0)");
   await sleep(350);
-  const beforeRect = await evaluate(
-    `(function(){var b=document.querySelector('.window-controls').getBoundingClientRect();var h=document.querySelector('header').getBoundingClientRect();var a=document.querySelector('.app').getBoundingClientRect();return JSON.stringify({headerWidth:+h.width.toFixed(2),headerBottom:+h.bottom.toFixed(2),appTop:+a.top.toFixed(2),x:+b.x.toFixed(2),y:+b.y.toFixed(2),width:+b.width.toFixed(2),height:+b.height.toFixed(2)});})()`
+  const beforeRaw = await evaluate(
+    `(function(){var h=document.querySelector('header').getBoundingClientRect();var a=document.querySelector('.app').getBoundingClientRect();return JSON.stringify({headerWidth:+h.width.toFixed(2),headerBottom:+h.bottom.toFixed(2),appTop:+a.top.toFixed(2)});})()`
   );
   await evaluate("document.querySelector('.app').scrollTo(0,2000)");
   await sleep(600);
   const scrolledRaw = await evaluate(
-    `(function(){var b=document.querySelector('.window-controls').getBoundingClientRect();var h=document.querySelector('header').getBoundingClientRect();var app=document.querySelector('.app');return JSON.stringify({condensed:app.dataset.condensed,appScrollTop:app.scrollTop,appTop:+app.getBoundingClientRect().top.toFixed(2),windowScrollY:window.scrollY,headerWidth:+h.width.toFixed(2),x:+b.x.toFixed(2),y:+b.y.toFixed(2),width:+b.width.toFixed(2),height:+b.height.toFixed(2)});})()`
+    `(function(){var h=document.querySelector('header').getBoundingClientRect();var app=document.querySelector('.app');return JSON.stringify({condensed:app.dataset.condensed,appScrollTop:app.scrollTop,appTop:+app.getBoundingClientRect().top.toFixed(2),windowScrollY:window.scrollY,headerWidth:+h.width.toFixed(2)});})()`
   );
   const scrolled = JSON.parse(scrolledRaw);
-  const before = JSON.parse(beforeRect);
+  const before = JSON.parse(beforeRaw);
   const stable =
     scrolled.condensed === undefined &&
     before.appTop === before.headerBottom &&
     scrolled.appScrollTop > 0 &&
     scrolled.windowScrollY === 0 &&
     scrolled.appTop === before.headerBottom &&
-    scrolled.headerWidth === before.headerWidth &&
-    scrolled.x === before.x &&
-    scrolled.y === before.y &&
-    scrolled.width === before.width &&
-    scrolled.height === before.height;
+    scrolled.headerWidth === before.headerWidth;
   check(
-    "SCROLL-STABLE .app scrolls below header (appTop==headerBottom), window unscrolled, no data-condensed, header full-width, controls rect unchanged",
+    "SCROLL-STABLE .app scrolls below header (appTop==headerBottom), window unscrolled, no data-condensed, header full-width",
     stable,
     JSON.stringify({ before, after: scrolled })
   );
@@ -514,7 +506,7 @@ async function main() {
     cdp = await connectCdp();
     const ready = await waitForRenderer(cdp);
     if (!ready) {
-      check("RENDERER bridge + 3 window-controls buttons ready", false, "not ready within 10s");
+      check("RENDERER bridge ready", false, "not ready within 10s");
       return;
     }
     // 跳过首次启动的教程询问弹窗：验证实例使用生产产物 origin，localStorage 无教程记录，
