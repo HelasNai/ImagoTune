@@ -257,13 +257,28 @@ async function runAssertions(cdp, initialShotBytes) {
   log("");
   log("--- DRAG ---");
   const dragRaw = await evaluate(
-    `(function(){function g(sel){var el=document.querySelector(sel);if(!el)return null;var cs=getComputedStyle(el);return cs['-webkit-app-region']||cs.getPropertyValue('-webkit-app-region')||cs.getPropertyValue('app-region');}var after=getComputedStyle(document.querySelector('header'),'::after');var afterRegion=after['-webkit-app-region']||after.getPropertyValue('-webkit-app-region')||after.getPropertyValue('app-region');return JSON.stringify({header:g('header'),queueChip:g('.queue-chip'),headerAfter:afterRegion});})()`
+    `(function(){function g(sel){var el=document.querySelector(sel);if(!el)return null;var cs=getComputedStyle(el);return cs['-webkit-app-region']||cs.getPropertyValue('-webkit-app-region')||cs.getPropertyValue('app-region');}function region(cs){return cs['-webkit-app-region']||cs.getPropertyValue('-webkit-app-region')||cs.getPropertyValue('app-region');}function pseudoRect(p){var cs=getComputedStyle(document.querySelector('header'),p);var l=parseFloat(cs.left)||0;var t=parseFloat(cs.top)||0;var w=parseFloat(cs.width)||0;var h=parseFloat(cs.height)||0;return {left:+l.toFixed(2),top:+t.toFixed(2),right:+(l+w).toFixed(2),bottom:+(t+h).toFixed(2)};}var hd=document.querySelector('header');var hb=hd.getBoundingClientRect();return JSON.stringify({header:g('header'),queueChip:g('.queue-chip'),headerAfter:region(getComputedStyle(hd,'::after')),headerBefore:region(getComputedStyle(hd,'::before')),headerBox:{width:+hb.width.toFixed(2),height:+hb.height.toFixed(2)},beforeRect:pseudoRect('::before'),afterRect:pseudoRect('::after')});})()`
   );
   const drag = JSON.parse(dragRaw);
   check(
     "DRAG header=drag, .queue-chip=no-drag, header::after=no-drag (native button strip carve-out)",
     drag.header === "drag" && drag.queueChip === "no-drag" && drag.headerAfter === "no-drag",
     dragRaw
+  );
+  // v2.5 回归防线：Chromium 按伪元素的「布局矩形」收集窗口拖拽区，且不受 header
+  // overflow:hidden 裁剪——伪元素矩形一旦越出 header 盒，header 下方的页面区域
+  // （窗口右侧、至 y≈300px）会被误判为拖拽/标题栏区（拖动=拖窗口、双击=最大化）。
+  // 故 before/after 的布局矩形必须完全落在 header 盒内。
+  const headerBox = drag.headerBox;
+  const insideHeader = (rect) =>
+    rect.left >= -0.5 &&
+    rect.top >= -0.5 &&
+    rect.right <= headerBox.width + 0.5 &&
+    rect.bottom <= headerBox.height + 0.5;
+  check(
+    "DRAG header::before / ::after layout rects stay inside header box (no drag-region spill)",
+    insideHeader(drag.beforeRect) && insideHeader(drag.afterRect),
+    JSON.stringify({ headerBox, beforeRect: drag.beforeRect, afterRect: drag.afterRect })
   );
 
   // -------------------------------------------------------------------------
@@ -282,14 +297,16 @@ async function runAssertions(cdp, initialShotBytes) {
       var probe=document.createElement('div');
       probe.style.paddingRight='env(titlebar-area-width, 0px)';
       probe.style.paddingTop='env(titlebar-area-height, 0px)';
+      probe.style.paddingLeft='env(titlebar-area-x, 0px)';
       document.body.appendChild(probe);
       var cs=getComputedStyle(probe);
       var areaWidth=parseFloat(cs.paddingRight)||0;
       var areaHeight=parseFloat(cs.paddingTop)||0;
+      var areaX=parseFloat(cs.paddingLeft)||0;
       probe.remove();
       var stack=document.querySelector('.header-stack');
       var chip=document.querySelector('.queue-chip');
-      return JSON.stringify({hasControls:!!document.querySelector('.window-controls'),overlayType:typeof overlay,visible:overlay?overlay.visible:null,titlebarAreaWidth:areaWidth,titlebarAreaHeight:areaHeight,headerStack:stack?rect(stack.getBoundingClientRect()):null,queueChip:chip?rect(chip.getBoundingClientRect()):null,clientWidth:document.documentElement.clientWidth});
+      return JSON.stringify({hasControls:!!document.querySelector('.window-controls'),overlayType:typeof overlay,visible:overlay?overlay.visible:null,titlebarAreaX:areaX,titlebarAreaWidth:areaWidth,titlebarAreaHeight:areaHeight,headerStack:stack?rect(stack.getBoundingClientRect()):null,queueChip:chip?rect(chip.getBoundingClientRect()):null,clientWidth:document.documentElement.clientWidth});
     })()`
   );
   const wco = JSON.parse(wcoRaw);
@@ -303,8 +320,10 @@ async function runAssertions(cdp, initialShotBytes) {
     wcoRaw
   );
   // 几何 sanity：header-stack / .queue-chip 必须落在原生按钮条左侧。
-  // 按钮条左缘 = clientWidth - titlebar-area-width（按钮条宽约为 3×46px）。
-  const buttonStripLeft = wco.clientWidth - wco.titlebarAreaWidth;
+  // 按钮条左缘 = titlebar-area-x + titlebar-area-width（x 通常为 0，按钮条贴窗口右缘；
+  // 注意不是 clientWidth - titlebar-area-width——titlebar-area-width 是「内容区宽度」，
+  // 旧公式会把按钮条左缘算成按钮条自身宽度，窗口越宽越早误报 FAIL）。
+  const buttonStripLeft = wco.titlebarAreaX + wco.titlebarAreaWidth;
   const stackRight = wco.headerStack ? wco.headerStack.x + wco.headerStack.width : 0;
   const chipRight = wco.queueChip ? wco.queueChip.x + wco.queueChip.width : 0;
   check(
