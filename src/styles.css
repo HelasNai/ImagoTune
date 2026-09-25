@@ -50,13 +50,6 @@ header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 44px 56px 30px;
-  background: linear-gradient(135deg, #fff 0%, #f4f1ff 100%);
-  border-bottom: 1px solid #e8e9f0;
-}
-header p {
-  margin: 0;
-  color: #737c8c;
 }
 .eyebrow {
   font-size: 16px;
@@ -85,12 +78,6 @@ header p {
   max-width: var(--layout-max-width);
   margin: 0 auto;
 }
-aside {
-  width: var(--aside-width);
-  padding: 32px 20px;
-  border-right: 1px solid #e8e9f0;
-  min-height: calc(100vh - 158px);
-}
 .nav {
   display: flex;
   align-items: center;
@@ -108,19 +95,11 @@ aside {
 .nav > svg {
   flex: none;
 }
-.nav.active {
-  background: #eae7ff;
-  color: #5548b8;
-}
 .aside-tip {
-  margin: 50px 10px 0;
-  padding: 15px;
   border-radius: 14px;
-  background: #fff;
   color: #647083;
   font-size: 12px;
   line-height: 1.8;
-  box-shadow: 0 8px 24px #2d22450b;
 }
 .aside-tip strong {
   color: #232a3a;
@@ -131,14 +110,9 @@ aside {
 }
 main {
   flex: 1;
-  padding: 32px 42px 80px;
-  max-width: 1020px;
 }
 .card {
-  background: #fff;
   border: 1px solid #e8e9f0;
-  border-radius: 20px;
-  box-shadow: 0 16px 40px #28214d0b;
   padding: 28px 30px;
   margin-bottom: 22px;
 }
@@ -348,26 +322,15 @@ label {
   font-size: 12px;
 }
 @media (max-width: 900px) {
-  header {
-    padding: 30px;
-  }
   .layout {
     display: block;
   }
   aside {
-    position: static;
-    width: auto;
-    min-height: 0;
-    border-right: 0;
-    padding: 16px 30px;
     display: flex;
     gap: 8px;
   }
   .aside-tip {
     display: none;
-  }
-  main {
-    padding: 15px 30px;
   }
   .nav {
     width: auto;
@@ -429,14 +392,7 @@ label {
   font-size: 12px;
 }
 /* 页面背景已上移至 html（v2.0）并由 .app 自绘同源副本（v2.1），见文件末尾规则。 */
-header {
-  background: linear-gradient(135deg, #f5fcff 0%, #fff0f8 100%);
-}
-.card {
-  box-shadow: 0 16px 40px rgba(113, 159, 190, 0.12);
-}
 .nav.active {
-  background: linear-gradient(135deg, #e4f6ff, #ffeaf4);
   color: #5f70c6;
 }
 .primary {
@@ -473,33 +429,21 @@ main,
   min-width: 0;
 }
 @media (max-width: 1050px) {
-  main {
-    padding: 26px 24px;
-  }
   .controls {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 @media (max-width: 700px) {
-  header {
-    padding: 28px 24px;
-  }
   .layout {
     display: block;
   }
   aside {
-    min-height: 0;
-    border-right: 0;
-    padding: 14px 24px;
     display: flex;
     gap: 8px;
     overflow: auto;
   }
   .aside-tip {
     display: none;
-  }
-  main {
-    padding: 14px 18px;
   }
   .card {
     padding: 22px 20px;
