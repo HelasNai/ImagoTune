@@ -179,8 +179,11 @@ async function migrateLegacyUserData() {
 function createWindow() {
   const win = new BrowserWindow({
     width: 1180, height: 820, minWidth: 980, minHeight: 680,
-    // 无边框窗口：标题栏与窗口按钮改由渲染层自绘（最小化/最大化/关闭），保留系统阴影与边缘 resize。
-    frame: false,
+    // 系统原生窗口按钮（WCO）：titleBarStyle:'hidden' 隐去系统标题栏，titleBarOverlay 叠加
+    // 原生最小化/最大化/关闭按钮；overlay 取全透明且 RGB 用页面基色（#fdf5f9），页面渐变得以
+    // 透出、hover 高亮与页面融合；height:32 与旧自绘控件等高，symbolColor 沿用旧图标色。
+    titleBarStyle: "hidden",
+    titleBarOverlay: { color: "rgba(253,245,249,0)", symbolColor: "#43506b", height: 32 },
     // 仅兜底窗口首帧底色（页面加载前防白闪）：滚动条槽位与透明轨道现由渲染层
     // .app 自身背景绘制（见 src/styles.css v2.1 四层背景），不再依赖此值配色。
     backgroundColor: "#fdf5f9",
@@ -191,7 +194,7 @@ function createWindow() {
     if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
     return { action: "deny" };
   });
-  // 最大化状态推送给渲染层，供自绘窗口按钮切换图标（还原 / 最大化）。
+  // 最大化/还原状态仍推送给渲染层（原生 WCO 按钮由系统绘制，此事件保留供渲染层感知窗口状态）。
   win.on("maximize", () => win.webContents.send("window:maximized-changed", true));
   win.on("unmaximize", () => win.webContents.send("window:maximized-changed", false));
   if (process.argv.includes("--dev")) {
