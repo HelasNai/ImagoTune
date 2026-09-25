@@ -45,7 +45,7 @@ image-studio/
 - 构建产物三分：`dist-renderer`（vite）/ `dist-electron`（tsc）/ `dist`（electron-builder）——勿合并（v1.3.2 空白窗修复）
 - 安全基线：`contextIsolation(true)`/`nodeIntegration(false)`；API 密钥仅经 `keytar` 存 Windows 凭据库，绝不落盘源码/渲染层
 - IPC 全部返回 `{ ok: boolean; error?: string }`
-- 窗口为系统原生 WCO 模型（`titleBarStyle:'hidden'` + 全透明 `titleBarOverlay` 对象）：Windows 原生绘制最小化/最大化/关闭按钮并叠加在页面上、页面渐变透出（支持 Win11 Snap Layouts）；原生应用菜单已移除（`Menu.setApplicationMenu(null)`），其「使用说明 / 开源许可证 / 新手教程 / 界面缩放」入口迁至设置页
+- 窗口为系统原生 WCO 模型（`titleBarStyle:'hidden'` + 全透明 `titleBarOverlay` 对象）：Windows 原生绘制最小化/最大化/关闭按钮并叠加在页面上、页面渐变透出（支持 Win11 Snap Layouts）；原生应用菜单已移除（`Menu.setApplicationMenu(null)`），其「使用说明 / 开源许可证 / 新手教程 / 界面缩放」入口迁至设置页；拖拽区按元素「布局矩形」收集且不受 `overflow:hidden` 裁剪——header 内伪元素/子元素的布局矩形必须落在 header 盒内，越界会把 header 下方页面区域误判为拖拽/标题栏区（v2.5 修复 `header::before` 光晕圆盒溢出）
 - 测试是纯逻辑，无 DOM/UI/electron 运行时测试；React 组件与 main.ts/preload.ts 无测试
 
 ## ANTI-PATTERNS（行为边界，源自代码而非注释）

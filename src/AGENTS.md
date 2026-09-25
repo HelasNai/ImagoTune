@@ -8,7 +8,7 @@ React 渲染进程：App 组件 + 全部 UI 状态 + `window.imageStudio` IPC �
 |------|------|
 | `main.tsx` | 入口，约 1722 行巨型单文件：App 根组件、全部 UI 状态、模式路由（generate/edit/outpaint/gallery/local-ai/queue/settings）、所有 `window.imageStudio` 调用逻辑 |
 | `global.d.ts` | `window.imageStudio` 类型声明（IPC 契约）+ 共享类型（ImageRecipeV1/QueueJob/GalleryItem/UpdateStatus） |
-| `styles.css` | 版本分区/布局注释（v1.1/v1.2/v1.5.1、v2.0 滚动条、v2.1 滚动容器、v2.2 固定底栏对齐与吞入、v2.3 侧栏贴底、v2.4 侧栏钉左+主区内容右半区居中）；`:root` 含 `--header-h` / `--aside-width` / `--layout-max-width` / `--dock-bleed` / `--page-bg`（页面底色渐变，html 与 .app 共用）等布局 token |
+| `styles.css` | 版本分区/布局注释（v1.1/v1.2/v1.5.1、v2.0 滚动条、v2.1 滚动容器、v2.2 固定底栏对齐与吞入、v2.3 侧栏贴底、v2.4 侧栏钉左+主区内容右半区居中、v2.5 头部光晕伪元素收敛/拖拽区不外溢）；`:root` 含 `--header-h` / `--aside-width` / `--layout-max-width` / `--dock-bleed` / `--page-bg`（页面底色渐变，html 与 .app 共用）等布局 token |
 | `assets/` | 2 张 PNG 标题图 |
 | `components/` | GalleryWorkspace / LocalAIToolbox / MaskPainter / TutorialExperience / `icons.tsx`（`NavIcon`：内联 Lucide 侧栏图标，无第三方依赖） |
 | `lib/` | 可测试纯函数：creative / local-ai / outpaint / tutorial |
@@ -37,7 +37,7 @@ React 渲染进程：App 组件 + 全部 UI 状态 + `window.imageStudio` IPC �
 - `TutorialExperience.tsx` 第 173 行注释：effect 依赖刻意跟随教程状态，勿"修正"为剔除 tutorial state。
 - `lib/tutorial.ts` 的 localStorage 只存教程状态，绝不写 API 密钥/提示词/图片。
 - 固定头部：header 为 position:fixed、width:100%（覆盖到窗口右缘）；页面滚动由 .app 承担（margin-top:--header-h、height:calc(100vh - --header-h)、overflow-y:auto）——滚动条（含 gutter 槽位）只在 header 下方出现。header 同时是 WCO 窗口的拖拽区（app-region: drag；padding-right 与 header::after 按 env(titlebar-area-*) 为系统原生按钮条让位），其内所有可交互元素（button/input/select/textarea/a/[role=button]）必须 no-drag，否则拖拽会吞掉点击；禁止给 header 或祖先加 transform/filter/contain（会制造 fixed 包含块，破坏 header 的视口定位）。
-- 窗口控制（WCO）：Windows 原生最小化/最大化/关闭按钮由系统叠加在页面上、页面渐变透出；`header` 仍是拖拽区，右上角原生按钮条用 `env(titlebar-area-width)` / `env(titlebar-area-height)` 从拖拽区与 `padding-right` 中挖除（`header::after` 置 `no-drag`；回退值 138px / 32px，预留 padding 回退 158px）。原生按钮条区域禁止放任何可交互元素（会被系统按钮吞掉点击）。
+- 窗口控制（WCO）：Windows 原生最小化/最大化/关闭按钮由系统叠加在页面上、页面渐变透出；`header` 仍是拖拽区，右上角原生按钮条用 `env(titlebar-area-width)` / `env(titlebar-area-height)` 从拖拽区与 `padding-right` 中挖除（`header::after` 置 `no-drag`；回退值 138px / 32px，预留 padding 回退 158px）。原生按钮条区域禁止放任何可交互元素（会被系统按钮吞掉点击）。**拖拽区按元素「布局矩形」收集且不受 `overflow:hidden` 裁剪——header 内伪元素/子元素的布局矩形必须落在 header 盒内**：v2.5 修复，`header::before` 的 530×530 光晕圆盒（right:-145/top:-230）曾让 header 下方、窗口右侧一大块（至 y≈300px）被误判为拖拽/标题栏区（拖动=拖窗口、双击=最大化）；现改为 `inset:0` + 显式半径径向渐变 + `clip-path` 圆复刻视觉，`tools/verify-window-chrome.cjs` 已加对应断言防回归。
 - 页面滚动由 .app 承担（唯一页面级滚动容器，勿移回 window、勿再嵌套）：window 自身不滚动（模式切换重置滚动走 appRef.scrollTo）；.app 顶部让出 --header-h，滚动条与槽位只出现在 header 下方。
 - 左侧栏 `aside`：`position: sticky; top: 0`（贴 .app 滚动端口顶部）+ `min-height: calc(100vh - var(--header-h))`（**必须与 .app 滚动端口等高**，v2.3 修复：旧值额外 -70px 会让侧栏底边悬在窗口底上方、露出页面背景=「侧栏未到底」；改 `--header-h` 或 .app 高度时须同步复核）。内容高于视口时靠 sticky 保持贴顶、滚到 .layout 底时才随之上移。≤700px 的横条布局由媒体查询覆盖为 `min-height: 0`。
 - 滚动条：scrollbar-gutter:stable 设在 .app（槽位常驻、页面切换无横向抖动），外观由 ::-webkit-scrollbar 定制（宽 --scrollbar-w；常态 6px、悬停加粗到 10px、颜色不变）；滚动条范围 = .app（header 下方到窗口底），不进入 header 区域。Electron 44 的 overlay 滚动条（electron#53350）不可用，勿再尝试。
