@@ -39,16 +39,13 @@ const WINDOW_CONTROL_METHODS = [
 
 let child = null;
 let wsRef = null;
-const report = [];
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function log(line) {
-  const text = String(line);
-  report.push(text);
-  console.log(text);
+  console.log(String(line));
 }
 
 function check(label, ok, raw) {
@@ -175,6 +172,37 @@ async function waitForRenderer(cdp) {
   return false;
 }
 
+/**
+ * FRAMELESS 段还原 toggleMaximize 后等待窗口真正回到稳定 restored 态：
+ * 轮询 isMaximized() === false 且连续两次窗口尺寸读数完全一致，
+ * 取代固定 sleep(800)，消除慢环境下还原动画未结束就进入后续断言导致的偶发假失败。
+ */
+async function waitForRestoredStable(cdp) {
+  let previous = null;
+  for (let i = 0; i < 20; i++) {
+    const raw = await cdp.evaluate(
+      `window.imageStudio.windowControls.isMaximized().then(function(r){return JSON.stringify({maximized:r.maximized,outerH:window.outerHeight,innerH:window.innerHeight,outerW:window.outerWidth,innerW:window.innerWidth});})`
+    );
+    const state = JSON.parse(raw);
+    if (
+      previous &&
+      state.maximized === false &&
+      previous.maximized === false &&
+      state.outerH === previous.outerH &&
+      state.innerH === previous.innerH &&
+      state.outerW === previous.outerW &&
+      state.innerW === previous.innerW
+    ) {
+      log(`INFO restored state stable after ~${i * 150}ms: ${raw}`);
+      return true;
+    }
+    previous = state;
+    await sleep(150);
+  }
+  log("WARN restored state not stable within ~3s; continuing anyway");
+  return false;
+}
+
 async function runAssertions(cdp, initialShotBytes) {
   const { evaluate, screenshot } = cdp;
 
@@ -201,7 +229,7 @@ async function runAssertions(cdp, initialShotBytes) {
     maximizedRaw
   );
   await evaluate("window.imageStudio.windowControls.toggleMaximize()");
-  await sleep(800);
+  await waitForRestoredStable(cdp);
 
   // -------------------------------------------------------------------------
   // BRIDGE：window.imageStudio.windowControls 的 7 个方法全部存在且为函数
@@ -260,7 +288,8 @@ async function runAssertions(cdp, initialShotBytes) {
   );
 
   // -------------------------------------------------------------------------
-  // NO-OVERLAP：.window-controls 与 .header-stack / .queue-chip 交集为 0 且右侧留白
+  // NO-OVERLAP：.window-controls 与 .header-stack / .queue-chip 交集为 0 且贴窗口右缘
+  // （v2.1：滚动条槽位只在 .app 内、从 header 下方开始，窗口右上角无需再留 12px 槽位）
   // -------------------------------------------------------------------------
   log("");
   log("--- NO-OVERLAP ---");
@@ -272,13 +301,13 @@ async function runAssertions(cdp, initialShotBytes) {
       var stack=document.querySelector('.header-stack');
       var chip=document.querySelector('.queue-chip');
       var cr=rect(controls);
-      return JSON.stringify({controls:cr,headerStack:rect(stack),queueChip:rect(chip),interStack:area(cr,rect(stack)),interChip:area(cr,rect(chip)),clientWidth:document.documentElement.clientWidth,gutterOk:cr.x+cr.width<=document.documentElement.clientWidth-12});
+      return JSON.stringify({controls:cr,headerStack:rect(stack),queueChip:rect(chip),interStack:area(cr,rect(stack)),interChip:area(cr,rect(chip)),clientWidth:document.documentElement.clientWidth,flushRight:Math.abs(cr.x+cr.width-document.documentElement.clientWidth)<=1});
     })()`
   );
   const overlap = JSON.parse(overlapRaw);
   check(
-    "NO-OVERLAP intersections = 0 and controls right <= clientWidth - 12",
-    overlap.interStack === 0 && overlap.interChip === 0 && overlap.gutterOk === true,
+    "NO-OVERLAP intersections = 0 and controls flush to right edge (no top-right scrollbar gutter anymore)",
+    overlap.interStack === 0 && overlap.interChip === 0 && overlap.flushRight === true,
     overlapRaw
   );
 
@@ -323,38 +352,43 @@ async function runAssertions(cdp, initialShotBytes) {
   );
 
   // -------------------------------------------------------------------------
-  // COLLAPSE-STABLE：滚动后进入折叠态，.header-spacer 仍在，控件 rect 不变
+  // SCROLL-STABLE：.app 为页面滚动容器（顶部从 header 下方开始），滚动后 window 不滚动、
+  // 无 data-condensed、header 保持全宽、控件 rect 不变
   // -------------------------------------------------------------------------
   log("");
-  log("--- COLLAPSE-STABLE ---");
-  await evaluate("window.scrollTo(0,0)");
+  log("--- SCROLL-STABLE ---");
+  await evaluate("document.querySelector('.app').scrollTo(0,0)");
   await sleep(350);
   const beforeRect = await evaluate(
-    `(function(){var b=document.querySelector('.window-controls').getBoundingClientRect();return JSON.stringify({x:+b.x.toFixed(2),y:+b.y.toFixed(2),width:+b.width.toFixed(2),height:+b.height.toFixed(2)});})()`
+    `(function(){var b=document.querySelector('.window-controls').getBoundingClientRect();var h=document.querySelector('header').getBoundingClientRect();var a=document.querySelector('.app').getBoundingClientRect();return JSON.stringify({headerWidth:+h.width.toFixed(2),headerBottom:+h.bottom.toFixed(2),appTop:+a.top.toFixed(2),x:+b.x.toFixed(2),y:+b.y.toFixed(2),width:+b.width.toFixed(2),height:+b.height.toFixed(2)});})()`
   );
-  await evaluate("window.scrollTo(0,2000)");
+  await evaluate("document.querySelector('.app').scrollTo(0,2000)");
   await sleep(600);
-  const collapsedRaw = await evaluate(
-    `(function(){var b=document.querySelector('.window-controls').getBoundingClientRect();return JSON.stringify({condensed:document.querySelector('.app').dataset.condensed,spacer:!!document.querySelector('.header-spacer'),scrollY:window.scrollY,x:+b.x.toFixed(2),y:+b.y.toFixed(2),width:+b.width.toFixed(2),height:+b.height.toFixed(2)});})()`
+  const scrolledRaw = await evaluate(
+    `(function(){var b=document.querySelector('.window-controls').getBoundingClientRect();var h=document.querySelector('header').getBoundingClientRect();var app=document.querySelector('.app');return JSON.stringify({condensed:app.dataset.condensed,appScrollTop:app.scrollTop,appTop:+app.getBoundingClientRect().top.toFixed(2),windowScrollY:window.scrollY,headerWidth:+h.width.toFixed(2),x:+b.x.toFixed(2),y:+b.y.toFixed(2),width:+b.width.toFixed(2),height:+b.height.toFixed(2)});})()`
   );
-  const collapsed = JSON.parse(collapsedRaw);
+  const scrolled = JSON.parse(scrolledRaw);
   const before = JSON.parse(beforeRect);
   const stable =
-    collapsed.condensed === "true" &&
-    collapsed.spacer === true &&
-    collapsed.x === before.x &&
-    collapsed.y === before.y &&
-    collapsed.width === before.width &&
-    collapsed.height === before.height;
+    scrolled.condensed === undefined &&
+    before.appTop === before.headerBottom &&
+    scrolled.appScrollTop > 0 &&
+    scrolled.windowScrollY === 0 &&
+    scrolled.appTop === before.headerBottom &&
+    scrolled.headerWidth === before.headerWidth &&
+    scrolled.x === before.x &&
+    scrolled.y === before.y &&
+    scrolled.width === before.width &&
+    scrolled.height === before.height;
   check(
-    "COLLAPSE-STABLE data-condensed=true, header-spacer exists, controls rect unchanged",
+    "SCROLL-STABLE .app scrolls below header (appTop==headerBottom), window unscrolled, no data-condensed, header full-width, controls rect unchanged",
     stable,
-    JSON.stringify({ before, after: collapsed })
+    JSON.stringify({ before, after: scrolled })
   );
-  const collapsedShotBytes = await screenshot(path.join(evidenceDir, "task-8-collapsed.png"));
-  log(`SCREENSHOT task-8-collapsed.png bytes=${collapsedShotBytes}`);
+  const scrolledShotBytes = await screenshot(path.join(evidenceDir, "task-8-scrolled.png"));
+  log(`SCREENSHOT task-8-scrolled.png bytes=${scrolledShotBytes}`);
 
-  await evaluate("window.scrollTo(0,0)");
+  await evaluate("document.querySelector('.app').scrollTo(0,0)");
   await sleep(300);
 
   // -------------------------------------------------------------------------
@@ -366,7 +400,7 @@ async function runAssertions(cdp, initialShotBytes) {
   const shots = {
     "task-8-initial.png": initialShotBytes,
     "task-8-maximized.png": maximizedShotBytes,
-    "task-8-collapsed.png": collapsedShotBytes,
+    "task-8-scrolled.png": scrolledShotBytes,
   };
   for (const [name, bytes] of Object.entries(shots)) {
     if (!(bytes > 10 * 1024)) {
@@ -374,6 +408,28 @@ async function runAssertions(cdp, initialShotBytes) {
       process.exitCode = 1;
     }
   }
+}
+
+/**
+ * 本次启动进程树中仍存活的 PID（主进程 + 直接子进程）。
+ * 用 PowerShell 按 PPID 圈定范围；返回 null 表示查询不可用（调用方降级为全局扫描）。
+ */
+function listSurvivingTreePids(rootPid) {
+  const script =
+    `@(Get-CimInstance Win32_Process -Filter "ProcessId = ${rootPid} OR ParentProcessId = ${rootPid}" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty ProcessId) -join ','`;
+  const out = spawnSync("powershell", ["-NoProfile", "-Command", script], { encoding: "utf8" });
+  if (out.error || out.status !== 0) return null;
+  const text = (out.stdout || "").trim();
+  if (!text) return [];
+  return text
+    .split(",")
+    .map((value) => Number.parseInt(value, 10))
+    .filter((value) => Number.isInteger(value));
+}
+
+function listGlobalElectronLines() {
+  const out = spawnSync("tasklist", [], { encoding: "utf8" });
+  return (out.stdout || "").split(/\r?\n/).filter((line) => /electron\.exe/i.test(line));
 }
 
 async function cleanup() {
@@ -395,16 +451,44 @@ async function cleanup() {
     }
   }
   await sleep(2000);
+
+  // 残留核查只圈定本次启动的 PID 树（主进程 + 直接子进程），不扫描全系统，
+  // 避免把并存的其他 Electron 实例（如 npm run dev）误判为残留。
+  const rootPid = child && child.pid ? child.pid : null;
+  if (rootPid === null) {
+    log("CLEANUP: no spawned process to verify");
+    return;
+  }
+  let treeScoped = listSurvivingTreePids(rootPid) !== null;
+  if (!treeScoped) {
+    log("WARN: PID-scoped cleanup check unavailable (PowerShell); falling back to global electron.exe scan");
+  }
+
   for (let i = 0; i < 10; i++) {
-    const out = spawnSync("tasklist", [], { encoding: "utf8" });
-    const lines = (out.stdout || "").split(/\r?\n/).filter((line) => /electron\.exe/i.test(line));
-    if (lines.length === 0) {
-      log("CLEANUP: no electron.exe remaining");
+    let leftovers = null;
+    if (treeScoped) {
+      const treePids = listSurvivingTreePids(rootPid);
+      if (treePids === null) {
+        log("WARN: PID-scoped cleanup check failed mid-run; switching to global scan");
+        treeScoped = false;
+      } else {
+        leftovers = treePids.map((pid) => `pid ${pid}`);
+      }
+    }
+    if (leftovers === null) {
+      leftovers = listGlobalElectronLines().map((line) => line.trim());
+    }
+    if (leftovers.length === 0) {
+      log(treeScoped ? "CLEANUP: verification process tree gone" : "CLEANUP: no electron.exe remaining");
       return;
     }
     if (i === 9) {
-      log("CLEANUP: electron.exe still present after taskkill:");
-      lines.forEach((line) => log("  " + line.trim()));
+      log(
+        treeScoped
+          ? "CLEANUP: verification process tree still alive after taskkill:"
+          : "CLEANUP: electron.exe still present after taskkill:"
+      );
+      leftovers.forEach((line) => log("  " + line));
       process.exitCode = 1;
       return;
     }
@@ -433,6 +517,19 @@ async function main() {
       check("RENDERER bridge + 3 window-controls buttons ready", false, "not ready within 10s");
       return;
     }
+    // 跳过首次启动的教程询问弹窗：验证实例使用生产产物 origin，localStorage 无教程记录，
+    // 弹窗（fixed 遮罩）会盖住截图证据。仅作用于验证实例，不触碰用户日常 origin 的数据。
+    for (let i = 0; i < 12; i++) {
+      const welcomeState = await cdp.evaluate(
+        `(function(){var c=document.querySelector('.tutorial-welcome-card');if(!c)return 'none';var b=c.querySelector('.tutorial-close');if(b){b.click();return 'clicked';}return 'no-close';})()`
+      );
+      if (welcomeState !== "none") {
+        log(`INFO tutorial welcome overlay: ${welcomeState}`);
+        break;
+      }
+      await sleep(250);
+    }
+    await sleep(400);
     // 初始态截图：在任何状态变更（最大化 / 滚动）之前捕获
     const initialBytes = await cdp.screenshot(path.join(evidenceDir, "task-8-initial.png"));
     await runAssertions(cdp, initialBytes);
