@@ -734,17 +734,21 @@ header {
   background: var(--header-bg);
   border-bottom: 1px solid rgba(139, 156, 209, 0.22);
 }
+/* v2.5 修复：原实现用 530×530 的圆盒（right:-145 / top:-230）承载右上光晕，
+   其布局矩形远超 header 的 88px 盒。header 自 v1.8 起是 WCO 拖拽区，Chromium
+   按伪元素的布局矩形收集窗口拖拽区（不受 header overflow:hidden 裁剪），导致
+   header 下方、窗口右侧一大块（延伸到 y≈300px）被误判为拖拽/标题栏区——
+   在页面内容上拖动会拖窗口、双击会最大化。改为 inset:0 的伪元素：布局矩形
+   收敛回 header 盒内，绘制几何用「显式半径渐变 + clip-path 圆」在原坐标系
+   复刻（视觉等效），拖拽区不再外溢。改动此块时须保持伪元素不越出 header。 */
 header::before {
   content: "";
   position: absolute;
   z-index: 0;
-  width: 530px;
-  height: 530px;
-  right: -145px;
-  top: -230px;
-  border-radius: 50%;
+  inset: 0;
+  clip-path: circle(265px at calc(100% - 120px) 35px);
   background: radial-gradient(
-    circle at 35% 65%,
+    circle 391px at calc(100% - 199.5px) 114.5px,
     rgba(112, 195, 242, 0.48),
     rgba(159, 166, 246, 0.17) 43%,
     rgba(255, 255, 255, 0) 68%
