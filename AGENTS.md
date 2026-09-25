@@ -3,6 +3,7 @@
 **Generated:** 2026-08-30
 **Commit:** 4ad073a
 **Branch:** main
+**同步日期:** 2026-09-25（T9 收尾核验：main.tsx 拆分后实测事实）
 
 ## OVERVIEW
 Windows 桌面端 AI 图片创作工作台（Electron + React + TypeScript）：连接 OpenAI 兼容 API 出图，并提供完全本地的高清放大 / 抠图 / 人脸优化工具箱（WebGPU/WASM）。
@@ -25,7 +26,7 @@ image-studio/
 | IPC 类型契约 | `src/global.d.ts` | `window.imageStudio` 单一来源 + 共享类型 |
 | 图库/队列持久化 | `electron/{gallery,queue}-store.ts` | 原子写入、损坏恢复 |
 | 本地 AI 模型管理 | `electron/local-ai-model-manager.ts` | 下载 / SHA-256 校验 / 断点续传 |
-| React UI | `src/main.tsx` + `src/components/*` | main.tsx 为 1722 行巨型单文件 |
+| React UI | `src/main.tsx` + `src/components/*` | main.tsx 为 **441 行 shell**（同步日期 2026-09-25）；创作/结果/队列/设置面板与 useComposer 已拆入 `src/components/*` |
 | WebGPU 推理 | `src/workers/local-ai.worker.ts` | Worker 内 WebGPU→WASM 回退 |
 | 纯函数逻辑 | `src/lib/*.ts` | creative / outpaint / local-ai / tutorial |
 | 纯逻辑测试 | `tests/*.test.ts` | 与 electron/、src/lib 一一对应 |
@@ -35,7 +36,7 @@ image-studio/
 |--------|------|----------|------|
 | `electron/main.ts` | entry | 主进程 | 窗口创建、IPC 注册、app 生命周期、自动更新 |
 | `electron/preload.ts` | bridge | 预加载 | contextBridge 暴露 `window.imageStudio` |
-| `src/main.tsx` | entry | 渲染进程 | App 根组件（巨型，全 UI 状态/模式路由） |
+| `src/main.tsx` | entry | 渲染进程 | App 根组件（441 行 shell：模式路由/导航/StudioProvider/订阅/灯箱；业务逻辑在 components/*） |
 | `src/global.d.ts` | types | 渲染进程 | IPC 契约 + 共享类型 |
 | `window.imageStudio` | API | 渲染进程 | 访问主进程能力的唯一通道 |
 

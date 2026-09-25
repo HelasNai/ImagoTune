@@ -6,18 +6,18 @@ React 渲染进程：App 组件 + 全部 UI 状态 + `window.imageStudio` IPC �
 ## STRUCTURE
 | 路径 | 作用 |
 |------|------|
-| `main.tsx` | 入口，约 1722 行巨型单文件：App 根组件、全部 UI 状态、模式路由（generate/edit/outpaint/gallery/local-ai/queue/settings）、所有 `window.imageStudio` 调用逻辑 |
+| `main.tsx` | 入口，**441 行 shell**（同步日期 2026-09-25）：App 根组件仅保留模式路由（generate/edit/outpaint/gallery/local-ai/queue/settings）、header/aside 导航、StudioProvider 包裹、useEffect B-G 订阅（含队列 4 订阅 G）、灯箱预览、gallery/local-ai 接线回调与 TutorialExperience 挂载；业务状态与逻辑已抽入 `components/`（useComposer/ComposerPanel/ResultPanel/QueuePanel/SettingsPanel 等） |
 | `global.d.ts` | `window.imageStudio` 类型声明（IPC 契约）+ 共享类型（ImageRecipeV1/QueueJob/GalleryItem/UpdateStatus） |
 | `styles.css` | 版本分区/布局注释（v1.1/v1.2/v1.5.1、v2.0 滚动条、v2.1 滚动容器、v2.2 固定底栏对齐与吞入、v2.3 侧栏贴底、v2.4 侧栏钉左+主区内容右半区居中、v2.5 头部光晕伪元素收敛/拖拽区不外溢）；`:root` 含 `--header-h` / `--aside-width` / `--layout-max-width` / `--dock-bleed` / `--page-bg`（页面底色渐变，html 与 .app 共用）等布局 token |
 | `assets/` | 2 张 PNG 标题图 |
-| `components/` | GalleryWorkspace / LocalAIToolbox / MaskPainter / TutorialExperience / `icons.tsx`（`NavIcon`：内联 Lucide 侧栏图标，无第三方依赖） |
+| `components/` | 面板：`ComposerPanel`(352) / `ResultPanel`(192，导出弹层经 `createPortal` 挂到 `.app`) / `QueuePanel`(45) / `SettingsPanel`(233)；创作域 hook：`useComposer.ts`(712)；共享：`StudioContext.tsx`(`StudioProvider`/`useStudio`) / `types.ts`(`Mode`/`Output`) / `media-utils.ts`(dataUrlFor/b64ToFile/readImage/drawContain) / `queue-utils.ts`(recipeFromQueueInput/recipeModeLabel)；既有：GalleryWorkspace / LocalAIToolbox / MaskPainter / TutorialExperience / `icons.tsx`（`NavIcon`：内联 Lucide 侧栏图标，无第三方依赖）（行数为同步日期 2026-09-25 实测） |
 | `lib/` | 可测试纯函数：creative / local-ai / outpaint / tutorial |
 | `workers/local-ai.worker.ts` | 首行 `/// <reference lib="webworker" />`，WebGPU→WASM 回退推理 |
 
 ## WHERE TO LOOK
 | 任务 | 位置 |
 |------|------|
-| UI 状态、模式路由、IPC 调用 | `main.tsx` |
+| UI 状态、模式路由、IPC 调用 | `main.tsx`（壳：路由/导航/Provider/订阅/灯箱）；创作域状态与动作在 `components/useComposer.ts`，面板在 `components/*Panel.tsx` |
 | 新增 IPC/共享类型 | `global.d.ts` |
 | 画布尺寸校验（16 倍数、单边 ≤3840、总像素） | `lib/creative.ts` |
 | 图像算法纯函数（tile/mask/affine） | `lib/local-ai.ts` |
