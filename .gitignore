@@ -12,5 +12,10 @@ Open-Opencode.exe
 .npmrc
 .vscode/
 .sisyphus/
-0
+.omo/
+
+# 本地临时产物（勿提交）
+ImagoTune.ico.bak
+dist-verify/
+icon_preview.png
 
