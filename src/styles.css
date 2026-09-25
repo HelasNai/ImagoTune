@@ -1576,9 +1576,6 @@ textarea {
   font-size: 10px;
   font-weight: 700;
 }
-.gallery-toolbar .toolbar-search {
-  grid-column: span 2;
-}
 .gallery-toolbar .favorite-toggle {
   align-self: end;
 }
@@ -2024,13 +2021,6 @@ textarea {
   border: 1px solid rgba(154, 174, 214, 0.23);
   border-radius: 15px;
   background: rgba(255, 255, 255, 0.9);
-  transition:
-    transform 0.16s ease,
-    box-shadow 0.16s ease;
-}
-.archive-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 15px 28px rgba(93, 113, 162, 0.14);
 }
 .archive-card.selected {
   border-color: #88bae8;
@@ -2252,9 +2242,6 @@ textarea {
   }
   .archive-preview {
     height: 130px;
-  }
-  .archive-card .card-actions button:last-child {
-    grid-column: span 2;
   }
   .compare-modal,
   .export-modal {
