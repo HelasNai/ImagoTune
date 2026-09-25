@@ -2,7 +2,7 @@
 :root {
   font-family: "DM Sans", "Noto Sans SC", sans-serif;
   color: #17202a;
-  /* 页面底色由 html 承担（见文件末尾 v2.0 分区），body 不设 background。 */
+  /* 页面底色由 html 与 .app 共同承担（见文件末尾 v2.1 分区），body 不设 background。 */
   font-synthesis: none;
   /* v1.5.2 布局 token：侧栏宽度 / 主区最大宽度 / 主区横向内边距。
      顶部早期的 .layout/aside/main 会被下方 v1.2 分区再次覆盖，
@@ -10,17 +10,12 @@
   --aside-width: 238px;
   --layout-max-width: 1440px;
   --main-pad-x: clamp(26px, 3vw, 46px);
-  /* v1.6 折叠头部 token：--header-h 恒用于占位（spacer / .layout min-height）；
-     --header-h-current 为实时值，仅驱动 header 高度与 aside 的 sticky top。
-     动画只过渡真实几何属性（left/width/height/padding），严禁 transform。 */
+  /* v2.2 固定底栏横向外扩：底栏比 .composer 卡片每侧宽 10px，
+     滚动时卡片尾部从底栏后方"吞入/拉出"，两侧形成等宽宽边。 */
+  --dock-bleed: 10px;
+  /* 头部高度 token：header 为 fixed，--header-h 恒用于 header 高度、
+     .app 滚动容器顶部让位与 .layout min-height。 */
   --header-h: 88px;
-  /* 折叠态保持与静态同高：浓缩只体现在“收窄 + 精简内容”，不矮化高度，
-     否则 header 底与侧栏顶之间必然出现缝隙或空白。 */
-  --header-h-condensed: var(--header-h);
-  --header-h-current: var(--header-h);
-  --header-anim: 240ms;
-  --header-ease: cubic-bezier(0.4, 0, 0.2, 1);
-  --layout-offset: max(0px, calc((100% - var(--layout-max-width)) / 2));
   /* v2.0 滚动条槽位宽度：::-webkit-scrollbar 宽与 scrollbar-gutter 槽宽共用，保证一致。 */
   --scrollbar-w: 12px;
   /* v2.0 header 背景：抽为变量供 header 复用（保持单一来源）。 */
@@ -28,6 +23,12 @@
     radial-gradient(circle at 78% 23%, rgba(133, 208, 255, 0.44), transparent 18%),
     radial-gradient(circle at 91% 78%, rgba(255, 175, 211, 0.48), transparent 24%),
     linear-gradient(116deg, #f8fdff 0%, #f8f4ff 53%, #fff5f8 100%);
+  /* v2.1 修复：页面底色渐变抽为变量——html（canvas 背景）与 .app（槽位自绘）共用，
+     两者均为 fixed 并相对视口对齐，滚动条槽位与页面颜色才能完全一致。 */
+  --page-bg:
+    radial-gradient(circle at 9% 21%, rgba(131, 211, 255, 0.22), transparent 28%),
+    radial-gradient(circle at 91% 30%, rgba(255, 169, 205, 0.2), transparent 31%),
+    linear-gradient(135deg, #f3fbff 0%, #fbf8ff 49%, #fff5f9 100%);
 }
 * {
   box-sizing: border-box;
@@ -44,9 +45,6 @@ select {
 button {
   cursor: pointer;
   border: 0;
-}
-.app {
-  min-height: 100vh;
 }
 header {
   display: flex;
@@ -430,7 +428,7 @@ label {
   color: rgba(255, 255, 255, 0.7);
   font-size: 12px;
 }
-/* 页面背景已上移至 html（v2.0）：让根背景填充 scrollbar-gutter 槽位，见文件末尾 html 规则。 */
+/* 页面背景已上移至 html（v2.0）并由 .app 自绘同源副本（v2.1），见文件末尾规则。 */
 header {
   background: linear-gradient(135deg, #f5fcff 0%, #fff0f8 100%);
 }
@@ -720,30 +718,19 @@ main,
 .error button:hover {
   background: #fff8f8;
 }
-/* （页面渐变已移至 html 的 background-image，见文件末尾 v2.0 分区。） */
-.app {
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.35),
-    rgba(255, 255, 255, 0) 42%
-  );
-}
+/* .app 的背景统一在文件末尾 v2.1 分区声明（四层：main 冷白 / .layout 白纱 / 白雾 / 页面渐变）：
+   页面视觉的全部叠加层必须由 .app 自绘，滚动条槽位（scrollbar-gutter）才会与页面同色。 */
 header {
   position: fixed;
   top: 0;
   left: 0;
   z-index: 40;
   width: 100%;
-  height: var(--header-h-current);
+  height: var(--header-h);
   min-height: 0;
   isolation: isolate;
   overflow: hidden;
   padding: 12px 48px 10px;
-  transition:
-    left var(--header-anim) var(--header-ease),
-    width var(--header-anim) var(--header-ease),
-    height var(--header-anim) var(--header-ease),
-    padding var(--header-anim) var(--header-ease);
   background: var(--header-bg);
   border-bottom: 1px solid rgba(139, 156, 209, 0.22);
 }
@@ -783,23 +770,26 @@ header p {
   backdrop-filter: blur(12px);
 }
 .layout {
-  max-width: var(--layout-max-width);
+  /* v2.4：取消整体宽度上限与居中——侧栏必须恒定贴窗口左缘（旧版 .layout 居中会让
+     侧栏随窗口拉宽持续右漂、与 header 品牌左缘错位）；内容宽度上限与水平居中
+     改由 .page-transition 在 main 内承担（主区内容在右半区居中）。 */
+  max-width: none;
   min-height: calc(100vh - var(--header-h));
-  margin: 0 auto;
-  background: rgba(255, 255, 255, 0.28);
+  margin: 0;
+  /* v2.1 修复：原 28% 白纱已上移至 .app 背景（见文件末尾）。
+     该层留在 .layout 上时，宽窗口（> --layout-max-width）下会在 .layout 左右缘
+     硬切出「白纱突然消失」的竖直边界；上移后全宽均匀，右侧滚动条槽位也同色。 */
 }
 aside {
   position: sticky;
-  /* 顶部紧贴 header 底部（无间隙）；padding-top 与 min-height 反向补偿，
-     使侧栏内容位置与底部在折叠前后保持恒定，只有顶部背景跟随 header 移动。 */
-  top: var(--header-h-current);
+  /* .app 是滚动容器且顶部已让出 header：sticky 贴 .app 滚动端口顶部（= header 下方）。 */
+  top: 0;
   align-self: flex-start;
-  padding: calc(26px + var(--header-h) - var(--header-h-current)) 18px 26px;
-  min-height: calc(100vh - var(--header-h-current) - 70px);
-  transition:
-    top var(--header-anim) var(--header-ease),
-    padding var(--header-anim) var(--header-ease),
-    min-height var(--header-anim) var(--header-ease);
+  padding: 26px 18px;
+  /* v2.3 修复：侧栏须与 .app 滚动端口等高（= 100vh - --header-h），
+     背景色/渐变与右边框才能延伸到窗口底；旧值额外减 70px 会让侧栏底边
+     悬停在窗口底上方 70px、下方露出页面背景（"侧栏未到底"）。 */
+  min-height: calc(100vh - var(--header-h));
   width: var(--aside-width);
   background: linear-gradient(
     180deg,
@@ -847,11 +837,8 @@ aside {
 main {
   max-width: none;
   padding: 30px var(--main-pad-x) 72px;
-  background: linear-gradient(
-    130deg,
-    rgba(250, 253, 255, 0.5),
-    rgba(255, 248, 252, 0.48)
-  );
+  /* v2.1 修复：原 130deg 冷白层已上移至 .app 背景（见文件末尾），理由同 .layout
+     （该层两端色值差极小，近似均匀，上移后视觉等效）。 */
 }
 .card {
   position: relative;
@@ -2463,17 +2450,20 @@ textarea {
 .run-row {
   position: fixed;
   z-index: 45;
-  /* 居中于 main 内容区：.layout 水平居中且 main 紧邻侧栏，
-     故内容区中心 = 视口中心 + 侧栏宽度 / 2（无需再硬编码 119px） */
-  left: calc(50% + var(--aside-width) / 2);
+  /* 中心对齐 .composer 卡片：主区内容在 [侧栏, 可用宽] 区间内居中（.page-transition），
+     故卡片中心恒为该区间中点 = (可用宽 + --aside-width) / 2 = 50% - 槽位/2 + 侧栏/2，
+     与卡片是否达到宽度上限无关（fixed 的 50% 是视口中心，扣掉半个槽位即可同轴）。 */
+  left: calc(50% - var(--scrollbar-w) / 2 + var(--aside-width) / 2);
   bottom: 18px;
-  /* 与 .composer 卡片同宽（左右边缘完全重合，不从卡片中部起始）：
-     card_width = min(视口内容宽, 布局上限) - 侧栏宽 - 2·主区内边距。
+  /* 宽度 = .composer 卡片宽 + 左右各 --dock-bleed（两侧各外扩 10px）：
+     card_width = min(视口宽 - 滚动条槽位, 布局上限) - 侧栏宽 - 2·主区内边距。
      不再设 850px 上限——上限会让长条比卡片窄而留下两侧等宽空隙。
-     用 100%（视口内容宽度，不含滚动条）而非 100vw（含滚动条），避免右侧溢出 */
-  width: min(
-    calc(100% - var(--aside-width) - 2 * var(--main-pad-x)),
-    calc(var(--layout-max-width) - var(--aside-width) - 2 * var(--main-pad-x))
+     用 100%（视口宽）而非 100vw（含滚动条），并显式扣掉 --scrollbar-w，避免右侧溢出 */
+  width: calc(
+    min(
+        calc(100% - var(--scrollbar-w) - var(--aside-width) - 2 * var(--main-pad-x)),
+        calc(var(--layout-max-width) - var(--aside-width) - 2 * var(--main-pad-x))
+      ) + 2 * var(--dock-bleed)
   );
   margin: 0;
   padding: 10px 14px;
@@ -2636,10 +2626,10 @@ textarea {
 }
 @media (max-width: 900px) {
   .run-row {
-    left: 50%;
+    left: calc(50% - var(--scrollbar-w) / 2);
     /* ≤900：.layout 变为 block，aside{width:auto} 是整行条、不再横向占位，
-       卡片宽 = 布局宽 - 2·主区内边距（不减去侧栏宽），此处与之同宽 */
-    width: calc(100% - 2 * var(--main-pad-x));
+       卡片宽 = 布局宽 - 滚动条槽位 - 2·主区内边距（不减去侧栏宽），此处与之同宽 + 两侧外扩 */
+    width: calc(100% - var(--scrollbar-w) - 2 * var(--main-pad-x) + 2 * var(--dock-bleed));
     transform: translateX(-50%);
   }
 }
@@ -2649,8 +2639,8 @@ textarea {
   }
   .run-row {
     bottom: 10px;
-    /* ≤700：--main-pad-x 覆盖为 16px，卡片 = 布局宽 - 32px，长条与之同宽 */
-    width: calc(100% - 2 * var(--main-pad-x));
+    /* ≤700：--main-pad-x 覆盖为 16px，卡片 = 布局宽 - 滚动条槽位 - 32px，长条与之同宽 + 两侧外扩 */
+    width: calc(100% - var(--scrollbar-w) - 2 * var(--main-pad-x) + 2 * var(--dock-bleed));
     padding: 9px 10px;
     gap: 7px;
   }
@@ -2672,6 +2662,14 @@ textarea {
 }
 .run-row {
   transform: translateX(-50%);
+}
+/* v2.2 底栏"吞入/拉出"：创作模式滚到底时，末尾卡片下缘（72+22 ≈ 94px）原本停在
+   底栏顶缘（88px）上方，露出缝隙；改为 23px 后卡片下缘 ≈ 45px，沉入底栏覆盖区
+   （底栏 18–88px）且不露出底栏下缘——滚动时底部内容从底栏后方被吞入/拉出。
+   仅创作模式（含 .composer）生效，其余页面保持 main 的 72px 底部留白。
+   数值与底栏高度（≈70px @bottom:18px）绑定，调整底栏 padding/字号时需同步复核。 */
+main:has(.composer) {
+  padding-bottom: 23px;
 }
 .settings-models {
   display: grid;
@@ -2699,6 +2697,11 @@ html {
   scroll-behavior: smooth;
 }
 .page-transition {
+  /* v2.4：主区内容限宽 + 在右半区居中（侧栏左缘不动）。
+     宽度上限 = 布局上限 - 侧栏 - 主区左右内边距，与 .run-row 的 width 上限同式；
+     窗口未达上限时内容占满 main 内容盒，窄窗口行为与旧版一致。 */
+  max-width: calc(var(--layout-max-width) - var(--aside-width) - 2 * var(--main-pad-x));
+  margin-inline: auto;
   animation: page-enter var(--motion-slow) var(--ease-out) both;
 }
 .card,
@@ -4282,92 +4285,36 @@ select:focus-visible {
   }
 }
 
-/* v1.6 折叠头部：向下滚动后 header 固定并平滑浓缩到左侧栏上方。
-   sentinel = .header-spacer（恒 88px），由 IntersectionObserver 驱动 .app[data-condensed]。 */
-.header-spacer {
-  height: var(--header-h);
-  pointer-events: none;
-}
-.app[data-condensed="true"] {
-  --header-h-current: var(--header-h-condensed);
-}
-.app[data-condensed="true"] header {
-  left: var(--layout-offset);
-  width: var(--aside-width);
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 6px;
-  padding: 10px 14px;
-}
-header::before {
-  transition: opacity var(--header-anim) var(--header-ease);
-}
-.app[data-condensed="true"] header::before {
-  opacity: 0;
-}
-.brand-watermark,
-.header-brand > p {
-  transition:
-    opacity var(--header-anim) var(--header-ease),
-    visibility var(--header-anim) var(--header-ease);
-}
-.app[data-condensed="true"] .brand-watermark {
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-}
-/* 副标题必须真正出流，否则 visibility:hidden 仍占高度，把内容挤出 56px 后被裁掉 */
-.app[data-condensed="true"] .header-brand > p {
-  display: none;
-}
-/* 折叠态两行布局：第一行品牌名，第二行“状态 + 队列”两个扁按钮（保留文字）。
-   238px 窄栏内需压扁按钮纵向 padding 并禁止换行。 */
-.app[data-condensed="true"] .header-brand,
-.app[data-condensed="true"] .header-title-row {
-  min-width: 0;
-}
-.app[data-condensed="true"] .header-title-row,
-.app[data-condensed="true"] .header-stack {
-  flex-wrap: nowrap;
-}
-.app[data-condensed="true"] .eyebrow {
-  font-size: 14px;
-  letter-spacing: 0.3px;
-  white-space: nowrap;
-}
-.app[data-condensed="true"] .header-stack {
-  gap: 6px;
-}
-.app[data-condensed="true"] .status {
-  padding: 4px 9px;
-  font-size: 11px;
-}
-.app[data-condensed="true"] .queue-chip {
-  padding: 4px 9px;
-  font-size: 11px;
-}
-.app[data-condensed="true"] .queue-chip strong {
-  font-size: 11px;
-}
-@media (prefers-reduced-motion: reduce) {
-  :root {
-    --header-anim: 0.001ms;
-  }
-}
-
-/* v2.0 滚动条：scrollbar-gutter 恒定 viewport 宽度，消除页面切换时的横向抖动；
-   外观由 ::-webkit-scrollbar 定制（常态 6px、悬停加粗到 10px、蓝紫、颜色不变）。
-   槽位与透明轨道会透出「窗口底色」——故 main.ts 的 BrowserWindow.backgroundColor 取页面右缘近似色，
-   让槽位与页面/header 融为一体，消除右上角色差带（纯 CSS 画不到槽位，这是唯一可控途径）。 */
+/* v2.0 滚动条：外观由 ::-webkit-scrollbar 定制（常态 6px、悬停加粗到 10px、蓝紫、颜色不变）；
+   scrollbar-gutter 现由 .app（v2.1）承担：槽位常驻、页面切换无横向抖动。
+   v2.1 修复：滚动条槽位与透明轨道只绘制 .app 自身背景（不绘制 html canvas 背景的合成），
+   而页面视觉的所有叠加层都必须覆盖到槽位 —— 否则页面右缘出现「生硬过渡」竖直带。
+   故把原先分散在 .layout（28% 白纱）与 main（130deg 冷白）的提亮层一并收拢到 .app 背景：
+   槽位区与内容区由同一背景绘成，颜色恒等（main.ts 的 backgroundColor 现仅兜底首帧）。 */
 html {
-  scrollbar-gutter: stable;
-  background-image:
-    radial-gradient(circle at 9% 21%, rgba(131, 211, 255, 0.22), transparent 28%),
-    radial-gradient(circle at 91% 30%, rgba(255, 169, 205, 0.2), transparent 31%),
-    linear-gradient(135deg, #f3fbff 0%, #fbf8ff 49%, #fff5f9 100%);
+  background-image: var(--page-bg);
   background-repeat: no-repeat;
   background-attachment: fixed;
+}
+/* v2.1 滚动容器：页面滚动由 .app 承担——顶部让出 --header-h（margin-top）、高度恰为
+   视口减 header，滚动条（滑块 + gutter 槽位）只在 header 下方出现、不再进入 header 区域；
+   window/html 自身不滚动。scrollbar-gutter 从 html 移到此处：槽位常驻、页面切换无横向抖动。
+   禁止给 .app 加 transform/filter/contain（会夺走 header/.run-row 等 fixed 子元素的视口包含块）。
+   背景四层（自上层到下层，全宽覆盖含槽位）：
+   1) main 冷白层 / 2) .layout 白纱层 —— 原元素背景上移（近似均匀，视觉等效）；
+   3) 白雾层 scroll 定位（相对 .app 顶部淡出）；4) 页面渐变 fixed（与 html 同变量、同视口对齐）。 */
+.app {
+  margin-top: var(--header-h);
+  height: calc(100vh - var(--header-h));
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  background-image:
+    linear-gradient(130deg, rgba(250, 253, 255, 0.5), rgba(255, 248, 252, 0.48)),
+    linear-gradient(rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.28)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0) 42%),
+    var(--page-bg);
+  background-repeat: no-repeat;
+  background-attachment: scroll, scroll, scroll, fixed;
 }
 ::-webkit-scrollbar {
   width: var(--scrollbar-w);
@@ -4400,12 +4347,12 @@ html {
   margin-block: 24px;
 }
 
-/* v1.7 无边框窗口：header 承担拖拽；窗口控制按钮固定于右上角，不与折叠动画联动。 */
+/* v1.7 无边框窗口：header 承担拖拽；窗口控制按钮固定于视口右上角，独立于 header 定位。 */
 header {
   -webkit-app-region: drag;
   app-region: drag;
   user-select: none;
-  padding-right: 158px; /* 为右上角 3×46px 控件 + 呼吸留白；折叠态被 .app[data-condensed] header 覆盖 */
+  padding-right: 158px; /* 为右上角 3×46px 控件 + 呼吸留白 */
 }
 header button,
 header input,
@@ -4419,7 +4366,7 @@ header [role="button"] {
 .window-controls {
   position: fixed;
   top: 0;
-  right: var(--scrollbar-w); /* 让出滚动条预留槽位（gutter），避免覆盖滚动条与透出色带 */
+  right: 0; /* 窗口右上角已无滚动条（滚动条在 .app 内、从 header 下方开始），控件贴右缘 */
   z-index: 41;               /* 高于 header(40)，低于页面浮层(45/50/60/90/130/140) */
   display: flex;
   align-items: stretch;

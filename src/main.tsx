@@ -350,10 +350,9 @@ async function exportSocialCanvas(output: Output, preset: string, fill: "light" 
 
 function App() {
   const initialTutorial = useMemo(() => parseTutorialState(window.localStorage.getItem(TUTORIAL_STORAGE_KEY)), []);
-  const [headerCondensed, setHeaderCondensed] = useState(false);
   const [windowMaximized, setWindowMaximized] = useState(false);
   const [zoomFactor, setZoomFactor] = useState(1);
-  const headerSpacerRef = useRef<HTMLDivElement | null>(null);
+  const appRef = useRef<HTMLDivElement | null>(null);
   const [mode, setMode] = useState<Mode>("generate");
   const [tutorialState, setTutorialState] = useState<TutorialState>(initialTutorial);
   const [tutorialView, setTutorialView] = useState<TutorialView>(() => initialTutorialView(initialTutorial));
@@ -499,23 +498,12 @@ function App() {
   }, [initialTutorial, refreshWorkspace, updateTutorialState]);
 
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: "auto" });
+    appRef.current?.scrollTo({ top: 0, behavior: "auto" });
     setPreviewContextMenu(null);
     setError("");
     setNotice("");
     setErrorInfo(null);
   }, [mode]);
-
-  useEffect(() => {
-    const el = headerSpacerRef.current;
-    if (!el || typeof IntersectionObserver === "undefined") return;
-    const observer = new IntersectionObserver(
-      ([entry]) => setHeaderCondensed(!entry.isIntersecting),
-      { threshold: 0 }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1589,8 +1577,7 @@ function App() {
   }
 
   return (
-    <div className="app" data-condensed={headerCondensed}>
-      <div ref={headerSpacerRef} className="header-spacer" aria-hidden="true" />
+    <div className="app" ref={appRef}>
       <header>
         <div className="header-brand">
           <img className="brand-watermark" src={imaginationTitle} alt="" aria-hidden="true" />
