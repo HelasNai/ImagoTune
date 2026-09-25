@@ -8,12 +8,13 @@ import { MaskPainter } from "./components/MaskPainter";
 import { initialTutorialView, TutorialExperience, TutorialView } from "./components/TutorialExperience";
 import { NavIcon } from "./components/icons";
 import { QueuePanel } from "./components/QueuePanel";
+import { ResultPanel } from "./components/ResultPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { StudioProvider } from "./components/StudioContext";
 import { recipeFromQueueInput } from "./components/queue-utils";
+import { b64ToFile, dataUrlFor, drawContain, readImage } from "./components/media-utils";
 import {
   applyLocalPromptAction,
-  formatGenerationParameters,
   parseTags,
   PromptAction,
   validateCanvasSize,
@@ -102,21 +103,6 @@ const qualities = [
   { value: "medium", label: "标准" },
   { value: "high", label: "最高细节" },
 ];
-const socialPresets = [
-  { value: "1080x1080", label: "1:1 方图" },
-  { value: "1080x1350", label: "4:5 竖图" },
-  { value: "1920x1080", label: "16:9 横图" },
-  { value: "1080x1920", label: "9:16 竖图" },
-];
-
-function dataUrlFor(output: Output) {
-  return "data:image/png;base64," + output.b64;
-}
-
-function b64ToFile(b64: string, name: string) {
-  const bytes = Uint8Array.from(atob(b64), (value) => value.charCodeAt(0));
-  return new File([bytes], name, { type: "image/png" });
-}
 
 function fileToPayload(file: File) {
   return new Promise<{ name: string; type: string; data: number[] }>((resolve, reject) => {
@@ -137,22 +123,6 @@ function fileToDataUrl(file: File) {
     reader.onload = () => resolve(String(reader.result || ""));
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
-  });
-}
-
-function readImage(file: File) {
-  return new Promise<HTMLImageElement>((resolve, reject) => {
-    const image = new Image();
-    const url = URL.createObjectURL(file);
-    image.onload = () => {
-      URL.revokeObjectURL(url);
-      resolve(image);
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("无法读取图片"));
-    };
-    image.src = url;
   });
 }
 
@@ -211,26 +181,6 @@ async function prepareVisionUpload(file: File) {
   const type = transparent ? "image/png" : "image/jpeg";
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, type === "image/jpeg" ? 0.88 : undefined));
   return blob ? new File([blob], transparent ? "reverse-source.png" : "reverse-source.jpg", { type }) : file;
-}
-
-function drawContain(
-  context: CanvasRenderingContext2D,
-  image: HTMLImageElement,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-) {
-  const scale = Math.min(width / image.naturalWidth, height / image.naturalHeight);
-  const drawWidth = image.naturalWidth * scale;
-  const drawHeight = image.naturalHeight * scale;
-  context.drawImage(
-    image,
-    x + (width - drawWidth) / 2,
-    y + (height - drawHeight) / 2,
-    drawWidth,
-    drawHeight,
-  );
 }
 
 async function createReferenceBoard(main: File, references: File[], kind: "edit" | "generate" = "edit") {
@@ -293,38 +243,6 @@ function ReferenceThumbnail({
   </div>;
 }
 
-async function exportSocialCanvas(output: Output, preset: string, fill: "light" | "blur") {
-  const match = /^(\d+)x(\d+)$/.exec(preset);
-  if (!match) throw new Error("导出尺寸无效");
-  const width = Number(match[1]);
-  const height = Number(match[2]);
-  const image = await readImage(b64ToFile(output.b64, "export.png"));
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("无法创建导出画布");
-  if (fill === "blur") {
-    const cover = Math.max(width / image.naturalWidth, height / image.naturalHeight);
-    context.filter = "blur(28px)";
-    context.globalAlpha = 0.72;
-    context.drawImage(
-      image,
-      (width - image.naturalWidth * cover) / 2,
-      (height - image.naturalHeight * cover) / 2,
-      image.naturalWidth * cover,
-      image.naturalHeight * cover,
-    );
-    context.filter = "none";
-    context.globalAlpha = 1;
-  } else {
-    context.fillStyle = "#f6fbff";
-    context.fillRect(0, 0, width, height);
-  }
-  drawContain(context, image, 0, 0, width, height);
-  return canvas.toDataURL("image/png");
-}
-
 function App() {
   const initialTutorial = useMemo(() => parseTutorialState(window.localStorage.getItem(TUTORIAL_STORAGE_KEY)), []);
   const appRef = useRef<HTMLDivElement | null>(null);
@@ -348,9 +266,6 @@ function App() {
   const [outputs, setOutputs] = useState<Output[]>([]);
   const [preview, setPreview] = useState<Output | null>(null);
   const [previewContextMenu, setPreviewContextMenu] = useState<{ x: number; y: number } | null>(null);
-  const [exportOutput, setExportOutput] = useState<Output | null>(null);
-  const [socialPreset, setSocialPreset] = useState("1080x1080");
-  const [socialFill, setSocialFill] = useState<"light" | "blur">("light");
   const [configured, setConfigured] = useState(false);
   const [imageModel, setImageModel] = useState("gpt-image-2");
   const [chatModel, setChatModel] = useState("gpt-4o");
@@ -478,11 +393,10 @@ function App() {
       if (event.key !== "Escape") return;
       setPreviewContextMenu(null);
       if (preview) setPreview(null);
-      else if (exportOutput) setExportOutput(null);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [exportOutput, preview]);
+  }, [preview]);
 
   useEffect(() => window.imageStudio.onTutorialOpen(() => setTutorialView("center")), []);
 
@@ -924,33 +838,6 @@ function App() {
     });
   };
 
-  const saveOutput = async (output: Output) => {
-    const result = await window.imageStudio.saveImage({
-      dataUrl: dataUrlFor(output),
-      suggestedName: "image-studio-" + new Date(output.createdAt).toISOString().replace(/[:.]/g, "-") + ".png",
-      recipe: output.recipe,
-    });
-    if (!result.canceled) setNotice("已保存：" + (result.path || ""));
-  };
-
-  const exportSocial = async () => {
-    if (!exportOutput) return;
-    try {
-      const dataUrl = await exportSocialCanvas(exportOutput, socialPreset, socialFill);
-      const result = await window.imageStudio.saveImage({
-        dataUrl,
-        suggestedName: "image-studio-social-" + socialPreset + ".png",
-        recipe: { ...exportOutput.recipe, size: socialPreset },
-      });
-      if (!result.canceled) {
-        setNotice("社交平台成品已保存：" + (result.path || ""));
-        setExportOutput(null);
-      }
-    } catch (cause) {
-      setError((cause as Error).message || "导出失败");
-    }
-  };
-
   const galleryOpen = (
     item: GalleryItem,
     b64: string,
@@ -1217,60 +1104,6 @@ function App() {
     </section>
   );
 
-  const resultPanel = (
-    <section className="card results">
-      <div className="section-head">
-        <div><span className="eyebrow">RESULTS</span><h2>生成结果</h2></div>
-        {outputs.length > 0 && <span className="muted">{outputs.length} 张图片 · 点击查看大图</span>}
-      </div>
-      {errorInfo && <div className="generation-error">
-        <div><span>{errorInfo.category.replace("_", " ")}</span><strong>{errorInfo.title}</strong></div>
-        <p>{errorInfo.message}</p><small>{errorInfo.suggestion}</small>
-        {errorInfo.details && <details><summary>查看接口详情</summary><pre>{errorInfo.details}</pre></details>}
-      </div>}
-      {error && <div className="error"><span>{error}</span></div>}
-      {notice && <div className="notice">{notice}</div>}
-      {outputs.length === 0 ? (
-        <div className="empty">
-          <span><NavIcon name="sparkles" size={40} /></span>
-          <p>生成后的图片会显示在这里</p>
-          <small>队列、项目、变体与交付工具会保留你的创作过程。</small>
-        </div>
-      ) : (
-        <div className="gallery">
-          {outputs.map((output) => (
-            <article key={output.id}>
-              <img className="result-image" onClick={() => setPreview(output)} src={dataUrlFor(output)} alt="生成结果" />
-              <div className="result-caption">
-                <strong>{output.recipe.variationLabel || (output.recipe.mode === "outpaint" ? "智能扩图" : "新生成图片")}</strong>
-                <small>{output.recipe.size} · {output.recipe.projectId}{output.recipe.seed ? " · Seed " + output.recipe.seed : ""}</small>
-              </div>
-              {output.recipe.seed && <button className="seed-chip" onClick={() => void window.imageStudio.clipboard.copyText(output.recipe.seed!).then(() => setNotice("Seed 已复制"))}>Seed：{output.recipe.seed} · 点击复制</button>}
-              <div className="result-actions">
-                <button onClick={() => void saveOutput(output)}>保存 PNG</button>
-                <button onClick={() => void window.imageStudio.clipboard.copyImage(output.b64).then(() => setNotice("图片已复制到剪贴板"))}>复制图片</button>
-                <button onClick={() => void window.imageStudio.clipboard.copyText(output.recipe.prompt).then(() => setNotice("提示词已复制"))}>复制提示词</button>
-                <button onClick={() => void window.imageStudio.clipboard.copyText(formatGenerationParameters(output.recipe)).then(() => setNotice("完整参数已复制"))}>复制参数</button>
-                <button onClick={() => regenerate(output)}>再生成</button>
-                <button onClick={() => continueEdit(output)}>继续编辑</button>
-                <button onClick={() => startOutpaint(output)}>智能扩图</button>
-                <button onClick={() => setExportOutput(output)}>社媒导出</button>
-                <button onClick={() => openLocalAI(output, "upscale")}>高清放大</button>
-                <button onClick={() => openLocalAI(output, "remove-background")}>智能抠图</button>
-                <button onClick={() => openLocalAI(output, "face-restore")}>人脸优化</button>
-              </div>
-              <div className="variation-row">
-                {variationOptions.map((option) => (
-                  <button key={option.id} onClick={() => createVariation(output, option)}>{option.label}</button>
-                ))}
-              </div>
-            </article>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-
   const runningCount = useMemo(
     () => queueItems.filter((item) => ["queued", "running"].includes(item.status)).length,
     [queueItems],
@@ -1375,7 +1208,7 @@ function App() {
                   else { setNotice(message); setError(""); }
                 }}
               />
-            ) : mode === "queue" ? <QueuePanel queueItems={queueItems} onRefresh={refreshQueue} /> : <>{composer}{resultPanel}</>}
+            ) : mode === "queue" ? <QueuePanel queueItems={queueItems} onRefresh={refreshQueue} /> : <>{composer}<ResultPanel outputs={outputs} onRegenerate={regenerate} onContinueEdit={continueEdit} onStartOutpaint={startOutpaint} onOpenLocalAI={openLocalAI} onCreateVariation={createVariation} onOpenPreview={setPreview} /></>}
             </div>
           </main>
         </div>
@@ -1428,28 +1261,6 @@ function App() {
               </div>
             )}
             <span>右键点击图片可复制；点击空白处或右上角关闭</span>
-          </div>
-        )}
-        {exportOutput && (
-          <div className="export-modal" onClick={() => setExportOutput(null)}>
-            <section onClick={(event) => event.stopPropagation()}>
-              <button className="lightbox-close" onClick={() => setExportOutput(null)}><NavIcon name="x" size={20} /></button>
-              <span className="eyebrow">SOCIAL EXPORT</span>
-              <h2>社交平台画布适配</h2>
-              <img src={dataUrlFor(exportOutput)} alt="待导出图片" />
-              <label>目标尺寸
-                <select value={socialPreset} onChange={(event) => setSocialPreset(event.target.value)}>
-                  {socialPresets.map((item) => <option key={item.value} value={item.value}>{item.label} · {item.value}</option>)}
-                </select>
-              </label>
-              <label>背景填充
-                <select value={socialFill} onChange={(event) => setSocialFill(event.target.value as "light" | "blur")}>
-                  <option value="light">浅色留白</option>
-                  <option value="blur">模糊延展</option>
-                </select>
-              </label>
-              <button className="primary" onClick={() => void exportSocial()}>导出 PNG</button>
-            </section>
           </div>
         )}
       </div>
