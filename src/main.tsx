@@ -7,6 +7,8 @@ import { LocalAIAction, LocalAISource, LocalAIToolbox } from "./components/Local
 import { MaskPainter } from "./components/MaskPainter";
 import { initialTutorialView, TutorialExperience, TutorialView } from "./components/TutorialExperience";
 import { NavIcon } from "./components/icons";
+import { QueuePanel } from "./components/QueuePanel";
+import { recipeFromQueueInput } from "./components/queue-utils";
 import {
   applyLocalPromptAction,
   formatGenerationParameters,
@@ -107,32 +109,6 @@ const socialPresets = [
 
 function dataUrlFor(output: Output) {
   return "data:image/png;base64," + output.b64;
-}
-
-function recipeFromQueueInput(input: Record<string, unknown>, kind: "generate" | "edit", fallbackSize: string): ImageRecipeV1 {
-  if (input.recipe && typeof input.recipe === "object") return input.recipe as ImageRecipeV1;
-  return {
-    version: 1,
-    prompt: String(input.userPrompt || input.prompt || ""),
-    negativePrompt: String(input.negativePrompt || ""),
-    model: String(input.model || "gpt-image-2"),
-    size: String(input.size || fallbackSize),
-    ratio: typeof input.ratio === "string" ? input.ratio : undefined,
-    resolution: typeof input.resolution === "string" ? input.resolution : undefined,
-    quality: typeof input.quality === "string" ? input.quality : undefined,
-    n: Number(input.n) || 1,
-    mode: kind,
-    projectId: String(input.projectId || "inbox"),
-    tags: Array.isArray(input.tags) ? input.tags.map(String) : [],
-    createdAt: new Date().toISOString(),
-    sourceId: typeof input.sourceId === "string" ? input.sourceId : undefined,
-    variationLabel: typeof input.variationLabel === "string" ? input.variationLabel : undefined,
-    referenceCount: Number(input.referenceCount) || undefined,
-  };
-}
-
-function recipeModeLabel(recipe: ImageRecipeV1) {
-  return recipe.mode === "outpaint" ? "智能扩图" : recipe.referenceCount ? "参考图生成" : recipe.mode === "edit" ? "图片编辑" : "文生图";
 }
 
 function b64ToFile(b64: string, name: string) {
@@ -1410,46 +1386,6 @@ function App() {
     </section>
   );
 
-  const queuePanel = (
-    <section className="card queue-panel">
-      <div className="section-head">
-        <div>
-          <span className="eyebrow">TASK QUEUE</span>
-          <h2>生成任务队列</h2>
-          <small>所有任务按顺序提交，避免并发限流和意外重复计费。</small>
-        </div>
-        <button className="secondary" onClick={() => void refreshQueue()}>刷新</button>
-      </div>
-      {queueItems.length === 0 ? (
-        <div className="empty"><span><NavIcon name="list-todo" size={40} /></span><p>队列为空</p><small>提交生成或变体后，任务会显示在这里。</small></div>
-      ) : (
-        <div className="queue-list">
-          {queueItems.map((job) => (
-            <article key={job.id}>
-              <div>
-                <strong>{recipeModeLabel(recipeFromQueueInput(job.input, job.kind, "1024x1024"))} · {job.status}</strong>
-                <small>{new Date(job.createdAt).toLocaleString()} · 尝试 {job.attempts} 次</small>
-                <p>{recipeFromQueueInput(job.input, job.kind, "1024x1024").prompt}</p>
-                {job.errorInfo ? <div className="queue-error"><em>{job.errorInfo.title}：{job.errorInfo.message}</em><small>{job.errorInfo.suggestion}</small></div> : job.error && <em>{job.error}</em>}
-              </div>
-              <div className="queue-actions">
-                {["failed", "interrupted", "cancelled"].includes(job.status) && (
-                  <button onClick={() => void window.imageStudio.queue.retry(job.id)}>重试</button>
-                )}
-                {["queued", "running"].includes(job.status) && (
-                  <button onClick={() => void window.imageStudio.queue.cancel(job.id)}>取消</button>
-                )}
-                {job.status !== "running" && (
-                  <button onClick={() => void window.imageStudio.queue.remove(job.id)}>移除</button>
-                )}
-              </div>
-            </article>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-
   const settingsPanel = (
     <section className="card settings" data-tutorial="connection-settings">
       <span className="eyebrow">CONNECTION & STORAGE</span>
@@ -1636,7 +1572,7 @@ function App() {
                 else { setNotice(message); setError(""); }
               }}
             />
-          ) : mode === "queue" ? queuePanel : <>{composer}{resultPanel}</>}
+          ) : mode === "queue" ? <QueuePanel queueItems={queueItems} onRefresh={refreshQueue} /> : <>{composer}{resultPanel}</>}
           </div>
         </main>
       </div>
