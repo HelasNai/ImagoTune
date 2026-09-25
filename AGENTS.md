@@ -25,7 +25,7 @@ image-studio/
 | IPC 类型契约 | `src/global.d.ts` | `window.imageStudio` 单一来源 + 共享类型 |
 | 图库/队列持久化 | `electron/{gallery,queue}-store.ts` | 原子写入、损坏恢复 |
 | 本地 AI 模型管理 | `electron/local-ai-model-manager.ts` | 下载 / SHA-256 校验 / 断点续传 |
-| React UI | `src/main.tsx` + `src/components/*` | main.tsx 为 1739 行巨型单文件 |
+| React UI | `src/main.tsx` + `src/components/*` | main.tsx 为 1722 行巨型单文件 |
 | WebGPU 推理 | `src/workers/local-ai.worker.ts` | Worker 内 WebGPU→WASM 回退 |
 | 纯函数逻辑 | `src/lib/*.ts` | creative / outpaint / local-ai / tutorial |
 | 纯逻辑测试 | `tests/*.test.ts` | 与 electron/、src/lib 一一对应 |
@@ -45,7 +45,7 @@ image-studio/
 - 构建产物三分：`dist-renderer`（vite）/ `dist-electron`（tsc）/ `dist`（electron-builder）——勿合并（v1.3.2 空白窗修复）
 - 安全基线：`contextIsolation(true)`/`nodeIntegration(false)`；API 密钥仅经 `keytar` 存 Windows 凭据库，绝不落盘源码/渲染层
 - IPC 全部返回 `{ ok: boolean; error?: string }`
-- 窗口无边框（`frame:false`）+ 应用内自绘窗口控制（`.window-controls`）：原生应用菜单已移除（`Menu.setApplicationMenu(null)`），其「使用说明 / 开源许可证 / 新手教程 / 界面缩放」入口迁至设置页
+- 窗口为系统原生 WCO 模型（`titleBarStyle:'hidden'` + 全透明 `titleBarOverlay` 对象）：Windows 原生绘制最小化/最大化/关闭按钮并叠加在页面上、页面渐变透出（支持 Win11 Snap Layouts）；原生应用菜单已移除（`Menu.setApplicationMenu(null)`），其「使用说明 / 开源许可证 / 新手教程 / 界面缩放」入口迁至设置页
 - 测试是纯逻辑，无 DOM/UI/electron 运行时测试；React 组件与 main.ts/preload.ts 无测试
 
 ## ANTI-PATTERNS（行为边界，源自代码而非注释）
@@ -58,7 +58,7 @@ image-studio/
 
 ## COMMANDS
 ```bash
-npm run dev          # Vite dev(127.0.0.1:5173) + electron . --dev
+npm run dev          # tsc(主进程→dist-electron) + Vite dev(127.0.0.1:5173) + electron . --dev
 npm run typecheck    # 双 tsconfig --noEmit
 npm test             # vitest run（纯 Node 逻辑）
 npm run build        # tsc(渲染) && vite build && tsc(主进程)

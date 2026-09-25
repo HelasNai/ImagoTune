@@ -1,12 +1,12 @@
 # tests — 纯逻辑单元测试
 
 ## OVERVIEW
-项目唯一测试层：11 个 `*.test.ts`（扁平结构），Vitest 4.x 纯 Node 环境，无 DOM。
+项目唯一测试层：10 个 `*.test.ts`（扁平结构），Vitest 4.x 纯 Node 环境，无 DOM。
 
 ## COVERAGE BOUNDARY
 可测（仅纯逻辑，文件名 kebab-case 与模块一一对应）：
 - `electron/`：queue-store、gallery-store、png-metadata、image-recipe、generation-error、reverse-prompt、local-ai-model-manager
-- `src/lib/`：creative、local-ai、outpaint、tutorial、window-controls
+- `src/lib/`：creative、local-ai、outpaint、tutorial
 
 绝不测：
 - UI 组件（`src/components`、`src/main.tsx`）
