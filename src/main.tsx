@@ -2,31 +2,20 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import imaginationTitle from "./assets/imagination-title-cropped.png";
+import { ComposerPanel } from "./components/ComposerPanel";
 import { GalleryWorkspace } from "./components/GalleryWorkspace";
 import { LocalAIAction, LocalAISource, LocalAIToolbox } from "./components/LocalAIToolbox";
-import { MaskPainter } from "./components/MaskPainter";
 import { initialTutorialView, TutorialExperience, TutorialView } from "./components/TutorialExperience";
 import { NavIcon } from "./components/icons";
 import { QueuePanel } from "./components/QueuePanel";
 import { ResultPanel } from "./components/ResultPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { StudioProvider } from "./components/StudioContext";
+import { useComposer } from "./components/useComposer";
 import { recipeFromQueueInput } from "./components/queue-utils";
-import { b64ToFile, dataUrlFor, drawContain, readImage } from "./components/media-utils";
-import {
-  applyLocalPromptAction,
-  parseTags,
-  PromptAction,
-  validateCanvasSize,
-  variationOptions,
-} from "./lib/creative";
-import {
-  createOutpaintFiles,
-  OutpaintMargins,
-  outpaintFromPercent,
-  outpaintToSize,
-  targetSizeForRatio,
-} from "./lib/outpaint";
+import { dataUrlFor } from "./components/media-utils";
+import type { Mode, Output } from "./components/types";
+import { variationOptions } from "./lib/creative";
 import {
   parseTutorialState,
   shouldInitializeAsExistingUser,
@@ -35,214 +24,6 @@ import {
   TutorialState,
 } from "./lib/tutorial";
 
-type Mode = "generate" | "edit" | "outpaint" | "gallery" | "local-ai" | "queue" | "settings";
-type Output = {
-  id: string;
-  b64: string;
-  createdAt: number;
-  galleryId?: string;
-  recipe: ImageRecipeV1;
-};
-type SubmitOverride = {
-  prompt?: string;
-  negativePrompt?: string;
-  mode?: RecipeMode;
-  size?: string;
-  quality?: string;
-  ratio?: string;
-  resolution?: string;
-  n?: number;
-  image?: File | null;
-  mask?: File | null;
-  projectId?: string;
-  tags?: string[];
-  sourceId?: string;
-  variationLabel?: string;
-};
-
-const resolutionOptions = [
-  { value: "1k", label: "1K（标准）" },
-  { value: "2k", label: "2K（高清）" },
-  { value: "4k", label: "4K（超清）" },
-];
-const ratioOptions = [
-  { value: "1:1", label: "1:1 正方形" },
-  { value: "4:3", label: "4:3 横向" },
-  { value: "3:4", label: "3:4 竖向" },
-  { value: "3:2", label: "3:2 横向" },
-  { value: "2:3", label: "2:3 竖向" },
-  { value: "16:9", label: "16:9 宽屏" },
-  { value: "9:16", label: "9:16 手机" },
-  { value: "4:5", label: "4:5 人像" },
-  { value: "5:4", label: "5:4 横幅" },
-  { value: "21:9", label: "21:9 超宽" },
-];
-const sizeMatrix: Record<string, Record<string, string>> = {
-  "1k": {
-    "1:1": "1024x1024", "4:3": "1024x768", "3:4": "768x1024",
-    "3:2": "1536x1024", "2:3": "1024x1536", "16:9": "1536x864",
-    "9:16": "864x1536", "4:5": "1024x1280", "5:4": "1280x1024",
-    "21:9": "1536x656",
-  },
-  "2k": {
-    "1:1": "2048x2048", "4:3": "2048x1536", "3:4": "1536x2048",
-    "3:2": "2048x1360", "2:3": "1360x2048", "16:9": "2048x1152",
-    "9:16": "1152x2048", "4:5": "1632x2048", "5:4": "2048x1632",
-    "21:9": "2048x880",
-  },
-  "4k": {
-    "1:1": "2880x2880", "4:3": "3328x2480", "3:4": "2480x3328",
-    "3:2": "3520x2352", "2:3": "2352x3520", "16:9": "3840x2160",
-    "9:16": "2160x3840", "4:5": "2560x3200", "5:4": "3200x2560",
-    "21:9": "3840x1648",
-  },
-};
-const qualities = [
-  { value: "auto", label: "自动" },
-  { value: "low", label: "快速草图" },
-  { value: "medium", label: "标准" },
-  { value: "high", label: "最高细节" },
-];
-
-function fileToPayload(file: File) {
-  return new Promise<{ name: string; type: string; data: number[] }>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve({
-      name: file.name,
-      type: file.type,
-      data: Array.from(new Uint8Array(reader.result as ArrayBuffer)),
-    });
-    reader.onerror = () => reject(reader.error);
-    reader.readAsArrayBuffer(file);
-  });
-}
-
-function fileToDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
-
-async function prepareUpload(file: File) {
-  const image = await readImage(file);
-  const longEdge = Math.max(image.naturalWidth, image.naturalHeight);
-  if (longEdge <= 2048 && file.size <= 5 * 1024 * 1024) return file;
-  const scale = Math.min(1, 2048 / longEdge);
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(16, Math.round(image.naturalWidth * scale));
-  canvas.height = Math.max(16, Math.round(image.naturalHeight * scale));
-  const context = canvas.getContext("2d");
-  if (!context) return file;
-  context.drawImage(image, 0, 0, canvas.width, canvas.height);
-  const type = file.type === "image/png" ? "image/png" : "image/jpeg";
-  const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, type, type === "image/jpeg" ? 0.9 : undefined),
-  );
-  const extension = type === "image/png" ? ".png" : ".jpg";
-  return blob
-    ? new File([blob], file.name.replace(/\.[^.]+$/, extension), { type })
-    : file;
-}
-
-async function resizeMaskToMatch(mask: File, target: File) {
-  const [maskImage, targetImage] = await Promise.all([readImage(mask), readImage(target)]);
-  if (maskImage.naturalWidth === targetImage.naturalWidth && maskImage.naturalHeight === targetImage.naturalHeight) return mask;
-  const canvas = document.createElement("canvas");
-  canvas.width = targetImage.naturalWidth;
-  canvas.height = targetImage.naturalHeight;
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("无法调整蒙版尺寸");
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.drawImage(maskImage, 0, 0, canvas.width, canvas.height);
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
-  if (!blob) throw new Error("无法导出匹配尺寸的蒙版");
-  return new File([blob], "image-studio-matched-mask.png", { type: "image/png" });
-}
-
-async function prepareVisionUpload(file: File) {
-  const image = await readImage(file);
-  const scale = Math.min(1, 1536 / Math.max(image.naturalWidth, image.naturalHeight));
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(16, Math.round(image.naturalWidth * scale));
-  canvas.height = Math.max(16, Math.round(image.naturalHeight * scale));
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context) return file;
-  context.drawImage(image, 0, 0, canvas.width, canvas.height);
-  let transparent = false;
-  if (file.type === "image/png") {
-    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
-    for (let index = 3; index < pixels.length; index += 4) {
-      if (pixels[index] < 255) { transparent = true; break; }
-    }
-  }
-  const type = transparent ? "image/png" : "image/jpeg";
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, type === "image/jpeg" ? 0.88 : undefined));
-  return blob ? new File([blob], transparent ? "reverse-source.png" : "reverse-source.jpg", { type }) : file;
-}
-
-async function createReferenceBoard(main: File, references: File[], kind: "edit" | "generate" = "edit") {
-  if (!references.length) return main;
-  const images = await Promise.all([main, ...references.slice(0, 3)].map(readImage));
-  const canvas = document.createElement("canvas");
-  canvas.width = 2048;
-  canvas.height = 2048;
-  const context = canvas.getContext("2d");
-  if (!context) return main;
-  context.fillStyle = "#f5f7ff";
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  images.forEach((image, index) => {
-    const column = index % 2;
-    const row = Math.floor(index / 2);
-    const x = column * 1024;
-    const y = row * 1024;
-    context.fillStyle = index === 0 ? "#e5f6ff" : "#fff0f6";
-    context.fillRect(x + 12, y + 12, 1000, 1000);
-    drawContain(context, image, x + 36, y + 80, 952, 896);
-    context.fillStyle = "#1b2d4a";
-    context.font = "bold 34px sans-serif";
-    const caption = kind === "generate"
-      ? "参考图 " + String(index + 1) + "：借鉴风格 / 元素"
-      : index === 0
-        ? "主图：保持主体"
-        : "参考图 " + String(index) + "：借鉴风格 / 元素";
-    context.fillText(caption, x + 42, y + 55);
-  });
-  const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, "image/jpeg", 0.92),
-  );
-  return blob
-    ? new File([blob], "image-studio-reference-board.jpg", { type: "image/jpeg" })
-    : main;
-}
-
-function ReferenceThumbnail({
-  file,
-  index,
-  onCopy,
-  onRemove,
-}: {
-  file: File;
-  index: number;
-  onCopy: (file: File) => void;
-  onRemove: () => void;
-}) {
-  const [src, setSrc] = useState("");
-  useEffect(() => {
-    const url = URL.createObjectURL(file);
-    setSrc(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
-  return <div className="reference-item">
-    <img src={src} alt={`参考图 ${index + 1}`} />
-    <div><strong>参考图 {index + 1}</strong><span title={file.name}>{file.name}</span></div>
-    <button type="button" onClick={() => onCopy(file)}>复制</button>
-    <button type="button" className="remove-reference" onClick={onRemove} aria-label={`移除参考图 ${index + 1}`}><NavIcon name="x" size={14} /></button>
-  </div>;
-}
-
 function App() {
   const initialTutorial = useMemo(() => parseTutorialState(window.localStorage.getItem(TUTORIAL_STORAGE_KEY)), []);
   const appRef = useRef<HTMLDivElement | null>(null);
@@ -250,19 +31,6 @@ function App() {
   const [tutorialState, setTutorialState] = useState<TutorialState>(initialTutorial);
   const [tutorialView, setTutorialView] = useState<TutorialView>(() => initialTutorialView(initialTutorial));
   const [tutorialReturnMode, setTutorialReturnMode] = useState<Mode>("generate");
-  const [prompt, setPrompt] = useState("");
-  const [negativePrompt, setNegativePrompt] = useState("");
-  const [originalPrompt, setOriginalPrompt] = useState("");
-  const [quality, setQuality] = useState("auto");
-  const [resolution, setResolution] = useState("1k");
-  const [ratio, setRatio] = useState("1:1");
-  const [n, setN] = useState(1);
-  const [customSizeEnabled, setCustomSizeEnabled] = useState(false);
-  const [customSize, setCustomSize] = useState("");
-  const [image, setImage] = useState<File | null>(null);
-  const [externalMask, setExternalMask] = useState<File | null>(null);
-  const [paintedMask, setPaintedMask] = useState<File | null>(null);
-  const [references, setReferences] = useState<File[]>([]);
   const [outputs, setOutputs] = useState<Output[]>([]);
   const [preview, setPreview] = useState<Output | null>(null);
   const [previewContextMenu, setPreviewContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -271,29 +39,13 @@ function App() {
   const [chatModel, setChatModel] = useState("gpt-4o");
   const [autoArchive, setAutoArchive] = useState(true);
   const [appVersion, setAppVersion] = useState("");
-  const [templates, setTemplates] = useState<PromptTemplate[]>([]);
-  const [selectedTemplate, setSelectedTemplate] = useState("");
-  const [selectedNegativeTemplate, setSelectedNegativeTemplate] = useState("");
-  const [reverseImage, setReverseImage] = useState<File | null>(null);
-  const [reverseResult, setReverseResult] = useState<{ zh: string; en: string } | null>(null);
-  const [reversing, setReversing] = useState(false);
-  const [outpaintStrategy, setOutpaintStrategy] = useState<"percent" | "target">("percent");
-  const [outpaintMargins, setOutpaintMargins] = useState<OutpaintMargins>({ top: 25, right: 25, bottom: 25, left: 25 });
-  const [outpaintTargetSize, setOutpaintTargetSize] = useState("");
-  const [outpaintPreset, setOutpaintPreset] = useState("");
-  const [sourceDimensions, setSourceDimensions] = useState<{ width: number; height: number } | null>(null);
   const [projects, setProjects] = useState<GalleryProject[]>([]);
   const [projectId, setProjectId] = useState("inbox");
   const [tagsText, setTagsText] = useState("");
   const [queueItems, setQueueItems] = useState<QueueJob[]>([]);
-  const [activeJobId, setActiveJobId] = useState("");
-  const [isEnqueueing, setIsEnqueueing] = useState(false);
-  const [requestId, setRequestId] = useState("");
-  const [progress, setProgress] = useState<AppProgress | null>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [errorInfo, setErrorInfo] = useState<GenerationErrorInfo | null>(null);
-  const [enhancing, setEnhancing] = useState(false);
   const [localAISource, setLocalAISource] = useState<LocalAISource | null>(null);
   const [localAIAction, setLocalAIAction] = useState<LocalAIAction>("upscale");
 
@@ -303,28 +55,6 @@ function App() {
   }, []);
 
   const tutorialNavigate = useCallback((nextMode: TutorialMode) => setMode(nextMode), []);
-
-  const presetSize = sizeMatrix[resolution][ratio];
-  const customCheck = validateCanvasSize(customSize);
-  const chosenSize = customSizeEnabled && customCheck.ok ? customCheck.size : presetSize;
-  const maskChange = useCallback((file: File | null) => setPaintedMask(file), []);
-  const outpaintCheck = sourceDimensions
-    ? outpaintStrategy === "percent"
-      ? outpaintFromPercent(sourceDimensions.width, sourceDimensions.height, outpaintMargins)
-      : outpaintToSize(sourceDimensions.width, sourceDimensions.height, outpaintTargetSize)
-    : null;
-  const displaySize = mode === "outpaint" && outpaintCheck?.ok ? outpaintCheck.layout.targetSize : chosenSize;
-  const [displayWidth, displayHeight] = displaySize.split("x").map(Number);
-  const heavyRequest = resolution === "4k" || n > 1 || displayWidth * displayHeight > 3_000_000;
-
-  useEffect(() => {
-    if (mode !== "outpaint" || !image) { setSourceDimensions(null); return; }
-    let active = true;
-    void readImage(image).then((value) => {
-      if (active) setSourceDimensions({ width: value.naturalWidth, height: value.naturalHeight });
-    }).catch(() => { if (active) setSourceDimensions(null); });
-    return () => { active = false; };
-  }, [image, mode]);
 
   const refreshWorkspace = useCallback(async () => {
     try {
@@ -341,6 +71,22 @@ function App() {
     const result = await window.imageStudio.queue.list();
     setQueueItems(result.items || []);
   }, []);
+
+  const studioComposer = useComposer({
+    refreshQueue,
+    mode,
+    setMode,
+    setError,
+    setNotice,
+    setErrorInfo,
+    setProjectId,
+    setTagsText,
+    projectId,
+    tagsText,
+    imageModel,
+    chatModel,
+    configured,
+  });
 
   const handleSaveDirChanged = useCallback(async () => {
     setProjectId("inbox");
@@ -373,7 +119,6 @@ function App() {
       setQueueItems(queueValue.items || []);
     };
     void bootstrap().catch(() => { /* Individual panels show their own recoverable errors. */ });
-    void window.imageStudio.templates.list().then((value) => setTemplates(value.items));
     void window.imageStudio.updates.get().then((value) => {
       setAppVersion(value.appVersion);
     });
@@ -402,14 +147,14 @@ function App() {
 
   useEffect(() => {
     const offProgress = window.imageStudio.onProgress((value) => {
-      if (value.requestId === requestId) setProgress(value);
+      if (value.requestId === studioComposer.requestId) studioComposer.setProgress(value);
     });
     const offQueue = window.imageStudio.onQueueUpdate((value) => setQueueItems(value));
     const offResult = window.imageStudio.onQueueResult((value) => {
       const result = value.result;
       const gallery = result.gallery || [];
       const input = value.job.input;
-      const baseRecipe = result.recipe || recipeFromQueueInput(input, value.job.kind, chosenSize);
+      const baseRecipe = result.recipe || recipeFromQueueInput(input, value.job.kind, studioComposer.chosenSize);
       const items = (result.images || [])
         .filter((item) => item.b64_json)
         .map((item, index) => ({
@@ -422,9 +167,9 @@ function App() {
             seed: item.seed === undefined ? baseRecipe.seed : String(item.seed),
           },
         }));
-      if (value.job.id === activeJobId) {
+      if (value.job.id === studioComposer.activeJobId) {
         setOutputs(items);
-        setActiveJobId("");
+        studioComposer.setActiveJobId("");
         const elapsed = "生成完成，用时 " + ((result.elapsedMs || 0) / 1000).toFixed(1) + " 秒。";
         setNotice(result.archiveWarning
           ? elapsed + result.archiveWarning
@@ -437,8 +182,8 @@ function App() {
       void refreshWorkspace();
     });
     const offError = window.imageStudio.onQueueError((job) => {
-      if (job.id === activeJobId) {
-        setActiveJobId("");
+      if (job.id === studioComposer.activeJobId) {
+        studioComposer.setActiveJobId("");
         setErrorInfo(job.errorInfo || null);
         setError(job.errorInfo ? "" : job.error || "任务失败");
       } else {
@@ -451,333 +196,11 @@ function App() {
       offResult();
       offError();
     };
-  }, [activeJobId, chosenSize, refreshWorkspace, requestId]);
-
-  const applyTemplate = (id: string) => {
-    const item = templates.find((value) => value.id === id);
-    if (!item || item.kind !== "positive") return;
-    setSelectedTemplate(id);
-    setOriginalPrompt(prompt);
-    setPrompt(item.prompt);
-    if (item.ratio && ratioOptions.some((value) => value.value === item.ratio)) setRatio(item.ratio);
-    if (item.resolution && sizeMatrix[item.resolution]) setResolution(item.resolution);
-    if (item.quality) setQuality(item.quality);
-    setMode("generate");
-  };
-
-  const applyNegativeTemplate = (id: string) => {
-    const item = templates.find((value) => value.id === id);
-    if (!item || item.kind !== "negative") return;
-    setSelectedNegativeTemplate(id);
-    setNegativePrompt(item.prompt);
-  };
-
-  const saveTemplate = async (kind: "positive" | "negative", update = false) => {
-    const value = kind === "negative" ? negativePrompt : prompt;
-    const selectedId = kind === "negative" ? selectedNegativeTemplate : selectedTemplate;
-    const selected = templates.find((item) => item.id === selectedId && item.kind === kind);
-    if (!value.trim()) {
-      setError(kind === "negative" ? "请先输入负面提示词" : "请先输入提示词再保存模板");
-      return;
-    }
-    if (update && (!selected || selected.builtin)) return;
-    const title = update ? selected!.title : window.prompt("模板名称", kind === "negative" ? "我的负面词" : "我的模板");
-    if (!title?.trim()) return;
-    const result = await window.imageStudio.templates.save({
-      id: update ? selected!.id : undefined,
-      title,
-      category: "自定义",
-      prompt: value,
-      kind,
-      ratio: kind === "positive" ? ratio : undefined,
-      resolution: kind === "positive" ? resolution : undefined,
-      quality: kind === "positive" ? quality : undefined,
-    });
-    if (result.item) {
-      setTemplates((current) => [...current.filter((item) => item.id !== result.item!.id), result.item!]);
-      if (kind === "negative") setSelectedNegativeTemplate(result.item.id);
-      else setSelectedTemplate(result.item.id);
-      setNotice(update ? "模板已更新" : "模板已保存");
-    }
-  };
-
-  const deleteTemplate = async (kind: "positive" | "negative") => {
-    const selectedId = kind === "negative" ? selectedNegativeTemplate : selectedTemplate;
-    const item = templates.find((value) => value.id === selectedId && value.kind === kind);
-    if (!item || item.builtin || !window.confirm("删除模板“" + item.title + "”吗？")) return;
-    await window.imageStudio.templates.delete(item.id);
-    setTemplates((current) => current.filter((value) => value.id !== item.id));
-    if (kind === "negative") setSelectedNegativeTemplate("");
-    else setSelectedTemplate("");
-  };
-
-  const optimizeLocal = (action: PromptAction) => {
-    if (!prompt.trim()) {
-      setError("请先输入提示词");
-      return;
-    }
-    setOriginalPrompt(prompt);
-    setPrompt(applyLocalPromptAction(prompt, action));
-    setNotice("已应用本地提示词优化，不会产生额外 API 调用");
-  };
-
-  const enhanceOnline = async () => {
-    if (!prompt.trim()) {
-      setError("请先输入提示词");
-      return;
-    }
-    setEnhancing(true);
-    setError("");
-    const result = await window.imageStudio.prompt.enhance({
-      prompt,
-      mode: mode === "edit" ? "edit" : "generate",
-    });
-    setEnhancing(false);
-    if (!result.ok || !result.prompt) {
-      setError(result.error || "AI 增强失败，原提示词未改变");
-      return;
-    }
-    setOriginalPrompt(prompt);
-    setPrompt(result.prompt);
-    setNotice("已通过 " + chatModel + " 增强提示词");
-  };
-
-  const reversePrompt = async () => {
-    if (!reverseImage) { setError("请先选择需要反推的图片"); return; }
-    if (!configured) { setError("请先到设置页保存 API 密钥"); return; }
-    setReversing(true);
-    setError("");
-    setErrorInfo(null);
-    try {
-      const prepared = await prepareVisionUpload(reverseImage);
-      const result = await window.imageStudio.prompt.reverse({ image: await fileToPayload(prepared) });
-      if (!result.ok) { setError(result.error || "图反推失败，原提示词未改变"); return; }
-      setReverseResult({ zh: result.zh || "", en: result.en || "" });
-      setNotice("已生成中英文反推提示词，原提示词尚未改变");
-    } catch (cause) {
-      setError((cause as Error).message || "图反推失败，原提示词未改变");
-    } finally { setReversing(false); }
-  };
-
-  const applyReversePrompt = (value: string, action: "replace" | "append") => {
-    if (!value.trim()) return;
-    setOriginalPrompt(prompt);
-    setPrompt(action === "append" && prompt.trim() ? prompt.trim() + "\n\n" + value.trim() : value.trim());
-    setNotice(action === "append" ? "反推提示词已追加" : "反推提示词已替换当前内容");
-  };
-
-  const addReferenceFiles = (files: File[]) => {
-    const images = files.filter((file) => file.type.startsWith("image/"));
-    if (!images.length) {
-      setError("请选择有效的图片文件");
-      return;
-    }
-    const combined = [...references, ...images].filter((file, index, all) =>
-      all.findIndex((item) => item.name === file.name && item.size === file.size && item.lastModified === file.lastModified) === index,
-    );
-    setReferences(combined.slice(0, 3));
-    setError("");
-    setNotice(combined.length > 3 ? "最多使用 3 张参考图，超出的图片未导入" : `已添加 ${Math.min(combined.length, 3)} 张参考图`);
-  };
-
-  const pasteReferenceImage = async () => {
-    const result = await window.imageStudio.clipboard.readImage();
-    if (!result.ok || !result.b64) {
-      setError(result.error || "剪贴板中没有可用图片");
-      return;
-    }
-    addReferenceFiles([b64ToFile(result.b64, `clipboard-reference-${Date.now()}.png`)]);
-  };
-
-  const copyReferenceImage = async (file: File) => {
-    try {
-      const result = await window.imageStudio.clipboard.copyImage(await fileToDataUrl(file));
-      if (!result.ok) throw new Error(result.error || "复制失败");
-      setNotice("参考图已复制到剪贴板");
-    } catch (cause) {
-      setError((cause as Error).message || "无法复制参考图");
-    }
-  };
-
-  const chooseOutpaintPreset = (preset: string) => {
-    if (!sourceDimensions) { setError("请先上传扩图原图"); return; }
-    const size = targetSizeForRatio(sourceDimensions.width, sourceDimensions.height, preset);
-    setOutpaintStrategy("target");
-    setOutpaintPreset(preset);
-    setOutpaintTargetSize(size);
-  };
-
-  const enqueue = async (override: SubmitOverride = {}) => {
-    if (isEnqueueing) return;
-    const activeMode = override.mode || (mode === "outpaint" ? "outpaint" : mode === "edit" ? "edit" : "generate");
-    const activePrompt = (override.prompt ?? prompt).trim();
-    const activeNegativePrompt = (override.negativePrompt ?? negativePrompt).trim();
-    const activeResolution = override.resolution || resolution;
-    const activeRatio = override.ratio || ratio;
-    const activeSize = override.size || chosenSize;
-    const activeQuality = override.quality || quality;
-    const activeN = override.n ?? n;
-    const activeProject = override.projectId || projectId;
-    const activeTags = override.tags || parseTags(tagsText);
-    if (!imageModel.trim()) {
-      setError("请先在设置中填写图片模型名称");
-      return;
-    }
-    const sourceImage = override.image === undefined ? image : override.image;
-    let suppliedMask = override.mask === undefined ? (paintedMask || externalMask) : override.mask;
-    const referenceGeneration = activeMode === "generate" && references.length > 0;
-    if (referenceGeneration) suppliedMask = null;
-
-    if (!activePrompt) {
-      setError("请先输入提示词");
-      return;
-    }
-    if (!configured) {
-      setError("请先到设置页保存 API 密钥");
-      return;
-    }
-    if (activeMode !== "outpaint" && customSizeEnabled && !customCheck.ok && !override.size) {
-      setError(customCheck.message);
-      return;
-    }
-    if (activeMode !== "generate" && !sourceImage) {
-      setError(activeMode === "outpaint" ? "智能扩图需要上传原图" : "图片编辑需要上传原图");
-      return;
-    }
-    if (activeMode === "outpaint" && (!outpaintCheck || !outpaintCheck.ok)) {
-      setError(outpaintCheck?.error || "请设置有效的扩图范围");
-      return;
-    }
-    if (activeMode === "edit" && references.length && suppliedMask) {
-      setError("局部蒙版暂不能与多参考图同时提交。请移除参考图或清空蒙版后再加入队列，避免接口因尺寸不一致而失败。");
-      return;
-    }
-
-    setError("");
-    setErrorInfo(null);
-    setNotice("");
-    setIsEnqueueing(true);
-    try {
-    const id = crypto.randomUUID();
-    setRequestId(id);
-    setProgress({ requestId: id, status: "准备进入队列", progress: 2 });
-    let finalSize = activeSize;
-    let finalRatio = activeRatio;
-    let preparedImage: File | null = null;
-    let outpaintRecipe: OutpaintRecipe | undefined;
-    try {
-      if (referenceGeneration) {
-        const preparedReferences = await Promise.all(references.map((file) => prepareUpload(file)));
-        preparedImage = await createReferenceBoard(preparedReferences[0], preparedReferences.slice(1), "generate");
-      }
-      if (activeMode === "edit" && sourceImage) {
-        const prepared = await prepareUpload(sourceImage);
-        preparedImage = await createReferenceBoard(prepared, references);
-        if (suppliedMask && !references.length) suppliedMask = await resizeMaskToMatch(suppliedMask, preparedImage);
-      }
-      if (activeMode === "outpaint" && sourceImage) {
-        const prepared = await prepareUpload(sourceImage);
-        const source = await readImage(prepared);
-        const layoutResult = outpaintStrategy === "percent"
-          ? outpaintFromPercent(source.naturalWidth, source.naturalHeight, outpaintMargins)
-          : outpaintToSize(source.naturalWidth, source.naturalHeight, outpaintTargetSize);
-        if (!layoutResult.ok) { setError(layoutResult.error); return; }
-        const validation = await window.imageStudio.outpaint.prepare({ sourceWidth: source.naturalWidth, sourceHeight: source.naturalHeight, targetSize: layoutResult.layout.targetSize });
-        if (!validation.ok) { setError(validation.error || "扩图尺寸无效"); return; }
-        const files = await createOutpaintFiles(prepared, layoutResult.layout);
-        preparedImage = files.image;
-        suppliedMask = files.mask;
-        finalSize = layoutResult.layout.targetSize;
-        finalRatio = outpaintPreset || activeRatio;
-        outpaintRecipe = {
-          sourceSize: `${source.naturalWidth}x${source.naturalHeight}`,
-          targetSize: finalSize,
-          top: layoutResult.layout.top,
-          right: layoutResult.layout.right,
-          bottom: layoutResult.layout.bottom,
-          left: layoutResult.layout.left,
-          preset: outpaintPreset || undefined,
-        };
-      }
-    } catch (cause) {
-      setError((cause as Error).message || "图片预处理失败");
-      return;
-    }
-    const recipe: ImageRecipeV1 = {
-      version: 1,
-      prompt: activePrompt,
-      negativePrompt: activeNegativePrompt,
-      model: imageModel.trim(),
-      size: finalSize,
-      n: activeMode === "generate" && !referenceGeneration ? activeN : 1,
-      quality: activeQuality,
-      ratio: finalRatio,
-      resolution: activeResolution,
-      mode: activeMode,
-      projectId: activeProject,
-      tags: activeTags,
-      createdAt: new Date().toISOString(),
-      sourceId: override.sourceId,
-      variationLabel: override.variationLabel,
-      referenceCount: activeMode === "outpaint" ? undefined : references.length || undefined,
-      outpaint: outpaintRecipe,
-    };
-    const payload: Record<string, unknown> = {
-      requestId: id,
-      recipe,
-      title: activePrompt.slice(0, 48),
-    };
-    if ((activeMode !== "generate" || referenceGeneration) && preparedImage) {
-      payload.image = await fileToPayload(preparedImage);
-      if (suppliedMask) {
-        const maskFile = suppliedMask.type === "image/png"
-          ? suppliedMask
-          : await prepareUpload(suppliedMask);
-        payload.mask = await fileToPayload(maskFile);
-      }
-    }
-    const result = await window.imageStudio.queue.enqueue({ kind: activeMode === "generate" && !referenceGeneration ? "generate" : "edit", payload });
-    if (!result.ok || !result.job) {
-      setError(result.error || "无法创建任务");
-      return;
-    }
-    setActiveJobId(result.job.id);
-    setNotice("任务已加入队列，将按顺序生成");
-    await refreshQueue();
-    } finally {
-      setIsEnqueueing(false);
-    }
-  };
-
-  const cancelActive = async () => {
-    if (!activeJobId) return;
-    const result = await window.imageStudio.queue.cancel(activeJobId);
-    if (!result.ok) setError(result.error || "取消失败");
-    else setNotice("已取消当前任务");
-  };
-
-  const quickPreset = (value: "fast" | "stable" | "detail") => {
-    if (value === "fast") {
-      setResolution("1k");
-      setQuality("auto");
-      setN(1);
-      setNotice("快速预览：1K、自动细节、1 张");
-    } else if (value === "stable") {
-      setResolution("2k");
-      setQuality("auto");
-      setN(1);
-      setNotice("稳定创作：2K、自动细节、1 张");
-    } else {
-      setResolution("4k");
-      setQuality("auto");
-      setN(1);
-      setNotice("最终高清：4K、自动细节、1 张");
-    }
-  };
+  }, [studioComposer.activeJobId, studioComposer.chosenSize, refreshWorkspace, studioComposer.requestId]);
 
   const regenerate = (output: Output) => {
     const recipe = output.recipe;
-    void enqueue({
+    void studioComposer.enqueue({
       prompt: recipe.prompt,
       negativePrompt: recipe.negativePrompt,
       size: recipe.size,
@@ -793,31 +216,11 @@ function App() {
   };
 
   const continueEdit = (output: Output) => {
-    const recipe = output.recipe;
-    setMode("edit");
-    setPrompt(recipe.prompt);
-    setNegativePrompt(recipe.negativePrompt);
-    setImage(b64ToFile(output.b64, "image-studio-source.png"));
-    if (recipe.ratio) setRatio(recipe.ratio);
-    if (recipe.resolution) setResolution(recipe.resolution);
-    if (recipe.quality) setQuality(recipe.quality);
-    setProjectId(recipe.projectId || "inbox");
-    setTagsText(recipe.tags.join("，"));
-    setNotice("已带入图片和参数，可局部涂抹蒙版后继续编辑");
+    studioComposer.loadRecipe(output, "edit");
   };
 
   const startOutpaint = (output: Output) => {
-    const recipe = output.recipe;
-    setMode("outpaint");
-    setPrompt(recipe.prompt);
-    setNegativePrompt(recipe.negativePrompt);
-    setImage(b64ToFile(output.b64, "image-studio-outpaint-source.png"));
-    setProjectId(recipe.projectId || "inbox");
-    setTagsText(recipe.tags.join("，"));
-    setOutpaintStrategy("percent");
-    setOutpaintMargins({ top: 25, right: 25, bottom: 25, left: 25 });
-    setOutpaintPreset("");
-    setNotice("已进入智能扩图，可选择快捷比例或分别设置四向扩展量");
+    studioComposer.loadRecipe(output, "outpaint");
   };
 
   const createVariation = (
@@ -826,7 +229,7 @@ function App() {
   ) => {
     const sourceId = "fileName" in source ? source.id : source.galleryId;
     const recipe = source.recipe;
-    void enqueue({
+    void studioComposer.enqueue({
       prompt: recipe.prompt + "\n\n" + option.suffix,
       negativePrompt: recipe.negativePrompt,
       mode: "generate",
@@ -858,251 +261,16 @@ function App() {
       startOutpaint(output);
     } else {
       setMode("generate");
-      setPrompt(item.recipe.prompt);
-      setNegativePrompt(item.recipe.negativePrompt);
+      studioComposer.actions.setPrompt(item.recipe.prompt);
+      studioComposer.actions.setNegativePrompt(item.recipe.negativePrompt);
       setProjectId(item.recipe.projectId);
       setTagsText(item.recipe.tags.join("，"));
-      if (item.recipe.ratio) setRatio(item.recipe.ratio);
-      if (item.recipe.resolution) setResolution(item.recipe.resolution);
-      if (item.recipe.quality) setQuality(item.recipe.quality);
+      if (item.recipe.ratio) studioComposer.actions.setRatio(item.recipe.ratio);
+      if (item.recipe.resolution) studioComposer.actions.setResolution(item.recipe.resolution);
+      if (item.recipe.quality) studioComposer.actions.setQuality(item.recipe.quality);
       setNotice("已复用历史参数，可修改提示词后生成");
     }
   };
-
-  const composer = (
-    <section className="card composer" data-tutorial="creation-form">
-      <div className="mode-title">
-        <div>
-          <span className="eyebrow">{mode === "outpaint" ? "SMART OUTPAINT" : mode === "edit" ? "IMAGE EDIT" : "CREATE STUDIO"}</span>
-          <h2>{mode === "outpaint" ? "智能扩展画面" : mode === "edit" ? "编辑与局部重绘" : "描述你想要的画面"}</h2>
-        </div>
-        <span className="pill">{mode === "outpaint" ? "透明画布 + 自动蒙版" : mode === "edit" ? "原图 + 蒙版 + 参考图" : "提示词 + 参考图 + 队列"}</span>
-      </div>
-
-      <div className="project-strip">
-        <label>归属项目
-          <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>
-            {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-          </select>
-        </label>
-        <label>标签
-          <input value={tagsText} onChange={(event) => setTagsText(event.target.value)} placeholder="例如：海报，蓝粉，产品" />
-        </label>
-        <span>默认归档到收件箱，可随时批量移动。</span>
-      </div>
-
-      <div className="prompt-tools">
-        <label>提示词模板
-          <select value={selectedTemplate} onChange={(event) => applyTemplate(event.target.value)}>
-            <option value="">选择模板…</option>
-            {templates.filter((item) => item.kind === "positive").map((item) => <option key={item.id} value={item.id}>[{item.category}] {item.title}</option>)}
-          </select>
-        </label>
-        <button className="secondary" onClick={() => void saveTemplate("positive")}>保存为模板</button>
-        {selectedTemplate && !templates.find((item) => item.id === selectedTemplate)?.builtin && (
-          <>
-            <button className="secondary" onClick={() => void saveTemplate("positive", true)}>更新模板</button>
-            <button className="secondary" onClick={() => void deleteTemplate("positive")}>删除模板</button>
-          </>
-        )}
-      </div>
-
-      <textarea
-        value={prompt}
-        onChange={(event) => setPrompt(event.target.value)}
-        placeholder={mode === "edit"
-          ? "例如：保持主体不变，把背景改成未来城市夜景"
-          : "例如：一张科技感产品海报，蓝白配色，干净高级"}
-        rows={5}
-      />
-
-      <section className="negative-prompt">
-        <div className="negative-head">
-          <div><strong>负面提示词</strong><small>独立保存；提交时转换为“必须避免”的自然语言约束。</small></div>
-          <div className="negative-template-actions">
-            <select value={selectedNegativeTemplate} onChange={(event) => applyNegativeTemplate(event.target.value)}>
-              <option value="">选择负面词模板…</option>
-              {templates.filter((item) => item.kind === "negative").map((item) => <option key={item.id} value={item.id}>[{item.category}] {item.title}</option>)}
-            </select>
-            <button onClick={() => void saveTemplate("negative")}>保存</button>
-            {selectedNegativeTemplate && !templates.find((item) => item.id === selectedNegativeTemplate)?.builtin && <button onClick={() => void saveTemplate("negative", true)}>更新</button>}
-            {selectedNegativeTemplate && !templates.find((item) => item.id === selectedNegativeTemplate)?.builtin && <button onClick={() => void deleteTemplate("negative")}>删除</button>}
-          </div>
-        </div>
-        <textarea value={negativePrompt} onChange={(event) => setNegativePrompt(event.target.value)} rows={3} placeholder="例如：水印、乱码文字、重复元素、肢体畸形、塑料质感" />
-      </section>
-
-      <div className="prompt-assistant">
-        <strong>提示词助手</strong>
-        <button onClick={() => optimizeLocal("refine")}>精炼主体</button>
-        <button onClick={() => optimizeLocal("detail")}>强化细节</button>
-        <button onClick={() => optimizeLocal("poster")}>海报化</button>
-        <button onClick={() => optimizeLocal("social")}>社媒化</button>
-        <button onClick={() => optimizeLocal("realistic")}>更写实</button>
-        <button onClick={() => optimizeLocal("premium")}>更高级</button>
-        <button className="assistant-ai" onClick={() => void enhanceOnline()} disabled={enhancing}>
-          {enhancing ? "AI 增强中…" : "AI 增强 · " + chatModel}
-        </button>
-        {originalPrompt && <button onClick={() => setPrompt(originalPrompt)}>恢复原提示词</button>}
-      </div>
-
-      <details className="reverse-prompt">
-        <summary>图反推提示词 · {chatModel}</summary>
-        <div className="reverse-upload-row">
-          <label className="upload ghost">
-            {reverseImage ? "待分析：" + reverseImage.name : "选择需要反推的图片"}
-            <input type="file" accept="image/*" onChange={(event) => { setReverseImage(event.target.files?.[0] || null); setReverseResult(null); }} />
-          </label>
-          <button className="assistant-ai" onClick={() => void reversePrompt()} disabled={reversing}>{reversing ? "分析中…" : "生成中英文提示词"}</button>
-        </div>
-        {reverseResult && <div className="reverse-results">
-          {[{ key: "zh", label: "中文提示词", value: reverseResult.zh }, { key: "en", label: "English Prompt", value: reverseResult.en }].map((item) => item.value && (
-            <article key={item.key}>
-              <strong>{item.label}</strong><p>{item.value}</p>
-              <div><button onClick={() => applyReversePrompt(item.value, "replace")}>替换当前</button><button onClick={() => applyReversePrompt(item.value, "append")}>追加</button><button onClick={() => void window.imageStudio.clipboard.copyText(item.value).then(() => setNotice("反推提示词已复制"))}>复制</button></div>
-            </article>
-          ))}
-        </div>}
-      </details>
-
-      {(mode === "edit" || mode === "outpaint") && (
-        <>
-          <div className="upload-row">
-            <label className="upload">
-              {image ? "原图：" + image.name : mode === "outpaint" ? "上传扩图原图" : "上传原图"}
-              <input type="file" accept="image/*" onChange={(event) => setImage(event.target.files?.[0] || null)} />
-            </label>
-            {mode === "edit" && <label className="upload ghost">
-              {externalMask ? "外部蒙版：" + externalMask.name : "可选外部蒙版"}
-              <input type="file" accept="image/*" onChange={(event) => setExternalMask(event.target.files?.[0] || null)} />
-            </label>}
-          </div>
-          {mode === "edit" && <MaskPainter image={image} onMaskChange={maskChange} />}
-        </>
-      )}
-
-      {(mode === "generate" || mode === "edit") && <section className="reference-panel" data-tutorial="reference-images">
-        <div className="reference-head">
-          <div>
-            <strong>参考图片 <span>{references.length}/3</span></strong>
-            <small>{mode === "generate" ? "可参考构图、风格、配色或主体特征生成新画面" : "与原图合成参考画板，帮助模型理解风格和元素"}</small>
-          </div>
-          <div className="reference-actions">
-            <label className="upload ghost">
-              导入图片
-              <input type="file" accept="image/*" multiple onChange={(event) => {
-                addReferenceFiles(Array.from(event.target.files || []));
-                event.currentTarget.value = "";
-              }} />
-            </label>
-            <button type="button" className="secondary" onClick={() => void pasteReferenceImage()}>从剪贴板粘贴</button>
-            {references.length > 0 && <button type="button" className="secondary" onClick={() => setReferences([])}>清空</button>}
-          </div>
-        </div>
-        {references.length > 0 ? <div className="reference-grid">
-          {references.map((file, index) => <ReferenceThumbnail
-            key={`${file.name}-${file.size}-${file.lastModified}`}
-            file={file}
-            index={index}
-            onCopy={(value) => void copyReferenceImage(value)}
-            onRemove={() => setReferences((current) => current.filter((_, value) => value !== index))}
-          />)}
-        </div> : <button type="button" className="reference-empty" onClick={() => void pasteReferenceImage()}>
-          剪贴板中已有图片时，可直接点击这里粘贴
-        </button>}
-        <p>{mode === "generate"
-          ? "添加参考图后会自动使用兼容图片编辑接口，一次生成 1 张；不添加时仍使用普通文生图接口。"
-          : "局部蒙版与多参考图不能同时提交；需要局部修改时请先移除参考图。"}</p>
-      </section>}
-
-      {mode === "outpaint" && <section className="outpaint-panel">
-        <div className="outpaint-head"><div><strong>扩图画布</strong><small>{sourceDimensions ? `原图 ${sourceDimensions.width}x${sourceDimensions.height}` : "上传原图后可设置目标画布"}</small></div><span>仅扩展，不裁剪</span></div>
-        <div className="outpaint-presets">
-          <span>快捷转换</span>
-          {["1:1", "4:5", "16:9", "9:16"].map((value) => <button className={outpaintPreset === value ? "active" : ""} key={value} onClick={() => chooseOutpaintPreset(value)}>{value}</button>)}
-        </div>
-        <div className="outpaint-strategy">
-          <label className="check"><input type="radio" checked={outpaintStrategy === "percent"} onChange={() => { setOutpaintStrategy("percent"); setOutpaintPreset(""); }} />四向百分比</label>
-          <label className="check"><input type="radio" checked={outpaintStrategy === "target"} onChange={() => setOutpaintStrategy("target")} />目标分辨率</label>
-        </div>
-        {outpaintStrategy === "percent" ? <div className="outpaint-margins">
-          {(["top", "right", "bottom", "left"] as const).map((key) => <label key={key}>{({ top: "上", right: "右", bottom: "下", left: "左" })[key]}（%）<input type="number" min="0" max="200" value={outpaintMargins[key]} onChange={(event) => setOutpaintMargins((current) => ({ ...current, [key]: Number(event.target.value) }))} /></label>)}
-        </div> : <label className="outpaint-target">目标分辨率<input value={outpaintTargetSize} onChange={(event) => { setOutpaintTargetSize(event.target.value); setOutpaintPreset(""); }} placeholder="例如 1080x1920" /></label>}
-        {outpaintCheck && <p className={outpaintCheck.ok ? "outpaint-valid" : "outpaint-invalid"}>{outpaintCheck.ok ? `目标 ${outpaintCheck.layout.targetSize} · 原图位于 (${outpaintCheck.layout.x}, ${outpaintCheck.layout.y})` : outpaintCheck.error}</p>}
-      </section>}
-
-      <div className="performance-presets">
-        <span>生成速度</span>
-        <button type="button" onClick={() => quickPreset("fast")}>快速预览</button>
-        <button type="button" onClick={() => quickPreset("stable")}>稳定创作</button>
-        <button type="button" onClick={() => quickPreset("detail")}>最终高清</button>
-      </div>
-
-      <div className="controls">
-        <label>细节质量
-          <select value={quality} onChange={(event) => setQuality(event.target.value)}>
-            {qualities.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
-          </select>
-        </label>
-        <label>清晰度
-          <select value={resolution} onChange={(event) => setResolution(event.target.value)}>
-            {resolutionOptions.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
-          </select>
-        </label>
-        <label>画面比例
-          <select value={ratio} onChange={(event) => setRatio(event.target.value)} disabled={customSizeEnabled || mode === "outpaint"}>
-            {ratioOptions.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
-          </select>
-        </label>
-        <label>数量
-          <select value={references.length && mode === "generate" ? 1 : n} onChange={(event) => setN(Number(event.target.value))} disabled={mode !== "generate" || references.length > 0}>
-            {[1, 2, 3, 4].map((value) => <option key={value} value={value}>{value} 张</option>)}
-          </select>
-        </label>
-      </div>
-
-      {mode !== "outpaint" && <div className="custom-size">
-        <label className="check">
-          <input type="checkbox" checked={customSizeEnabled} onChange={(event) => setCustomSizeEnabled(event.target.checked)} />
-          自定义安全尺寸
-        </label>
-        {customSizeEnabled && (
-          <>
-            <input value={customSize} onChange={(event) => setCustomSize(event.target.value)} placeholder="例如 1536x1024" />
-            <small className={customCheck.ok ? "valid" : "invalid"}>{customCheck.message}</small>
-          </>
-        )}
-      </div>}
-      <p className="size-hint">
-        当前输出：{displaySize} · {mode === "outpaint" ? outpaintPreset || "扩展画布" : ratio + " 比例"} · {resolution.toUpperCase()} 清晰度 · 项目：
-        {projects.find((project) => project.id === projectId)?.name || "收件箱"}
-      </p>
-      {heavyRequest ? (
-        <p className="performance-warning">
-          当前组合需要更长等待时间，也更容易遇到接口限制。建议先用 1K、自动细节、1 张确定构图。
-        </p>
-      ) : (
-        <p className="performance-note">
-          推荐配置：1K、自动细节、1 张，通常响应更快、失败率更低。
-        </p>
-      )}
-      <div className="run-row" data-tutorial="generation-actions">
-        <button className="primary generate" onClick={() => void enqueue()} disabled={isEnqueueing}>
-          {isEnqueueing ? "正在准备任务…" : activeJobId ? "继续加入队列" : mode === "outpaint" ? "加入扩图队列" : mode === "edit" ? "加入编辑队列" : references.length ? "加入参考图生成队列" : "加入生成队列"}
-        </button>
-        {activeJobId && <button className="secondary" onClick={() => void cancelActive()}>取消任务</button>}
-        <span className="save-note">
-          自动归档：{autoArchive ? "已开启" : "已关闭"} · 队列按顺序执行
-        </span>
-      </div>
-      {progress && activeJobId && (
-        <div className="progress">
-          <div className="progress-track"><div style={{ width: String(progress.progress ?? 12) + "%" }} /></div>
-          <span>{progress.status}{progress.message ? " · " + progress.message : ""}</span>
-        </div>
-      )}
-    </section>
-  );
 
   const runningCount = useMemo(
     () => queueItems.filter((item) => ["queued", "running"].includes(item.status)).length,
@@ -1208,7 +376,7 @@ function App() {
                   else { setNotice(message); setError(""); }
                 }}
               />
-            ) : mode === "queue" ? <QueuePanel queueItems={queueItems} onRefresh={refreshQueue} /> : <>{composer}<ResultPanel outputs={outputs} onRegenerate={regenerate} onContinueEdit={continueEdit} onStartOutpaint={startOutpaint} onOpenLocalAI={openLocalAI} onCreateVariation={createVariation} onOpenPreview={setPreview} /></>}
+            ) : mode === "queue" ? <QueuePanel queueItems={queueItems} onRefresh={refreshQueue} /> : <><ComposerPanel mode={mode} projects={projects} activeJobId={studioComposer.activeJobId} isEnqueueing={studioComposer.isEnqueueing} progress={studioComposer.progress} composerState={studioComposer.state} composerActions={studioComposer.actions} /><ResultPanel outputs={outputs} onRegenerate={regenerate} onContinueEdit={continueEdit} onStartOutpaint={startOutpaint} onOpenLocalAI={openLocalAI} onCreateVariation={createVariation} onOpenPreview={setPreview} /></>}
             </div>
           </main>
         </div>

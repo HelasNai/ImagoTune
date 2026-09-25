@@ -5,14 +5,7 @@ import { NavIcon } from "./icons";
 import { useStudio } from "./StudioContext";
 import { b64ToFile, dataUrlFor, drawContain, readImage } from "./media-utils";
 import { formatGenerationParameters, variationOptions } from "../lib/creative";
-
-type Output = {
-  id: string;
-  b64: string;
-  createdAt: number;
-  galleryId?: string;
-  recipe: ImageRecipeV1;
-};
+import type { Output } from "./types";
 
 const socialPresets = [
   { value: "1080x1080", label: "1:1 方图" },
