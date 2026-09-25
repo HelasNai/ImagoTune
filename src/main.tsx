@@ -6,7 +6,6 @@ import { GalleryWorkspace } from "./components/GalleryWorkspace";
 import { LocalAIAction, LocalAISource, LocalAIToolbox } from "./components/LocalAIToolbox";
 import { MaskPainter } from "./components/MaskPainter";
 import { initialTutorialView, TutorialExperience, TutorialView } from "./components/TutorialExperience";
-import { WindowControls } from "./components/WindowControls";
 import { NavIcon } from "./components/icons";
 import {
   applyLocalPromptAction,
@@ -350,7 +349,6 @@ async function exportSocialCanvas(output: Output, preset: string, fill: "light" 
 
 function App() {
   const initialTutorial = useMemo(() => parseTutorialState(window.localStorage.getItem(TUTORIAL_STORAGE_KEY)), []);
-  const [windowMaximized, setWindowMaximized] = useState(false);
   const [zoomFactor, setZoomFactor] = useState(1);
   const appRef = useRef<HTMLDivElement | null>(null);
   const [mode, setMode] = useState<Mode>("generate");
@@ -519,11 +517,6 @@ function App() {
   useEffect(() => window.imageStudio.onUpdateStatus((value) => setUpdateStatus(value)), []);
 
   useEffect(() => window.imageStudio.onTutorialOpen(() => setTutorialView("center")), []);
-
-  useEffect(() => {
-    void window.imageStudio.windowControls.isMaximized().then((r) => setWindowMaximized(!!r.maximized));
-    return window.imageStudio.windowControls.onMaximizedChange(setWindowMaximized);
-  }, []);
 
   useEffect(() => {
     void window.imageStudio.windowControls.getZoom().then((r) => {
@@ -1591,16 +1584,6 @@ function App() {
           <button className="queue-chip" onClick={() => setMode("queue")}>任务队列 <strong>{runningCount}</strong></button>
         </div>
       </header>
-      <WindowControls
-        maximized={windowMaximized}
-        onMinimize={() => void window.imageStudio.windowControls.minimize()}
-        onToggleMaximize={() => {
-          void window.imageStudio.windowControls.toggleMaximize().then((r) => {
-            if (r.ok && typeof r.maximized === "boolean") setWindowMaximized(r.maximized);
-          });
-        }}
-        onClose={() => void window.imageStudio.windowControls.close()}
-      />
       {(error || notice || errorInfo) && (
         <div className={error || errorInfo ? "feedback-toast feedback-error" : "feedback-toast feedback-success"} role={error || errorInfo ? "alert" : "status"}>
           <div>

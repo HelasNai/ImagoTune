@@ -4347,12 +4347,29 @@ html {
   margin-block: 24px;
 }
 
-/* v1.7 无边框窗口：header 承担拖拽；窗口控制按钮固定于视口右上角，独立于 header 定位。 */
+/* v1.8 系统原生窗口按钮（WCO）：Windows 原生最小化/最大化/关闭按钮由系统叠加在页面之上
+   （见 electron/main.ts 的 titleBarStyle:'hidden' + 全透明 titleBarOverlay，页面渐变透出）。
+   header 仍是拖拽区，但右上角原生按钮条必须从拖拽区挖除——用 env(titlebar-area-*) 动态
+   读取系统按钮条尺寸；非 WCO 环境回退到旧值（158px / 138px / 32px）。 */
 header {
   -webkit-app-region: drag;
   app-region: drag;
   user-select: none;
-  padding-right: 158px; /* 为右上角 3×46px 控件 + 呼吸留白 */
+  /* 右侧为原生按钮条让位：按钮条 ~138px + 呼吸留白，随系统按钮条宽度自适应。 */
+  padding-right: calc(100% - env(titlebar-area-width, calc(100% - 158px)) + 20px);
+}
+/* ::after 覆盖原生按钮条区域并置 no-drag：header 是整幅拖拽区，若不挖除这块，
+   拖拽区会盖住原生按钮、吞掉最小化/最大化/关闭的点击；只覆盖顶部按钮条高度，
+   不遮挡 header-stack / queue-chip（它们位于上方 padding-right 预留区内）。 */
+header::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: calc(100% - env(titlebar-area-width, calc(100% - 138px)));
+  height: env(titlebar-area-height, 32px);
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 header button,
 header input,
@@ -4362,42 +4379,6 @@ header a,
 header [role="button"] {
   -webkit-app-region: no-drag;
   app-region: no-drag;
-}
-.window-controls {
-  position: fixed;
-  top: 0;
-  right: 0; /* 窗口右上角已无滚动条（滚动条在 .app 内、从 header 下方开始），控件贴右缘 */
-  z-index: 41;               /* 高于 header(40)，低于页面浮层(45/50/60/90/130/140) */
-  display: flex;
-  align-items: stretch;
-  height: 32px;
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
-  user-select: none;
-}
-.window-controls button {
-  display: grid;
-  place-items: center;
-  width: 46px;
-  background: transparent;
-  color: #43506b;
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
-  transition: background 120ms ease, color 120ms ease;
-}
-.window-controls button:hover {
-  background: rgba(23, 32, 42, 0.08);
-}
-.window-controls button:active {
-  background: rgba(23, 32, 42, 0.14);
-}
-.window-controls button[data-action="close"]:hover {
-  background: #e81123;
-  color: #fff;
-}
-.window-controls button[data-action="close"]:active {
-  background: #c50f1f;
-  color: #fff;
 }
 
 /* v1.7 设置页补充：整站无通用 a 规则；「关于与帮助」外链复用 .update-settings 区块内的
