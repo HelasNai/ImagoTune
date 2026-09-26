@@ -3,30 +3,14 @@ import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { GenerationErrorInfo } from "./generation-error";
+import { atomicWriteJson, ensureDir, nowISO, readJsonWithLegacy } from "./fs-utils";
 
 export type BinaryPayload = { name: string; type: string; data: number[] };
 export type QueueStatus = "queued" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
 export type QueueJob = { id: string; requestId: string; kind: "generate" | "edit"; status: QueueStatus; createdAt: string; updatedAt: string; attempts: number; input: Record<string, unknown>; attachments?: { image?: StoredAttachment; mask?: StoredAttachment }; error?: string; errorInfo?: GenerationErrorInfo; elapsedMs?: number; resultGalleryIds?: string[] };
 type StoredAttachment = { name: string; type: string; path: string };
 
-const timestamp = () => new Date().toISOString();
 const ACTIVE_STATUSES = new Set<QueueStatus>(["queued", "running"]);
-
-async function replaceWithRetry(source: string, target: string) {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    try {
-      await fs.rename(source, target);
-      return;
-    } catch (error) {
-      lastError = error;
-      const code = (error as NodeJS.ErrnoException).code;
-      if (!code || !["EPERM", "EACCES", "EBUSY"].includes(code) || attempt === 3) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 30 * (attempt + 1)));
-    }
-  }
-  throw lastError;
-}
 
 export function compactQueue(items: QueueJob[], historyLimit = 100) {
   const active = items.filter((item) => ACTIVE_STATUSES.has(item.status));
@@ -39,23 +23,12 @@ export function createQueueStore(baseDir: string) {
   const legacyQueuePath = path.join(baseDir, "pinaic-image-queue.json");
   const assetsDir = path.join(baseDir, "image-studio-queue-assets");
   async function write(items: QueueJob[]) {
-    await fs.mkdir(baseDir, { recursive: true });
-    const temporaryPath = queuePath + "." + randomUUID() + ".tmp";
-    try {
-      await fs.writeFile(temporaryPath, JSON.stringify(compactQueue(items), null, 2), "utf8");
-      await replaceWithRetry(temporaryPath, queuePath);
-    } finally {
-      await fs.rm(temporaryPath, { force: true }).catch(() => undefined);
-    }
+    await atomicWriteJson(queuePath, compactQueue(items));
   }
   async function read(recoverRunning = false) {
     try {
-      let raw: string;
-      try { raw = await fs.readFile(queuePath, "utf8"); }
-      catch { raw = await fs.readFile(legacyQueuePath, "utf8"); }
-      const parsed = JSON.parse(raw) as unknown;
-      const items = Array.isArray(parsed) ? parsed as QueueJob[] : [];
-      const normalized = recoverRunning ? items.map(item => item.status === "running" ? { ...item, status: "interrupted" as const, error: "应用关闭时任务正在运行，请手动重试。", errorInfo: { category: "cancelled" as const, title: "任务已中断", message: "应用关闭时任务仍在运行。", suggestion: "确认参数后手动重试，软件不会自动重复计费。", retryable: true }, updatedAt: timestamp() } : item) : items;
+      const items = (await readJsonWithLegacy(queuePath, legacyQueuePath)) as QueueJob[];
+      const normalized = recoverRunning ? items.map(item => item.status === "running" ? { ...item, status: "interrupted" as const, error: "应用关闭时任务正在运行，请手动重试。", errorInfo: { category: "cancelled" as const, title: "任务已中断", message: "应用关闭时任务仍在运行。", suggestion: "确认参数后手动重试，软件不会自动重复计费。", retryable: true }, updatedAt: nowISO() } : item) : items;
       if (recoverRunning && !isDeepStrictEqual(normalized, items)) await write(normalized);
       return normalized;
     } catch { return [] as QueueJob[]; }
@@ -66,7 +39,7 @@ export function createQueueStore(baseDir: string) {
     if (existing.filter((item) => ACTIVE_STATUSES.has(item.status)).length >= 100) {
       throw new Error("待执行任务已达到 100 条，请先处理或移除旧任务。");
     }
-    const id = randomUUID(); const now = timestamp(); const { image, mask, ...input } = rawInput as Record<string, unknown> & { image?: BinaryPayload; mask?: BinaryPayload }; const attachments: QueueJob["attachments"] = {}; await fs.mkdir(assetsDir, { recursive: true });
+    const id = randomUUID(); const now = nowISO(); const { image, mask, ...input } = rawInput as Record<string, unknown> & { image?: BinaryPayload; mask?: BinaryPayload }; const attachments: QueueJob["attachments"] = {}; await ensureDir(assetsDir);
     for (const [key, value] of [["image", image], ["mask", mask]] as const) { if (!value) continue; const filePath = path.join(assetsDir, `${id}-${key}.bin`); await fs.writeFile(filePath, Buffer.from(value.data)); attachments[key] = { name: value.name, type: value.type, path: filePath }; }
     const item: QueueJob = { id, requestId: String(input.requestId || randomUUID()), kind, status: "queued", createdAt: now, updatedAt: now, attempts: 0, input, attachments }; await save(item); return item;
   }

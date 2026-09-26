@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { ImageRecipeV1, normalizeRecipe } from "./image-recipe";
 import { embedRecipeInPng, readRecipeFromPng } from "./png-metadata";
+import { atomicWriteJson, ensureDir, nowISO } from "./fs-utils";
 
 export const INBOX_PROJECT_ID = "inbox";
 export type GalleryProject = { id: string; name: string; createdAt: string; updatedAt: string; coverId?: string };
@@ -21,27 +22,13 @@ export type GallerySearch = {
   pageSize?: number;
 };
 
-const now = () => new Date().toISOString();
-
-async function replaceWithRetry(source: string, target: string) {
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    try {
-      await fs.rename(source, target);
-      return;
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (!code || !["EPERM", "EACCES", "EBUSY"].includes(code) || attempt === 3) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 30 * (attempt + 1)));
-    }
-  }
-}
 export function createInitialState(): GalleryState {
-  const timestamp = now();
+  const timestamp = nowISO();
   return { version: 3, projects: [{ id: INBOX_PROJECT_ID, name: "收件箱", createdAt: timestamp, updatedAt: timestamp }], items: [] };
 }
 
 function normalizeProject(value: Partial<GalleryProject>): GalleryProject {
-  const timestamp = now();
+  const timestamp = nowISO();
   return {
     id: String(value.id || randomUUID()),
     name: String(value.name || "Untitled project").trim().slice(0, 80) || "Untitled project",
@@ -57,7 +44,7 @@ function normalizeItem(value: Record<string, unknown>): GalleryItem {
     ? { recipe: value.recipe }
     : value;
   const recipe = normalizeRecipe(recipeInput as Record<string, unknown>, legacyMode);
-  const createdAt = String(value.createdAt || recipe.createdAt || now());
+  const createdAt = String(value.createdAt || recipe.createdAt || nowISO());
   recipe.createdAt = createdAt;
   return {
     id: String(value.id || randomUUID()),
@@ -121,14 +108,7 @@ export function createGalleryStore(galleryDir: string) {
   const thumbsDir = path.join(galleryDir, ".thumbs");
 
   async function write(state: GalleryState) {
-    await fs.mkdir(galleryDir, { recursive: true });
-    const temporaryPath = indexPath + "." + randomUUID() + ".tmp";
-    try {
-      await fs.writeFile(temporaryPath, JSON.stringify(state, null, 2), "utf8");
-      await replaceWithRetry(temporaryPath, indexPath);
-    } finally {
-      await fs.rm(temporaryPath, { force: true }).catch(() => undefined);
-    }
+    await atomicWriteJson(indexPath, state);
   }
 
   async function rebuildFromPngFiles() {
@@ -167,7 +147,7 @@ export function createGalleryStore(galleryDir: string) {
   }
 
   async function read(): Promise<GalleryState> {
-    await fs.mkdir(galleryDir, { recursive: true });
+    await ensureDir(galleryDir);
     try {
       const rawText = await fs.readFile(indexPath, "utf8");
       const raw = JSON.parse(rawText) as unknown;
@@ -209,11 +189,11 @@ export function createGalleryStore(galleryDir: string) {
     const projectId = state.projects.some((project) => project.id === metadata.recipe.projectId)
       ? metadata.recipe.projectId
       : INBOX_PROJECT_ID;
-    await fs.mkdir(galleryDir, { recursive: true });
+    await ensureDir(galleryDir);
     for (const image of images) {
       if (!image.b64_json) continue;
       const id = randomUUID();
-      const createdAt = now();
+      const createdAt = nowISO();
       const recipe: ImageRecipeV1 = {
         ...metadata.recipe,
         projectId,
@@ -229,7 +209,7 @@ export function createGalleryStore(galleryDir: string) {
     if (created.length) {
       state.items = [...created, ...state.items];
       const project = state.projects.find((value) => value.id === projectId);
-      if (project) project.updatedAt = now();
+      if (project) project.updatedAt = nowISO();
       await write(state);
     }
     return created;
@@ -247,7 +227,7 @@ export function createGalleryStore(galleryDir: string) {
     const state = await read();
     const item = state.items.find((value) => value.id === id);
     if (!item) return null;
-    await fs.mkdir(thumbsDir, { recursive: true });
+    await ensureDir(thumbsDir);
     const thumbPath = path.join(thumbsDir, `${id}.jpg`);
     try {
       const stat = await fs.stat(thumbPath);
