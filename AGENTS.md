@@ -3,7 +3,7 @@
 **Generated:** 2026-08-30
 **Commit:** 15bd76d
 **Branch:** alpha
-**同步日期:** 2026-09-26（redundancy-refactor 去重改造：跨层类型单源化 `shared/types.d.ts`、主进程/渲染层共享 helper 提取、需反馈的 IPC 结果统一走 `components/ipc.ts`；main.tsx 487 行，测试 17 文件 / 102 it。前次同步：全局对话框改造 `DialogProvider`/`useDialog`）
+**同步日期:** 2026-09-26（preload 白屏修复：沙箱化 preload 不能 `require` 本地模块，`preload.ts` 回退为内联通道字符串——T8 的 `import "./channels"` 曾致 `window.imageStudio` 不暴露、窗口白屏；新增 `tests/preload-channels.test.ts` 锁定两端一致。测试 18 文件 / 106 it。前次同步：redundancy-refactor 去重改造：跨层类型单源化 `shared/types.d.ts`、主进程/渲染层共享 helper 提取、需反馈的 IPC 结果统一走 `components/ipc.ts`；main.tsx 487 行）
 
 ## OVERVIEW
 Windows 桌面端 AI 图片创作工作台（Electron + React + TypeScript）：连接 OpenAI 兼容 API 出图，并提供完全本地的高清放大 / 抠图 / 人脸优化工具箱（WebGPU/WASM）。
@@ -33,7 +33,7 @@ image-studio/
 | IPC 调用助手 | `src/components/ipc.ts` | `callIpc` / `useIpcAction` 统一 `{ok:false}`/reject 上报；渲染层需反馈的调用均经此路由 |
 | WebGPU 推理 | `src/workers/local-ai.worker.ts` | Worker 内 WebGPU→WASM 回退 |
 | 纯函数逻辑 | `src/lib/*.ts` | creative / outpaint / local-ai / tutorial / format / media / constants |
-| 纯逻辑测试 | `tests/*.test.ts` | 17 文件 / 102 it，与 electron/、src/lib 一一对应（含跨层一致性测试） |
+| 纯逻辑测试 | `tests/*.test.ts` | 18 文件 / 106 it，与 electron/、src/lib 一一对应（含跨层一致性测试） |
 
 ## CODE MAP
 | Symbol | Type | Location | Role |
@@ -55,10 +55,10 @@ image-studio/
 - IPC 全部返回 `{ ok: boolean; error?: string }`
 - 窗口为系统原生 WCO 模型（`titleBarStyle:'hidden'` + 全透明 `titleBarOverlay` 对象）：Windows 原生绘制最小化/最大化/关闭按钮并叠加在页面上、页面渐变透出（支持 Win11 Snap Layouts）；原生应用菜单已移除（`Menu.setApplicationMenu(null)`），其「使用说明 / 开源许可证 / 新手教程 / 界面缩放」入口迁至设置页；拖拽区按元素「布局矩形」收集且不受 `overflow:hidden` 裁剪——header 内伪元素/子元素的布局矩形必须落在 header 盒内，越界会把 header 下方页面区域误判为拖拽/标题栏区（v2.5 修复 `header::before` 光晕圆盒溢出）
 - 跨进程共享类型唯一来源 `shared/types.d.ts`：electron 侧 `import type` 后必须 `export type` re-export（本仓开启 `isolatedModules`），renderer 经 `src/global.d.ts` 全局别名引用，不得重复声明
-- IPC 通道名字符串唯一来源 `electron/channels.ts`（`main.ts` / `preload.ts` 均引用；字符串本身是对外契约，不得改动）
+- IPC 通道名字符串唯一来源 `electron/channels.ts`：`main.ts` 引用常量；`preload.ts` **刻意内联字符串**（沙箱化 preload 不能 `require` 本地模块，import 会在运行时报 "Unable to load preload script"），两端一致性由 `tests/preload-channels.test.ts` 双向锁定；字符串本身是对外契约，不得改动
 - 需要用户反馈的 IPC 结果统一走 `src/components/ipc.ts` 的 `callIpc` / `useIpcAction`；best-effort 调用（`on*` 事件订阅、`windowControls.*`、`clipboard.copyText/copyImage`）保持直连白名单
 - 需测试的纯逻辑优先移入 `src/lib/*.ts`；主进程可测纯模块（`electron/constants`/`channels`/`*-limits`/`data-url`）不得含 IPC/副作用，供 vitest 直接导入
-- 测试是纯逻辑，无 DOM/UI/electron 运行时测试；React 组件与 main.ts/preload.ts 无测试（现 17 文件 / 102 it）
+- 测试是纯逻辑，无 DOM/UI/electron 运行时测试；React 组件与 main.ts 无测试，preload.ts 仅由 `tests/preload-channels.test.ts` 做源码文本一致性检查（非运行时）（现 18 文件 / 106 it）
 
 ## ANTI-PATTERNS（行为边界，源自代码而非注释）
 - 队列任务失败绝不允许代码自动重试（避免重复计费），只能用户手动触发 `queue:retry`
@@ -68,7 +68,7 @@ image-studio/
 - 本地处理结果禁止覆盖原图，必须作为新图归档
 - 禁止把打包产物目录合并（dist-renderer/dist-electron/dist 必须分离）
 - 渲染层禁止原生 `window.prompt/confirm/alert`：Electron 不支持 prompt（同步抛 `Error: prompt() is not supported.`），原生 confirm 在 Windows 会丢焦点（electron#31917）；输入/确认统一走 `src/components/Dialogs.tsx` 的 `useDialog()`
-- 禁止在 electron/ 或 src/ 重复声明跨进程类型或 IPC 通道字符串；唯一来源 `shared/types.d.ts` / `electron/channels.ts`
+- 禁止在 electron/ 或 src/ 重复声明跨进程类型；IPC 通道字符串唯一来源 `electron/channels.ts`，唯一例外是 `preload.ts` 出于沙箱限制刻意内联（一致性由 `tests/preload-channels.test.ts` 锁定）
 - 需用户反馈的 IPC 失败提示禁止逐字复制 `if (!result.ok) …` 模式，必须经 `src/components/ipc.ts` 的 `callIpc`/`useIpcAction`（best-effort 白名单见该文件头注释）
 - 媒体读取 / 对象 URL / 画布助手单点在 `src/lib/media.ts`（`components/media-utils.ts` 仅为 re-export 兼容层）；`new FileReader` 全仓仅 `src/lib/media.ts` 一处
 
