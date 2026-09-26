@@ -1,6 +1,7 @@
 import { dialog, shell } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { errorMessage } from "./net-utils";
 
 /** IPC handler 返回结构：成功、取消、失败三种形态保持与原内联实现一致。 */
 export type DirectoryIpcResult = { ok: boolean; error?: string; [key: string]: unknown };
@@ -39,10 +40,6 @@ export type DirectoryManager = {
   reset: () => Promise<DirectoryIpcResult>;
   open: () => Promise<DirectoryIpcResult>;
 };
-
-function errorText(error: unknown, fallback: string) {
-  return (error as Error).message || fallback;
-}
 
 /**
  * 合并保存目录与模型目录两组同构的目录管理行为：
@@ -90,7 +87,7 @@ export function createDirectoryManager(options: DirectoryManagerOptions): Direct
       await writeCredential(credentialKey, next);
       return { ok: true, canceled: false, [resultKey]: next, ...(resultExtras ? await resultExtras() : {}) };
     } catch (error) {
-      return { ok: false, error: errorText(error, chooseError) };
+      return { ok: false, error: errorMessage(error, chooseError) };
     }
   }
 
@@ -103,7 +100,7 @@ export function createDirectoryManager(options: DirectoryManagerOptions): Direct
       await writeCredential(credentialKey, next);
       return { ok: true, [resultKey]: next, ...(resultExtras ? await resultExtras() : {}) };
     } catch (error) {
-      return { ok: false, error: errorText(error, resetError) };
+      return { ok: false, error: errorMessage(error, resetError) };
     }
   }
 

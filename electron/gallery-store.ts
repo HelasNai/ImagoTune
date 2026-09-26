@@ -7,7 +7,6 @@ import { atomicWriteJson, ensureDir, nowISO } from "./fs-utils";
 import { stripDataUrlPrefix } from "./data-url";
 
 import { INBOX_PROJECT_ID } from "./constants";
-export { INBOX_PROJECT_ID };
 import type { GalleryItem, GalleryProject, GallerySearch, GalleryState } from "../shared/types";
 
 export type { GalleryItem, GalleryProject, GallerySearch, GalleryState };

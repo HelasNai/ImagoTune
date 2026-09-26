@@ -91,7 +91,7 @@ export function GalleryWorkspace({
     const missing = items.filter((item) => !thumbs[item.id]);
     if (!missing.length) return () => { active = false; };
     void Promise.all(missing.map(async (item) => {
-      const response = await callIpc(() => window.imageStudio.gallery.thumbnail(item.id), { fallbackError: "缩略图加载失败", onError: onNotice });
+      const response = await callIpc(() => window.imageStudio.gallery.thumbnail(item.id), { fallbackError: "缩略图加载失败", onError: (message) => onNotice(message, true) });
       return [item.id, response.b64 || ""] as const;
     })).then((values) => {
       if (!active) return;
@@ -128,7 +128,7 @@ export function GalleryWorkspace({
 
   // open / openLocalAI 共用同一段「按 id 读取图片 → 交给对应消费者」逻辑，避免逐字复制。
   const loadAndOpen = async (item: GalleryItem, consume: (b64: string) => void) => {
-    const response = await callIpc(() => window.imageStudio.gallery.loadImage(item.id), { fallbackError: "无法读取图片", onError: onNotice });
+    const response = await callIpc(() => window.imageStudio.gallery.loadImage(item.id), { fallbackError: "无法读取图片", onError: (message) => onNotice(message, true) });
     if (response.b64) consume(response.b64);
   };
 
@@ -137,7 +137,7 @@ export function GalleryWorkspace({
   const openLocalAI = (item: GalleryItem, action: LocalAIAction) => loadAndOpen(item, (b64) => onLocalAI(item, b64, action));
 
   const createProject = async () => {
-    const response = await callIpc(() => window.imageStudio.projects.create(newProject), { fallbackError: "创建项目失败", onError: onNotice });
+    const response = await callIpc(() => window.imageStudio.projects.create(newProject), { fallbackError: "创建项目失败", onError: (message) => onNotice(message, true) });
     if (!response.ok) return;
     setNewProject("");
     await refresh(0);
@@ -147,14 +147,14 @@ export function GalleryWorkspace({
   const renameProject = async (project: GalleryProject) => {
     const name = await requestText({ title: "重命名项目", message: "输入新的项目名称", defaultValue: project.name, confirmLabel: "重命名" });
     if (!name?.trim()) return;
-    const response = await callIpc(() => window.imageStudio.projects.rename(project.id, name), { fallbackError: "重命名失败", onError: onNotice });
+    const response = await callIpc(() => window.imageStudio.projects.rename(project.id, name), { fallbackError: "重命名失败", onError: (message) => onNotice(message, true) });
     if (response.ok) onNotice("项目已重命名");
     await refresh(0);
   };
 
   const deleteProject = async (project: GalleryProject) => {
     if (!(await requestConfirm({ title: "删除项目", message: "删除项目后，其中图片会回到收件箱，确定继续吗？", confirmLabel: "删除", danger: true }))) return;
-    const response = await callIpc(() => window.imageStudio.projects.delete(project.id), { fallbackError: "删除失败", onError: onNotice });
+    const response = await callIpc(() => window.imageStudio.projects.delete(project.id), { fallbackError: "删除失败", onError: (message) => onNotice(message, true) });
     if (activeProject === project.id) setActiveProject("all");
     if (response.ok) onNotice("项目已删除，图片已移回收件箱");
     await refresh(0);
@@ -167,7 +167,7 @@ export function GalleryWorkspace({
     const response = await callIpc(() => window.imageStudio.gallery.update(item.id, {
       title,
       tags: tags === null ? item.recipe.tags : parseTags(tags),
-    }), { fallbackError: "更新失败", onError: onNotice });
+    }), { fallbackError: "更新失败", onError: (message) => onNotice(message, true) });
     if (response.ok) onNotice("图片信息已更新");
     await refresh(0);
   };
@@ -182,7 +182,7 @@ export function GalleryWorkspace({
       return;
     }
     if (action === "delete" && !(await requestConfirm({ title: "删除所选图片", message: "删除所选图片及原始 PNG 文件吗？", confirmLabel: "删除", danger: true }))) return;
-    const response = await callIpc(() => window.imageStudio.gallery.bulk({ ids, action, ...extra }), { fallbackError: "操作失败", onError: onNotice });
+    const response = await callIpc(() => window.imageStudio.gallery.bulk({ ids, action, ...extra }), { fallbackError: "操作失败", onError: (message) => onNotice(message, true) });
     if (response.ok) {
       onNotice("已处理 " + String(response.count || ids.length) + " 张图片");
       setSelected(new Set());
@@ -195,7 +195,7 @@ export function GalleryWorkspace({
       onNotice("请先选择需要导出的图片");
       return;
     }
-    const response = await callIpc(() => window.imageStudio.gallery.exportZip([...selected]), { fallbackError: "导出失败", onError: onNotice });
+    const response = await callIpc(() => window.imageStudio.gallery.exportZip([...selected]), { fallbackError: "导出失败", onError: (message) => onNotice(message, true) });
     if (response.ok && !response.canceled) onNotice("ZIP 已导出：" + (response.path || ""));
   };
 
@@ -206,7 +206,7 @@ export function GalleryWorkspace({
       return;
     }
     const results = await Promise.all(candidates.map(async (item) => {
-      const response = await callIpc(() => window.imageStudio.gallery.loadImage(item.id), { fallbackError: "无法读取图片", onError: onNotice });
+      const response = await callIpc(() => window.imageStudio.gallery.loadImage(item.id), { fallbackError: "无法读取图片", onError: (message) => onNotice(message, true) });
       return { item, b64: response.b64 || "" };
     }));
     setCompare(results.filter((value) => Boolean(value.b64)));
@@ -217,7 +217,7 @@ export function GalleryWorkspace({
       onNotice("收件箱没有项目封面，请先把图片移入一个项目");
       return;
     }
-    const response = await callIpc(() => window.imageStudio.projects.setCover(item.recipe.projectId, item.id), { fallbackError: "设置失败", onError: onNotice });
+    const response = await callIpc(() => window.imageStudio.projects.setCover(item.recipe.projectId, item.id), { fallbackError: "设置失败", onError: (message) => onNotice(message, true) });
     if (response.ok) onNotice("已设为项目封面");
     await refresh(0);
   };
@@ -366,7 +366,7 @@ export function GalleryWorkspace({
                     <button onClick={() => void openLocalAI(item, "remove-background")}>智能抠图</button>
                     <button onClick={() => void openLocalAI(item, "face-restore")}>人脸优化 Beta</button>
                     <button onClick={() => void openLocalAI(item, "pipeline")}>本地组合处理</button>
-                    <button onClick={() => void callIpc(() => window.imageStudio.gallery.toggleFavorite(item.id), { fallbackError: "收藏操作失败", onError: onNotice }).then(() => refresh(0)).catch(() => { /* callIpc 已上报 */ })}>
+                    <button onClick={() => void callIpc(() => window.imageStudio.gallery.toggleFavorite(item.id), { fallbackError: "收藏操作失败", onError: (message) => onNotice(message, true) }).then(() => refresh(0)).catch(() => { /* callIpc 已上报 */ })}>
                       {item.favorite ? "取消收藏" : "收藏"}
                     </button>
                     <button onClick={() => void updateMetadata(item)}>编辑信息</button>

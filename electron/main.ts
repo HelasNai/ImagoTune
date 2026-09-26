@@ -23,7 +23,7 @@ import { errorMessage, joinBase, withTimeout } from "./net-utils";
 import { nowISO } from "./fs-utils";
 import { CANVAS_MAX_EDGE, CANVAS_MAX_PIXELS, CANVAS_MULTIPLE } from "./outpaint-limits";
 import { LOCAL_AI_MAX_EDGE, LOCAL_AI_MAX_PIXELS } from "./local-ai-limits";
-import type { ApiImage, BinaryPayload, PromptTemplate, UpdateChannel, UpdatePhase, UpdateStatus } from "../shared/types";
+import type { ApiImage, BinaryPayload, PromptTemplate, UpdateChannel, UpdateStatus } from "../shared/types";
 import {
   CLIPBOARD_COPY_IMAGE, CLIPBOARD_COPY_TEXT, CLIPBOARD_READ_IMAGE,
   GALLERY_BULK, GALLERY_DELETE, GALLERY_EXPORT_ZIP, GALLERY_LIST, GALLERY_LOAD_IMAGE,

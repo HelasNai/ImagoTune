@@ -2,7 +2,7 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { GenerationErrorInfo, interruptedErrorInfo } from "./generation-error";
+import { interruptedErrorInfo } from "./generation-error";
 import { atomicWriteJson, ensureDir, nowISO, readJsonWithLegacy } from "./fs-utils";
 
 import type { BinaryPayload, QueueJob, QueueStatus } from "../shared/types";

@@ -6,7 +6,6 @@ import {
   parseTags,
   PromptAction,
   ratioOptions,
-  resolutionOptions,
   sizeMatrix,
   validateCanvasSize,
 } from "../lib/creative";
