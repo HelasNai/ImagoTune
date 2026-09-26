@@ -1,4 +1,7 @@
-export type ImageResponse = { b64_json?: string; url?: string; seed?: string | number };
+import type { ApiImage as ImageResponse } from "../shared/types";
+
+export type { ApiImage } from "../shared/types";
+export type { ImageResponse };
 
 function rawBase64(value: string) {
   return value.replace(/^data:image\/[^;]+;base64,/i, "").trim();

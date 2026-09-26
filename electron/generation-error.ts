@@ -1,25 +1,6 @@
-export type GenerationErrorCategory =
-  | "network"
-  | "authentication"
-  | "balance"
-  | "parameters"
-  | "upload"
-  | "content"
-  | "rate_limit"
-  | "timeout"
-  | "server"
-  | "cancelled"
-  | "unknown";
+import type { GenerationErrorCategory, GenerationErrorInfo } from "../shared/types";
 
-export type GenerationErrorInfo = {
-  category: GenerationErrorCategory;
-  title: string;
-  message: string;
-  suggestion: string;
-  retryable: boolean;
-  status?: number;
-  details?: string;
-};
+export type { GenerationErrorCategory, GenerationErrorInfo };
 
 export class GenerationError extends Error {
   info: GenerationErrorInfo;

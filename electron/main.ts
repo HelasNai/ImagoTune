@@ -21,6 +21,7 @@ import { DEFAULT_CHAT_MODEL, DEFAULT_IMAGE_MODEL, INBOX_PROJECT_ID } from "./con
 import { errorMessage, joinBase, withTimeout } from "./net-utils";
 import { nowISO } from "./fs-utils";
 import { CANVAS_MAX_EDGE, CANVAS_MAX_PIXELS, CANVAS_MULTIPLE } from "./outpaint-limits";
+import type { ApiImage, BinaryPayload, PromptTemplate, UpdateChannel, UpdatePhase, UpdateStatus } from "../shared/types";
 import {
   CLIPBOARD_COPY_IMAGE, CLIPBOARD_COPY_TEXT, CLIPBOARD_READ_IMAGE,
   GALLERY_BULK, GALLERY_DELETE, GALLERY_EXPORT_ZIP, GALLERY_LIST, GALLERY_LOAD_IMAGE,
@@ -56,17 +57,13 @@ const LEGACY_SAVE_DIR = "D:\\codexproject\\生图\\保存图片";
 const controllers = new Map<string, AbortController>();
 const cancelledRequests = new Set<string>();
 const timedOutRequests = new Set<string>();
-type UpdatePhase = "idle" | "checking" | "available" | "downloading" | "downloaded" | "not-available" | "error";
-type UpdateChannel = "stable" | "beta" | "alpha";
-type UpdateStatus = { phase: UpdatePhase; version?: string; progress?: number; message: string };
 let updateStatus: UpdateStatus = { phase: "idle", message: "尚未检查更新" };
 let updateCheckInFlight = false;
 let updatePromptOpen = false;
 
-type BinaryInput = { name: string; type: string; data: number[] };
+type BinaryInput = BinaryPayload;
 type RequestInput = Record<string, unknown> & { requestId: string; recipe?: ImageRecipeV1; title?: string };
 type EditInput = RequestInput & { image: BinaryInput; mask?: BinaryInput };
-type PromptTemplate = { id: string; title: string; category: string; prompt: string; kind: "positive" | "negative"; ratio?: string; resolution?: string; quality?: string; builtin?: boolean };
 const DEFAULT_TEMPLATES: PromptTemplate[] = [
   { id: "builtin-poster", title: "科技产品海报", category: "海报", prompt: "一张高级科技感产品海报，主体清晰突出，蓝紫与粉色渐变光效，留出标题和副标题空间，商业广告级构图", kind: "positive", ratio: "4:5", resolution: "2k", quality: "high", builtin: true },
   { id: "builtin-cover", title: "内容平台封面", category: "封面", prompt: "一张适合内容平台封面的视觉主图，主题明确，主体醒目，画面干净，保留适合叠加标题的留白区域", kind: "positive", ratio: "16:9", resolution: "2k", quality: "high", builtin: true },
@@ -853,5 +850,3 @@ app.whenReady().then(async () => {
   app.on("activate", () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
 });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
-
-type ApiImage = ImageResponse;

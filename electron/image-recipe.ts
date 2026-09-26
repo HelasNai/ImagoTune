@@ -1,48 +1,7 @@
 import { DEFAULT_IMAGE_MODEL, INBOX_PROJECT_ID } from "./constants";
+import type { ImageRecipeV1, OutpaintRecipe, PostProcessingStep, RecipeMode } from "../shared/types";
 
-export type RecipeMode = "generate" | "edit" | "outpaint";
-
-export type OutpaintRecipe = {
-  sourceSize: string;
-  targetSize: string;
-  top: number;
-  right: number;
-  bottom: number;
-  left: number;
-  preset?: string;
-};
-
-export type PostProcessingStep = {
-  tool: "upscale" | "remove-background" | "face-restore";
-  modelId: string;
-  modelVersion: string;
-  parameters: Record<string, string | number | boolean>;
-  device: "webgpu" | "wasm";
-  elapsedMs: number;
-  createdAt: string;
-};
-
-export type ImageRecipeV1 = {
-  version: 1;
-  prompt: string;
-  negativePrompt: string;
-  model: string;
-  size: string;
-  ratio?: string;
-  resolution?: string;
-  quality?: string;
-  n: number;
-  mode: RecipeMode;
-  projectId: string;
-  tags: string[];
-  createdAt: string;
-  sourceId?: string;
-  variationLabel?: string;
-  referenceCount?: number;
-  seed?: string;
-  outpaint?: OutpaintRecipe;
-  postProcessing?: PostProcessingStep[];
-};
+export type { ImageRecipeV1, OutpaintRecipe, PostProcessingStep, RecipeMode };
 
 export function stringValue(value: unknown, fallback = "") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;

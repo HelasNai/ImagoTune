@@ -5,10 +5,9 @@ import { isDeepStrictEqual } from "node:util";
 import { GenerationErrorInfo, interruptedErrorInfo } from "./generation-error";
 import { atomicWriteJson, ensureDir, nowISO, readJsonWithLegacy } from "./fs-utils";
 
-export type BinaryPayload = { name: string; type: string; data: number[] };
-export type QueueStatus = "queued" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
-export type QueueJob = { id: string; requestId: string; kind: "generate" | "edit"; status: QueueStatus; createdAt: string; updatedAt: string; attempts: number; input: Record<string, unknown>; attachments?: { image?: StoredAttachment; mask?: StoredAttachment }; error?: string; errorInfo?: GenerationErrorInfo; elapsedMs?: number; resultGalleryIds?: string[] };
-type StoredAttachment = { name: string; type: string; path: string };
+import type { BinaryPayload, QueueJob, QueueStatus } from "../shared/types";
+
+export type { BinaryPayload, QueueJob, QueueStatus };
 
 const ACTIVE_STATUSES = new Set<QueueStatus>(["queued", "running"]);
 

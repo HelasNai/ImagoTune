@@ -7,21 +7,9 @@ import { atomicWriteJson, ensureDir, nowISO } from "./fs-utils";
 
 import { INBOX_PROJECT_ID } from "./constants";
 export { INBOX_PROJECT_ID };
-export type GalleryProject = { id: string; name: string; createdAt: string; updatedAt: string; coverId?: string };
-export type GalleryItem = { id: string; fileName: string; title: string; createdAt: string; favorite: boolean; recipe: ImageRecipeV1 };
-export type GalleryState = { version: 3; projects: GalleryProject[]; items: GalleryItem[] };
-export type GallerySearch = {
-  query?: string;
-  favoriteOnly?: boolean;
-  projectId?: string;
-  tag?: string;
-  resolution?: string;
-  size?: string;
-  seed?: string;
-  sort?: "newest" | "oldest";
-  page?: number;
-  pageSize?: number;
-};
+import type { GalleryItem, GalleryProject, GallerySearch, GalleryState } from "../shared/types";
+
+export type { GalleryItem, GalleryProject, GallerySearch, GalleryState };
 
 export function createInitialState(): GalleryState {
   const timestamp = nowISO();

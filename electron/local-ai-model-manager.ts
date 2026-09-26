@@ -5,23 +5,9 @@ import { createHash } from "node:crypto";
 import { pipeline } from "node:stream/promises";
 import { LOCAL_AI_MODELS, LocalAIModelId, LocalAIModelManifest } from "./local-ai-models";
 
-export type ModelDownloadState = "missing" | "partial" | "downloading" | "verifying" | "installed" | "error";
-export type LocalAIModelStatus = {
-  id: LocalAIModelId;
-  name: string;
-  version: string;
-  size: number;
-  downloaded: number;
-  progress: number;
-  state: ModelDownloadState;
-  installed: boolean;
-  license: string;
-  sourceUrl: string;
-  purpose: string;
-  beta?: boolean;
-  error?: string;
-};
-export type ModelProgress = LocalAIModelStatus & { message: string };
+import type { LocalAIModelProgress as ModelProgress, LocalAIModelStatus, ModelDownloadState } from "../shared/types";
+
+export type { ModelProgress, LocalAIModelStatus, ModelDownloadState };
 
 type ActiveDownload = { controller: AbortController; promise: Promise<LocalAIModelStatus> };
 type ModelFetcher = (input: string, init?: RequestInit) => Promise<Response>;

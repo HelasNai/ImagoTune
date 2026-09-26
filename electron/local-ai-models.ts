@@ -1,19 +1,6 @@
-export type LocalAIModelId = "realesrgan-x2" | "realesrgan-x4" | "isnet-general" | "yunet" | "gfpgan-v1.4";
+import type { LocalAIModelId, LocalAIModelManifest } from "../shared/types";
 
-export type LocalAIModelManifest = {
-  id: LocalAIModelId;
-  name: string;
-  fileName: string;
-  version: string;
-  size: number;
-  sha256: string;
-  urls: string[];
-  license: string;
-  sourceUrl: string;
-  purpose: "upscale" | "remove-background" | "face-detection" | "face-restoration";
-  beta?: boolean;
-  input: string;
-};
+export type { LocalAIModelId, LocalAIModelManifest };
 
 export const LOCAL_AI_MODELS: readonly LocalAIModelManifest[] = [
   {
