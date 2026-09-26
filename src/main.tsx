@@ -15,8 +15,8 @@ import { useComposer } from "./components/useComposer";
 import { recipeFromQueueInput } from "./components/queue-utils";
 import { dataUrlFor } from "./components/media-utils";
 import type { Mode, Output } from "./components/types";
-import { variationOptions } from "./lib/creative";
-import { formatDurationSeconds } from "./lib/format";
+import { createRecipe, variationOptions } from "./lib/creative";
+import { formatDurationSeconds, formatTags } from "./lib/format";
 import { b64ToDataUrl } from "./lib/media";
 import {
   parseTutorialState,
@@ -190,10 +190,10 @@ function App() {
           b64: item.b64_json || "",
           createdAt: Date.now(),
           galleryId: gallery[index]?.id,
-          recipe: gallery[index]?.recipe || {
+          recipe: gallery[index]?.recipe || createRecipe({
             ...baseRecipe,
             seed: item.seed === undefined ? baseRecipe.seed : String(item.seed),
-          },
+          }),
         }));
       if (value.job.id === studioComposer.activeJobId) {
         setOutputs(items);
@@ -292,7 +292,7 @@ function App() {
       studioComposer.actions.setPrompt(item.recipe.prompt);
       studioComposer.actions.setNegativePrompt(item.recipe.negativePrompt);
       setProjectId(item.recipe.projectId);
-      setTagsText(item.recipe.tags.join("，"));
+      setTagsText(formatTags(item.recipe.tags));
       if (item.recipe.ratio) studioComposer.actions.setRatio(item.recipe.ratio);
       if (item.recipe.resolution) studioComposer.actions.setResolution(item.recipe.resolution);
       if (item.recipe.quality) studioComposer.actions.setQuality(item.recipe.quality);

@@ -1,6 +1,48 @@
-import { modeLabel } from "./format";
+import { DEFAULT_IMAGE_MODEL, INBOX_PROJECT_ID } from "./constants";
+import { clamp, modeLabel, nowISO } from "./format";
 
 export type PromptAction = "refine" | "detail" | "poster" | "social" | "realistic" | "premium";
+
+/** recipe 各受控字段的上限（与 electron/image-recipe.ts 的归一化语义一致）。 */
+const RECIPE_MAX_N = 4;
+const RECIPE_MAX_TAGS = 20;
+const RECIPE_MAX_REFERENCES = 3;
+
+/**
+ * 统一构造 ImageRecipeV1：补齐默认值并钳制受控字段。
+ * - `version` 固定 1；`n` 钳制到 1..4；`tags` 截断到最多 20 条；
+ * - `referenceCount` 钳制到最多 3（0 / 缺省 → undefined）；
+ * - `projectId` 默认 INBOX_PROJECT_ID；`createdAt` 默认 nowISO()；
+ * - `model` 默认 DEFAULT_IMAGE_MODEL（调用方显式传入时以传入值为准）。
+ * 不改变字段名、版本号与 mode 语义。
+ */
+export function createRecipe(partial: Partial<ImageRecipeV1> = {}): ImageRecipeV1 {
+  const rawReferenceCount = partial.referenceCount;
+  const referenceCount = typeof rawReferenceCount === "number" && rawReferenceCount > 0
+    ? clamp(rawReferenceCount, 0, RECIPE_MAX_REFERENCES)
+    : undefined;
+  return {
+    version: 1,
+    prompt: String(partial.prompt || ""),
+    negativePrompt: String(partial.negativePrompt || ""),
+    model: String(partial.model || DEFAULT_IMAGE_MODEL),
+    size: String(partial.size || ""),
+    ratio: typeof partial.ratio === "string" ? partial.ratio : undefined,
+    resolution: typeof partial.resolution === "string" ? partial.resolution : undefined,
+    quality: typeof partial.quality === "string" ? partial.quality : undefined,
+    n: clamp(Number(partial.n) || 1, 1, RECIPE_MAX_N),
+    mode: partial.mode || "generate",
+    projectId: String(partial.projectId || INBOX_PROJECT_ID),
+    tags: Array.isArray(partial.tags) ? partial.tags.map(String).slice(0, RECIPE_MAX_TAGS) : [],
+    createdAt: partial.createdAt || nowISO(),
+    sourceId: typeof partial.sourceId === "string" ? partial.sourceId : undefined,
+    variationLabel: typeof partial.variationLabel === "string" ? partial.variationLabel : undefined,
+    referenceCount,
+    seed: partial.seed,
+    outpaint: partial.outpaint,
+    postProcessing: partial.postProcessing,
+  };
+}
 
 export const resolutionOptions = [
   { value: "1k", label: "1K（标准）" },

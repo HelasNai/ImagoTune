@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { parseTags, resolutionLevels } from "../lib/creative";
+import { formatTags } from "../lib/format";
 import { b64ToDataUrl } from "../lib/media";
 import type { LocalAIAction } from "./LocalAIToolbox";
 import { useDialog } from "./Dialogs";
@@ -164,7 +165,7 @@ export function GalleryWorkspace({
   const updateMetadata = async (item: GalleryItem) => {
     const title = await requestText({ title: "编辑图片标题", defaultValue: item.title });
     if (title === null) return;
-    const tags = await requestText({ title: "编辑标签", message: "用逗号分隔", defaultValue: item.recipe.tags.join("，") });
+    const tags = await requestText({ title: "编辑标签", message: "用逗号分隔", defaultValue: formatTags(item.recipe.tags) });
     const response = await window.imageStudio.gallery.update(item.id, {
       title,
       tags: tags === null ? item.recipe.tags : parseTags(tags),

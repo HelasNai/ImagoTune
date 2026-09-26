@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createRecipe } from "../lib/creative";
 import { formatBytes, formatDurationSeconds } from "../lib/format";
 import { validateUpscaleOutput } from "../lib/local-ai";
 import { b64FromDataUrl, b64ToDataUrl, fileToDataUrl } from "../lib/media";
@@ -86,18 +87,13 @@ function pixelsToDataUrl(width: number, height: number, buffer: ArrayBuffer) {
 }
 
 function recipeForImportedSource(width: number, height: number): ImageRecipeV1 {
-  return {
-    version: 1,
+  return createRecipe({
     prompt: "本地导入图片",
-    negativePrompt: "",
     model: "local-import",
     size: `${width}x${height}`,
-    n: 1,
     mode: "edit",
-    projectId: "inbox",
     tags: ["本地导入"],
-    createdAt: new Date().toISOString(),
-  };
+  });
 }
 
 export function LocalAIToolbox({

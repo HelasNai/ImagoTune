@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import {
   applyLocalPromptAction,
+  createRecipe,
   parseTags,
   PromptAction,
   ratioOptions,
@@ -18,7 +19,7 @@ import {
 } from "../lib/outpaint";
 import type { ConfirmDialogOptions, TextDialogOptions } from "./Dialogs";
 import { b64ToFile, canvasToBlob, drawContain, fileToDataUrl, readImage } from "../lib/media";
-import { compositeFileKey, uniqueBy } from "../lib/format";
+import { compositeFileKey, formatTags, uniqueBy } from "../lib/format";
 import type { Mode, Output } from "./types";
 
 export const qualities = [
@@ -479,8 +480,7 @@ export function useComposer({
       setError((cause as Error).message || "图片预处理失败");
       return;
     }
-    const recipe: ImageRecipeV1 = {
-      version: 1,
+    const recipe = createRecipe({
       prompt: activePrompt,
       negativePrompt: activeNegativePrompt,
       model: imageModel.trim(),
@@ -492,12 +492,11 @@ export function useComposer({
       mode: activeMode,
       projectId: activeProject,
       tags: activeTags,
-      createdAt: new Date().toISOString(),
       sourceId: override.sourceId,
       variationLabel: override.variationLabel,
       referenceCount: activeMode === "outpaint" ? undefined : references.length || undefined,
       outpaint: outpaintRecipe,
-    };
+    });
     const payload: Record<string, unknown> = {
       requestId: id,
       recipe,
@@ -563,7 +562,7 @@ export function useComposer({
       if (recipe.resolution) setResolution(recipe.resolution);
       if (recipe.quality) setQuality(recipe.quality);
       setProjectId(recipe.projectId || "inbox");
-      setTagsText(recipe.tags.join("，"));
+      setTagsText(formatTags(recipe.tags));
       setNotice("已带入图片和参数，可局部涂抹蒙版后继续编辑");
     } else {
       setMode("outpaint");
@@ -571,7 +570,7 @@ export function useComposer({
       setNegativePrompt(recipe.negativePrompt);
       setImage(b64ToFile(output.b64, "image-studio-outpaint-source.png"));
       setProjectId(recipe.projectId || "inbox");
-      setTagsText(recipe.tags.join("，"));
+      setTagsText(formatTags(recipe.tags));
       setOutpaintStrategy("percent");
       setOutpaintMargins({ top: 25, right: 25, bottom: 25, left: 25 });
       setOutpaintPreset("");
