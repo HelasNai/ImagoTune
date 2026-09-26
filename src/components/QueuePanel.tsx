@@ -1,8 +1,21 @@
 import React from "react";
+import { formatDateTime } from "../lib/format";
 import { recipeFromQueueInput, recipeModeLabel } from "./queue-utils";
 import { NavIcon } from "./icons";
+import { useIpcAction } from "./ipc";
+import { useStudio } from "./StudioContext";
 
 export function QueuePanel({ queueItems, onRefresh }: { queueItems: QueueJob[]; onRefresh: () => Promise<void> }) {
+  const { setError } = useStudio();
+  const { pending, run } = useIpcAction(setError);
+
+  // 队列操作失败必须显式反馈并刷新列表（原先静默失败）；绝不自动重试任务。
+  // 成功路径保持原样：只依赖队列推送更新，不额外刷新。
+  const mutate = async (factory: () => Promise<{ ok: boolean; error?: string }>, fallbackError: string) => {
+    const result = await run(factory, { fallbackError });
+    if (!result) await onRefresh();
+  };
+
   return (
     <section className="card queue-panel">
       <div className="section-head">
@@ -21,19 +34,19 @@ export function QueuePanel({ queueItems, onRefresh }: { queueItems: QueueJob[]; 
             <article key={job.id}>
               <div>
                 <strong>{recipeModeLabel(recipeFromQueueInput(job.input, job.kind, "1024x1024"))} · {job.status}</strong>
-                <small>{new Date(job.createdAt).toLocaleString()} · 尝试 {job.attempts} 次</small>
+                <small>{formatDateTime(job.createdAt)} · 尝试 {job.attempts} 次</small>
                 <p>{recipeFromQueueInput(job.input, job.kind, "1024x1024").prompt}</p>
                 {job.errorInfo ? <div className="queue-error"><em>{job.errorInfo.title}：{job.errorInfo.message}</em><small>{job.errorInfo.suggestion}</small></div> : job.error && <em>{job.error}</em>}
               </div>
               <div className="queue-actions">
                 {["failed", "interrupted", "cancelled"].includes(job.status) && (
-                  <button onClick={() => void window.imageStudio.queue.retry(job.id)}>重试</button>
+                  <button disabled={pending} onClick={() => void mutate(() => window.imageStudio.queue.retry(job.id), "重试失败")}>重试</button>
                 )}
                 {["queued", "running"].includes(job.status) && (
-                  <button onClick={() => void window.imageStudio.queue.cancel(job.id)}>取消</button>
+                  <button disabled={pending} onClick={() => void mutate(() => window.imageStudio.queue.cancel(job.id), "取消失败")}>取消</button>
                 )}
                 {job.status !== "running" && (
-                  <button onClick={() => void window.imageStudio.queue.remove(job.id)}>移除</button>
+                  <button disabled={pending} onClick={() => void mutate(() => window.imageStudio.queue.remove(job.id), "移除失败")}>移除</button>
                 )}
               </div>
             </article>

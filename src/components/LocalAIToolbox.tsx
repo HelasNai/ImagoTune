@@ -4,6 +4,7 @@ import { formatBytes, formatDurationSeconds } from "../lib/format";
 import { validateUpscaleOutput } from "../lib/local-ai";
 import { b64FromDataUrl, b64ToDataUrl, fileToDataUrl } from "../lib/media";
 import { useDialog } from "./Dialogs";
+import { callIpc } from "./ipc";
 import { NavIcon } from "./icons";
 
 export type LocalAISource = {
@@ -133,7 +134,7 @@ export function LocalAIToolbox({
   const { requestConfirm } = useDialog();
 
   const refreshModels = useCallback(async () => {
-    const response = await window.imageStudio.localAI.models();
+    const response = await callIpc(() => window.imageStudio.localAI.models(), { fallbackError: "无法读取本地模型状态", onError: (message) => onNotice(message, true) });
     setModels(response.items || []);
   }, []);
 
@@ -143,7 +144,8 @@ export function LocalAIToolbox({
 
   useEffect(() => {
     void refreshModels();
-    void window.imageStudio.localAI.capabilities().then(setCapabilities);
+    void callIpc(() => window.imageStudio.localAI.capabilities(), { fallbackError: "无法读取本地 AI 能力", onError: (message) => onNotice(message, true) }).then(setCapabilities).catch(() => { /* callIpc 已上报 */ });
+    // 事件订阅白名单：直连。
     const unsubscribe = window.imageStudio.onLocalAIModelProgress((value) => {
       setModels((current) => current.some((item) => item.id === value.id)
         ? current.map((item) => item.id === value.id ? value : item)
@@ -170,8 +172,8 @@ export function LocalAIToolbox({
   };
 
   const pasteImage = async () => {
-    const response = await window.imageStudio.clipboard.readImage();
-    if (!response.b64) { onNotice(response.error || "剪贴板中没有图片", true); return; }
+    const response = await callIpc(() => window.imageStudio.clipboard.readImage(), { fallbackError: "剪贴板中没有图片", onError: (message) => onNotice(message, true) });
+    if (!response.b64) return;
     const dataUrl = b64ToDataUrl(response.b64);
     const decoded = await dataUrlToPixels(dataUrl);
     onSourceChange({ dataUrl, title: "剪贴板图片", recipe: { ...recipeForImportedSource(decoded.width, decoded.height), projectId: projectId || "inbox" } });
@@ -184,8 +186,7 @@ export function LocalAIToolbox({
       if (status?.installed) continue;
       setDownloadBusy(id);
       onNotice(`首次使用需要下载 ${status?.name || id}，完成后可离线使用`);
-      const response = await window.imageStudio.localAI.downloadModel(id);
-      if (!response.ok) throw new Error(response.error || `${id} 下载失败`);
+      await callIpc(() => window.imageStudio.localAI.downloadModel(id), { fallbackError: `${id} 下载失败` });
       await refreshModels();
     }
     setDownloadBusy("");
@@ -203,8 +204,8 @@ export function LocalAIToolbox({
       await ensureModels();
       const urls: Partial<Record<LocalAIModelId, string>> = {};
       for (const id of requiredModels) {
-        const response = await window.imageStudio.localAI.modelUrl(id);
-        if (!response.url) throw new Error(response.error || `${id} 未安装`);
+        const response = await callIpc(() => window.imageStudio.localAI.modelUrl(id), { fallbackError: `${id} 未安装` });
+        if (!response.url) throw new Error(`${id} 未安装`);
         urls[id] = response.url;
       }
       const taskId = crypto.randomUUID(); taskIdRef.current = taskId;
@@ -237,11 +238,11 @@ export function LocalAIToolbox({
           createdAt: new Date().toISOString(),
           postProcessing: [...(source.recipe.postProcessing || []), ...postProcessing],
         };
-        const archive = await window.imageStudio.localAI.archiveResult({ dataUrl, title: `${source.title} - ${actionLabels[action]}`, recipe });
+        const archive = await callIpc(() => window.imageStudio.localAI.archiveResult({ dataUrl, title: `${source.title} - ${actionLabels[action]}`, recipe }), { fallbackError: "未知错误", onError: (message) => onNotice("处理完成，但归档失败：" + message, true) });
         setResult({ dataUrl, width: value.width, height: value.height, recipe });
         setBusy(false); setProgress({ value: 100, message: `处理完成，用时 ${formatDurationSeconds(value.elapsedMs)}`, device: value.steps.at(-1)?.device || "" });
         onArchived({ b64: b64FromDataUrl(dataUrl), recipe, galleryId: archive.item?.id });
-        onNotice(archive.ok ? "本地处理完成，成品已作为新图片归档" : `处理完成，但归档失败：${archive.error || "未知错误"}`, !archive.ok);
+        if (archive.ok) onNotice("本地处理完成，成品已作为新图片归档", false);
         worker.terminate();
       };
       worker.onerror = (event) => { setBusy(false); onNotice(event.message || "本地推理 Worker 异常", true); worker.terminate(); };
@@ -257,16 +258,24 @@ export function LocalAIToolbox({
     workerRef.current.postMessage({ id: taskIdRef.current, type: "cancel" });
   };
 
+  const pauseDownload = async (id: LocalAIModelId) => {
+    await callIpc(() => window.imageStudio.localAI.pauseDownload(id), { fallbackError: "暂停下载失败", onError: (message) => onNotice(message, true) });
+  };
+
+  const downloadModel = async (id: LocalAIModelId) => {
+    await callIpc(() => window.imageStudio.localAI.downloadModel(id), { fallbackError: "下载失败", onError: (message) => onNotice(message, true) });
+    await refreshModels();
+  };
+
   const deleteModel = async (id: LocalAIModelId) => {
     if (!(await requestConfirm({ title: "删除本地模型", message: "删除后再次使用该功能需要重新下载模型，确定继续吗？", confirmLabel: "删除", danger: true }))) return;
-    const response = await window.imageStudio.localAI.deleteModel(id);
-    if (!response.ok) onNotice(response.error || "模型删除失败", true);
+    await callIpc(() => window.imageStudio.localAI.deleteModel(id), { fallbackError: "模型删除失败", onError: (message) => onNotice(message, true) });
     await refreshModels();
   };
 
   const chooseModelDir = async () => {
-    const response = await window.imageStudio.localAI.chooseModelDir();
-    if (!response.ok) { onNotice(response.error || "无法更换模型位置", true); return; }
+    const response = await callIpc(() => window.imageStudio.localAI.chooseModelDir(), { fallbackError: "无法更换模型位置", onError: (message) => onNotice(message, true) });
+    if (!response.ok) return;
     if (response.canceled) return;
     setCapabilities((current) => current && response.modelsDir ? { ...current, modelsDir: response.modelsDir } : current);
     if (response.items) setModels(response.items);
@@ -274,25 +283,24 @@ export function LocalAIToolbox({
   };
 
   const resetModelDir = async () => {
-    const response = await window.imageStudio.localAI.resetModelDir();
-    if (!response.ok) { onNotice(response.error || "无法恢复默认模型位置", true); return; }
+    const response = await callIpc(() => window.imageStudio.localAI.resetModelDir(), { fallbackError: "无法恢复默认模型位置", onError: (message) => onNotice(message, true) });
+    if (!response.ok) return;
     setCapabilities((current) => current && response.modelsDir ? { ...current, modelsDir: response.modelsDir } : current);
     if (response.items) setModels(response.items);
     onNotice("已恢复系统默认模型位置");
   };
 
   const openModelDir = async () => {
-    const response = await window.imageStudio.localAI.openModelDir();
-    if (!response.ok) onNotice(response.error || "无法打开模型目录", true);
+    await callIpc(() => window.imageStudio.localAI.openModelDir(), { fallbackError: "无法打开模型目录", onError: (message) => onNotice(message, true) });
   };
 
   const saveResult = async () => {
     if (!result) return;
-    const response = await window.imageStudio.saveImage({
+    const response = await callIpc(() => window.imageStudio.saveImage({
       dataUrl: result.dataUrl,
       suggestedName: `${source?.title || "本地处理结果"}-${actionLabels[action]}.png`,
       recipe: result.recipe,
-    });
+    }), { fallbackError: "保存失败", onError: (message) => onNotice(message, true) });
     if (!response.canceled) onNotice(`PNG 已保存：${response.path || "已完成"}`);
   };
 
@@ -368,7 +376,7 @@ export function LocalAIToolbox({
     <section className="model-manager card">
       <div className="section-head"><div><span className="eyebrow">MODEL MANAGER</span><h3>本地模型管理</h3><small>{capabilities?.modelsDir}</small></div><div className="model-directory-actions"><button className="secondary" onClick={() => void chooseModelDir()}>更换位置</button><button className="secondary" onClick={() => void openModelDir()}>打开目录</button><button className="secondary" onClick={() => void resetModelDir()}>恢复默认</button><button className="secondary" onClick={() => void refreshModels()}>刷新状态</button></div></div>
       <p className="model-directory-note">模型目录与软件安装位置、图库位置相互独立。更换目录时会复制已安装模型和未完成下载；原目录会保留，确认新目录可用后可自行清理。</p>
-      <div className="model-list">{models.map((model) => <article key={model.id}><div><strong>{model.name}{model.beta ? " · Beta" : ""}</strong><span>{model.version} · {formatBytes(model.size)} · {model.license}</span><a href={model.sourceUrl} target="_blank" rel="noreferrer">来源与许可证</a></div><div className="model-state"><span>{model.installed ? "已安装" : model.state === "partial" ? `已下载 ${model.progress}%` : model.state === "downloading" ? `下载中 ${model.progress}%` : model.state === "verifying" ? "校验中" : "未安装"}</span>{model.state === "downloading" ? <button onClick={() => void window.imageStudio.localAI.pauseDownload(model.id)}>暂停</button> : !model.installed ? <button disabled={Boolean(downloadBusy)} onClick={() => void window.imageStudio.localAI.downloadModel(model.id).then(refreshModels)}>{model.state === "partial" ? "继续" : "下载"}</button> : <button onClick={() => void deleteModel(model.id)}>删除</button>}</div></article>)}</div>
+      <div className="model-list">{models.map((model) => <article key={model.id}><div><strong>{model.name}{model.beta ? " · Beta" : ""}</strong><span>{model.version} · {formatBytes(model.size)} · {model.license}</span><a href={model.sourceUrl} target="_blank" rel="noreferrer">来源与许可证</a></div><div className="model-state"><span>{model.installed ? "已安装" : model.state === "partial" ? `已下载 ${model.progress}%` : model.state === "downloading" ? `下载中 ${model.progress}%` : model.state === "verifying" ? "校验中" : "未安装"}</span>{model.state === "downloading" ? <button onClick={() => void pauseDownload(model.id)}>暂停</button> : !model.installed ? <button disabled={Boolean(downloadBusy)} onClick={() => void downloadModel(model.id)}>{model.state === "partial" ? "继续" : "下载"}</button> : <button onClick={() => void deleteModel(model.id)}>删除</button>}</div></article>)}</div>
     </section>
   </section>;
 }

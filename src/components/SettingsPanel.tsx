@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { callIpc } from "./ipc";
 import { useStudio } from "./StudioContext";
 
 export function SettingsPanel({
@@ -22,20 +23,22 @@ export function SettingsPanel({
   const [zoomFactor, setZoomFactor] = useState(1);
 
   useEffect(() => {
-    void window.imageStudio.settings.get().then((value) => {
+    void callIpc(() => window.imageStudio.settings.get(), { fallbackError: "无法读取设置", onError: setError }).then((value) => {
       setBaseUrl(value.baseUrl);
       setSaveDir(value.saveDir || "");
-    });
-    void window.imageStudio.updates.get().then((value) => {
+    }).catch(() => { /* callIpc 已上报 */ });
+    void callIpc(() => window.imageStudio.updates.get(), { fallbackError: "无法读取更新状态", onError: setError }).then((value) => {
       setUpdateChannel(value.channel);
       setAutoUpdate(value.autoUpdate);
       setAppVersion(value.appVersion);
       setUpdateStatus(value.status);
       setAlphaUnlocked(value.alphaUnlocked);
-    });
+    }).catch(() => { /* callIpc 已上报 */ });
+    // best-effort：界面缩放的初始读取失败无需打扰用户（windowControls 白名单）。
     void window.imageStudio.windowControls.getZoom().then((r) => {
       if (r.ok && typeof r.factor === "number") setZoomFactor(r.factor);
     });
+    // 事件订阅白名单：直连。
     return window.imageStudio.onUpdateStatus((value) => setUpdateStatus(value));
   }, []);
 
@@ -63,18 +66,16 @@ export function SettingsPanel({
       setError("请输入聊天模型名称");
       return;
     }
-    await window.imageStudio.settings.save({ apiKey, baseUrl, imageModel, chatModel, autoArchive });
+    const result = await callIpc(() => window.imageStudio.settings.save({ apiKey, baseUrl, imageModel, chatModel, autoArchive }), { fallbackError: "设置保存失败", onError: setError });
+    if (!result.ok) return;
     setConfigured(true);
     setApiKey("");
     setNotice("设置已保存，密钥不会显示在界面中");
   };
 
   const chooseSaveDirectory = async () => {
-    const result = await window.imageStudio.settings.chooseSaveDir();
-    if (!result.ok) {
-      setError(result.error || "无法修改保存位置");
-      return;
-    }
+    const result = await callIpc(() => window.imageStudio.settings.chooseSaveDir(), { fallbackError: "无法修改保存位置", onError: setError });
+    if (!result.ok) return;
     if (result.canceled || !result.saveDir) return;
     setSaveDir(result.saveDir);
     await onSaveDirChanged();
@@ -82,59 +83,49 @@ export function SettingsPanel({
   };
 
   const resetSaveDirectory = async () => {
-    const result = await window.imageStudio.settings.resetSaveDir();
-    if (!result.ok || !result.saveDir) {
-      setError(result.error || "无法恢复系统默认保存位置");
-      return;
-    }
+    const result = await callIpc(() => window.imageStudio.settings.resetSaveDir(), { fallbackError: "无法恢复系统默认保存位置", onError: setError });
+    if (!result.ok || !result.saveDir) return;
     setSaveDir(result.saveDir);
     await onSaveDirChanged();
     setNotice("已恢复系统“图片”文件夹中的默认保存位置");
   };
 
   const openSaveDirectory = async () => {
-    const result = await window.imageStudio.settings.openSaveDir();
-    if (!result.ok) setError(result.error || "无法打开保存位置");
+    await callIpc(() => window.imageStudio.settings.openSaveDir(), { fallbackError: "无法打开保存位置", onError: setError });
   };
 
   const testSettings = async () => {
     setTestMessage("测试中…");
-    const result = await window.imageStudio.settings.test();
+    const result = await callIpc(() => window.imageStudio.settings.test(), { fallbackError: "测试连接失败", onError: setTestMessage });
     setTestMessage(result.message);
   };
 
   const setUpdateChannelPreference = async (channel: UpdateChannel) => {
     const previous = updateChannel;
     setUpdateChannel(channel);
-    const result = await window.imageStudio.updates.setChannel(channel);
-    if (!result.ok) {
-      setUpdateChannel(previous);
-      setError("无法保存更新渠道设置");
-    }
+    const result = await callIpc(() => window.imageStudio.updates.setChannel(channel), { fallbackError: "无法保存更新渠道设置", onError: () => setError("无法保存更新渠道设置") });
+    if (!result.ok) setUpdateChannel(previous);
   };
 
   const setAutoUpdatePreference = async (enabled: boolean) => {
     setAutoUpdate(enabled);
-    const result = await window.imageStudio.updates.setAutoUpdate(enabled);
-    if (!result.ok) {
-      setAutoUpdate(!enabled);
-      setError("无法保存自动更新设置");
-    }
+    const result = await callIpc(() => window.imageStudio.updates.setAutoUpdate(enabled), { fallbackError: "无法保存自动更新设置", onError: () => setError("无法保存自动更新设置") });
+    if (!result.ok) setAutoUpdate(!enabled);
   };
 
   const checkUpdates = async () => {
     setUpdateStatus((current) => ({ ...current, phase: "checking", message: "正在检查更新…" }));
-    const result = await window.imageStudio.updates.check();
+    const result = await callIpc(() => window.imageStudio.updates.check(), { fallbackError: "检查更新失败", onError: (message) => setUpdateStatus((current) => ({ ...current, phase: "error", message })) });
     if (!result.ok) setUpdateStatus((current) => ({ ...current, phase: "error", message: result.message }));
   };
 
   const downloadUpdate = async () => {
-    const result = await window.imageStudio.updates.download();
+    const result = await callIpc(() => window.imageStudio.updates.download(), { fallbackError: "下载更新失败", onError: setError });
     if (!result.ok) setError(result.message);
   };
 
   const installUpdate = async () => {
-    const result = await window.imageStudio.updates.install();
+    const result = await callIpc(() => window.imageStudio.updates.install(), { fallbackError: "安装更新失败", onError: setError });
     if (!result.ok) setError(result.message);
   };
 
@@ -148,25 +139,19 @@ export function SettingsPanel({
     alphaClickCount.current += 1;
     if (alphaClickCount.current >= 5) {
       alphaClickCount.current = 0;
-      void window.imageStudio.updates.setAlphaUnlocked(true).then((result) => {
-        if (!result.ok) {
-          setError(result.error || "无法解锁 Alpha 测试渠道");
-          return;
-        }
+      void callIpc(() => window.imageStudio.updates.setAlphaUnlocked(true), { fallbackError: "无法解锁 Alpha 测试渠道", onError: setError }).then((result) => {
+        if (!result.ok) return;
         setAlphaUnlocked(true);
         setNotice("已解锁 Alpha 测试渠道");
-      });
+      }).catch(() => { /* callIpc 已上报 */ });
       return;
     }
     alphaClickTimer.current = window.setTimeout(() => { alphaClickCount.current = 0; }, 1500);
   };
 
   const exitAlphaChannel = async () => {
-    const result = await window.imageStudio.updates.setAlphaUnlocked(false);
-    if (!result.ok) {
-      setError(result.error || "无法退出内测渠道");
-      return;
-    }
+    const result = await callIpc(() => window.imageStudio.updates.setAlphaUnlocked(false), { fallbackError: "无法退出内测渠道", onError: setError });
+    if (!result.ok) return;
     setAlphaUnlocked(false);
     if (result.channel) setUpdateChannel(result.channel);
     setNotice("已退出内测渠道");

@@ -14,9 +14,10 @@ import { StudioProvider } from "./components/StudioContext";
 import { useComposer } from "./components/useComposer";
 import { recipeFromQueueInput } from "./components/queue-utils";
 import { dataUrlFor } from "./components/media-utils";
+import { callIpc } from "./components/ipc";
 import type { Mode, Output } from "./components/types";
 import { createRecipe, variationOptions } from "./lib/creative";
-import { formatDurationSeconds, formatTags } from "./lib/format";
+import { formatDateTime, formatDurationSeconds, formatTags } from "./lib/format";
 import { b64ToDataUrl } from "./lib/media";
 import {
   parseTutorialState,
@@ -64,7 +65,7 @@ function App() {
 
   const refreshWorkspace = useCallback(async () => {
     try {
-      const workspace = await window.imageStudio.gallery.workspace();
+      const workspace = await callIpc(() => window.imageStudio.gallery.workspace(), { fallbackError: "本地图库读取失败" });
       setProjects(workspace.projects || []);
       if (!workspace.projects.some((project) => project.id === projectId)) {
         setProjectId("inbox");
@@ -74,8 +75,10 @@ function App() {
     }
   }, [projectId]);
   const refreshQueue = useCallback(async () => {
-    const result = await window.imageStudio.queue.list();
-    setQueueItems(result.items || []);
+    try {
+      const result = await callIpc(() => window.imageStudio.queue.list(), { fallbackError: "队列读取失败", onError: setError });
+      setQueueItems(result.items || []);
+    } catch { /* callIpc 已上报 */ }
   }, []);
 
   const { requestText, requestConfirm } = useDialog();
@@ -106,9 +109,9 @@ function App() {
   useEffect(() => {
     const bootstrap = async () => {
       const [settingsValue, workspaceValue, queueValue] = await Promise.all([
-        window.imageStudio.settings.get(),
-        window.imageStudio.gallery.workspace(),
-        window.imageStudio.queue.list(),
+        callIpc(() => window.imageStudio.settings.get(), { fallbackError: "无法读取设置", onError: setError }),
+        callIpc(() => window.imageStudio.gallery.workspace(), { fallbackError: "本地图库读取失败", onError: setError }),
+        callIpc(() => window.imageStudio.queue.list(), { fallbackError: "队列读取失败", onError: setError }),
       ]);
       const hasTutorialState = window.localStorage.getItem(TUTORIAL_STORAGE_KEY) !== null;
       if (!hasTutorialState && shouldInitializeAsExistingUser({
@@ -129,9 +132,9 @@ function App() {
       setQueueItems(queueValue.items || []);
     };
     void bootstrap().catch(() => { /* Individual panels show their own recoverable errors. */ });
-    void window.imageStudio.updates.get().then((value) => {
+    void callIpc(() => window.imageStudio.updates.get(), { fallbackError: "无法读取版本信息", onError: setError }).then((value) => {
       setAppVersion(value.appVersion);
-    });
+    }).catch(() => { /* callIpc 已上报 */ });
     void refreshWorkspace();
   }, [initialTutorial, refreshWorkspace, updateTutorialState]);
 
@@ -307,7 +310,7 @@ function App() {
 
   function openLocalAI(output: Output, action: LocalAIAction) {
     setLocalAISource({
-      title: `生成结果-${new Date(output.createdAt).toLocaleString()}`,
+      title: `生成结果-${formatDateTime(output.createdAt)}`,
       dataUrl: dataUrlFor(output),
       recipe: output.recipe,
       sourceId: output.galleryId,

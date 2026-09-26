@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { LocalAIAction } from "./LocalAIToolbox";
 import { NavIcon } from "./icons";
+import { callIpc } from "./ipc";
 import { useStudio } from "./StudioContext";
 import { b64ToFile, dataUrlFor, drawContain, readImage } from "./media-utils";
 import { formatGenerationParameters, variationOptions } from "../lib/creative";
@@ -72,11 +73,11 @@ export function ResultPanel({
   const portalTarget = document.querySelector(".app") ?? document.body;
 
   const saveOutput = async (output: Output) => {
-    const result = await window.imageStudio.saveImage({
+    const result = await callIpc(() => window.imageStudio.saveImage({
       dataUrl: dataUrlFor(output),
       suggestedName: "image-studio-" + new Date(output.createdAt).toISOString().replace(/[:.]/g, "-") + ".png",
       recipe: output.recipe,
-    });
+    }), { fallbackError: "保存失败", onError: setError });
     if (!result.canceled) setNotice("已保存：" + (result.path || ""));
   };
 
@@ -84,11 +85,11 @@ export function ResultPanel({
     if (!exportOutput) return;
     try {
       const dataUrl = await exportSocialCanvas(exportOutput, socialPreset, socialFill);
-      const result = await window.imageStudio.saveImage({
+      const result = await callIpc(() => window.imageStudio.saveImage({
         dataUrl,
         suggestedName: "image-studio-social-" + socialPreset + ".png",
         recipe: { ...exportOutput.recipe, size: socialPreset },
-      });
+      }), { fallbackError: "导出失败" });
       if (!result.canceled) {
         setNotice("社交平台成品已保存：" + (result.path || ""));
         setExportOutput(null);
