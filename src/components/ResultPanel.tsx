@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import { createPortal } from "react-dom";
 import type { LocalAIAction } from "./LocalAIToolbox";
 import { NavIcon } from "./icons";
-import { callIpc } from "./ipc";
 import { useStudio } from "./StudioContext";
+import { useCopyImage, useCopyText } from "./useCopy";
+import { useEscapeKey } from "./useKeyboard";
+import { useSaveImage } from "./useSaveImage";
 import { b64ToFile, dataUrlFor, drawContain, readImage } from "./media-utils";
 import { formatGenerationParameters, variationOptions } from "../lib/creative";
 import { modeLabel, parsePixelSize } from "../lib/format";
@@ -64,7 +66,10 @@ export function ResultPanel({
   onCreateVariation: (source: Output, option: (typeof variationOptions)[number]) => void;
   onOpenPreview: (output: Output) => void;
 }) {
-  const { setError, setNotice } = useStudio();
+  const { setError, setNotice, notify } = useStudio();
+  const copyText = useCopyText(notify);
+  const copyImage = useCopyImage(notify);
+  const saveImage = useSaveImage(notify);
   const [exportOutput, setExportOutput] = useState<Output | null>(null);
   const [socialPreset, setSocialPreset] = useState("1080x1080");
   const [socialFill, setSocialFill] = useState<"light" | "blur">("light");
@@ -73,40 +78,32 @@ export function ResultPanel({
   const portalTarget = document.querySelector(".app") ?? document.body;
 
   const saveOutput = async (output: Output) => {
-    const result = await callIpc(() => window.imageStudio.saveImage({
+    await saveImage({
       dataUrl: dataUrlFor(output),
       suggestedName: "image-studio-" + new Date(output.createdAt).toISOString().replace(/[:.]/g, "-") + ".png",
       recipe: output.recipe,
-    }), { fallbackError: "保存失败", onError: setError });
-    if (!result.canceled) setNotice("已保存：" + (result.path || ""));
+    }, { onSaved: (path) => setNotice("已保存：" + path) });
   };
 
   const exportSocial = async () => {
     if (!exportOutput) return;
     try {
       const dataUrl = await exportSocialCanvas(exportOutput, socialPreset, socialFill);
-      const result = await callIpc(() => window.imageStudio.saveImage({
+      const saved = await saveImage({
         dataUrl,
         suggestedName: "image-studio-social-" + socialPreset + ".png",
         recipe: { ...exportOutput.recipe, size: socialPreset },
-      }), { fallbackError: "导出失败" });
-      if (!result.canceled) {
-        setNotice("社交平台成品已保存：" + (result.path || ""));
-        setExportOutput(null);
-      }
+      }, {
+        fallbackError: "导出失败",
+        onSaved: (path) => setNotice("社交平台成品已保存：" + path),
+      });
+      if (saved) setExportOutput(null);
     } catch (cause) {
       setError((cause as Error).message || "导出失败");
     }
   };
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      if (exportOutput) setExportOutput(null);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [exportOutput]);
+  useEscapeKey(useCallback(() => setExportOutput(null), []), Boolean(exportOutput));
 
   const panelSection = (
     <section className="card results">
@@ -129,12 +126,12 @@ export function ResultPanel({
                 <strong>{output.recipe.variationLabel || modeLabel(output.recipe, { fallback: "新生成图片" })}</strong>
                 <small>{output.recipe.size} · {output.recipe.projectId}{output.recipe.seed ? " · Seed " + output.recipe.seed : ""}</small>
               </div>
-              {output.recipe.seed && <button className="seed-chip" onClick={() => void window.imageStudio.clipboard.copyText(output.recipe.seed!).then(() => setNotice("Seed 已复制"))}>Seed：{output.recipe.seed} · 点击复制</button>}
+              {output.recipe.seed && <button className="seed-chip" onClick={() => void copyText(output.recipe.seed!, "Seed 已复制")}>Seed：{output.recipe.seed} · 点击复制</button>}
               <div className="result-actions">
                 <button onClick={() => void saveOutput(output)}>保存 PNG</button>
-                <button onClick={() => void window.imageStudio.clipboard.copyImage(output.b64).then(() => setNotice("图片已复制到剪贴板"))}>复制图片</button>
-                <button onClick={() => void window.imageStudio.clipboard.copyText(output.recipe.prompt).then(() => setNotice("提示词已复制"))}>复制提示词</button>
-                <button onClick={() => void window.imageStudio.clipboard.copyText(formatGenerationParameters(output.recipe)).then(() => setNotice("完整参数已复制"))}>复制参数</button>
+                <button onClick={() => void copyImage(output.b64, "图片已复制到剪贴板")}>复制图片</button>
+                <button onClick={() => void copyText(output.recipe.prompt, "提示词已复制")}>复制提示词</button>
+                <button onClick={() => void copyText(formatGenerationParameters(output.recipe), "完整参数已复制")}>复制参数</button>
                 <button onClick={() => onRegenerate(output)}>再生成</button>
                 <button onClick={() => onContinueEdit(output)}>继续编辑</button>
                 <button onClick={() => onStartOutpaint(output)}>智能扩图</button>

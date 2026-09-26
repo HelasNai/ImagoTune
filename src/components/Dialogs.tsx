@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { NavIcon } from "./icons";
+import { useEscapeKey } from "./useKeyboard";
 
 export type TextDialogOptions = {
   title: string;
@@ -49,15 +50,11 @@ function DialogModal({ request, onDone }: { request: DialogRequest; onDone: (val
   }, [request]);
 
   // Escape 取消两种对话框（输入法组合态不响应）；Enter 由输入框自身处理。
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.isComposing) return;
-      event.preventDefault();
-      onDone(request.kind === "text" ? null : false);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [request, onDone]);
+  useEscapeKey(useCallback((event: KeyboardEvent) => {
+    if (event.isComposing) return;
+    event.preventDefault();
+    onDone(request.kind === "text" ? null : false);
+  }, [request, onDone]));
 
   const cancel = () => onDone(request.kind === "text" ? null : false);
   const confirm = () => onDone(request.kind === "text" ? value : true);

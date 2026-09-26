@@ -15,6 +15,8 @@ import { useComposer } from "./components/useComposer";
 import { recipeFromQueueInput } from "./components/queue-utils";
 import { dataUrlFor } from "./components/media-utils";
 import { callIpc } from "./components/ipc";
+import { useCopyImage } from "./components/useCopy";
+import { useEscapeKey } from "./components/useKeyboard";
 import type { Mode, Output } from "./components/types";
 import { createRecipe, variationOptions } from "./lib/creative";
 import { formatDateTime, formatDurationSeconds, formatTags } from "./lib/format";
@@ -65,6 +67,7 @@ function App() {
       setNotice(message);
     }
   }, []);
+  const copyImage = useCopyImage(notify);
   const [localAISource, setLocalAISource] = useState<LocalAISource | null>(null);
   const [localAIAction, setLocalAIAction] = useState<LocalAIAction>("upscale");
 
@@ -176,15 +179,10 @@ function App() {
     return () => window.clearTimeout(timer);
   }, [error, errorInfo]);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setPreviewContextMenu(null);
-      if (preview) setPreview(null);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [preview]);
+  useEscapeKey(useCallback(() => {
+    setPreviewContextMenu(null);
+    if (preview) setPreview(null);
+  }, [preview]));
 
   useEffect(() => window.imageStudio.onTutorialOpen(() => setTutorialView("center")), []);
 
@@ -463,7 +461,7 @@ function App() {
               >
                 <button
                   onClick={() => {
-                    void window.imageStudio.clipboard.copyImage(preview.b64).then(() => setNotice("图片已复制到剪贴板"));
+                    void copyImage(preview.b64, "图片已复制到剪贴板");
                     setPreviewContextMenu(null);
                   }}
                 >

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { MaskPainter } from "./MaskPainter";
 import { NavIcon } from "./icons";
 import { qualities } from "./useComposer";
@@ -6,6 +6,8 @@ import type { ComposerActions, ComposerState } from "./useComposer";
 import { outpaintQuickRatios, ratioOptions, resolutionOptions } from "../lib/creative";
 import { compositeFileKey } from "../lib/format";
 import { useStudio } from "./StudioContext";
+import { useCopyText } from "./useCopy";
+import { useObjectUrl } from "./useObjectUrl";
 import type { Mode } from "./types";
 
 function ReferenceThumbnail({
@@ -19,12 +21,7 @@ function ReferenceThumbnail({
   onCopy: (file: File) => void;
   onRemove: () => void;
 }) {
-  const [src, setSrc] = useState("");
-  useEffect(() => {
-    const url = URL.createObjectURL(file);
-    setSrc(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
+  const src = useObjectUrl(file);
   return <div className="reference-item">
     <img src={src} alt={`参考图 ${index + 1}`} />
     <div><strong>参考图 {index + 1}</strong><span title={file.name}>{file.name}</span></div>
@@ -50,7 +47,8 @@ export function ComposerPanel({
   composerState: ComposerState;
   composerActions: ComposerActions;
 }) {
-  const { projectId, setProjectId, tagsText, setTagsText, chatModel, autoArchive, setNotice } = useStudio();
+  const { projectId, setProjectId, tagsText, setTagsText, chatModel, autoArchive, notify } = useStudio();
+  const copyText = useCopyText(notify);
   const {
     prompt,
     negativePrompt,
@@ -207,7 +205,7 @@ export function ComposerPanel({
           {[{ key: "zh", label: "中文提示词", value: reverseResult.zh }, { key: "en", label: "English Prompt", value: reverseResult.en }].map((item) => item.value && (
             <article key={item.key}>
               <strong>{item.label}</strong><p>{item.value}</p>
-              <div><button onClick={() => applyReversePrompt(item.value, "replace")}>替换当前</button><button onClick={() => applyReversePrompt(item.value, "append")}>追加</button><button onClick={() => void window.imageStudio.clipboard.copyText(item.value).then(() => setNotice("反推提示词已复制"))}>复制</button></div>
+              <div><button onClick={() => applyReversePrompt(item.value, "replace")}>替换当前</button><button onClick={() => applyReversePrompt(item.value, "append")}>追加</button><button onClick={() => void copyText(item.value, "反推提示词已复制")}>复制</button></div>
             </article>
           ))}
         </div>}

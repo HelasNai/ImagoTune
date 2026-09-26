@@ -19,6 +19,8 @@ import {
 } from "../lib/outpaint";
 import type { ConfirmDialogOptions, TextDialogOptions } from "./Dialogs";
 import { callIpc } from "./ipc";
+import type { StudioNotify } from "./StudioContext";
+import { useCopyImage } from "./useCopy";
 import { b64ToFile, canvasToBlob, drawContain, fileToDataUrl, readImage } from "../lib/media";
 import { compositeFileKey, formatTags, uniqueBy } from "../lib/format";
 import type { Mode, Output } from "./types";
@@ -205,6 +207,19 @@ export function useComposer({
   const [progress, setProgress] = useState<AppProgress | null>(null);
   const [enhancing, setEnhancing] = useState(false);
 
+  // useComposer 运行在 DialogProvider 外，注入的 setError/setNotice 需适配为统一通知签名，供 useCopy 等复用。
+  const notify = useCallback<StudioNotify>((message, isError = false) => {
+    if (!message) return;
+    if (isError) {
+      setNotice("");
+      setError(message);
+    } else {
+      setError("");
+      setNotice(message);
+    }
+  }, [setError, setNotice]);
+  const copyImage = useCopyImage(notify);
+
   const presetSize = sizeMatrix[resolution][ratio];
   const customCheck = validateCanvasSize(customSize);
   const chosenSize = customSizeEnabled && customCheck.ok ? customCheck.size : presetSize;
@@ -363,13 +378,7 @@ export function useComposer({
   };
 
   const copyReferenceImage = async (file: File) => {
-    try {
-      const result = await window.imageStudio.clipboard.copyImage(await fileToDataUrl(file));
-      if (!result.ok) throw new Error(result.error || "复制失败");
-      setNotice("参考图已复制到剪贴板");
-    } catch (cause) {
-      setError((cause as Error).message || "无法复制参考图");
-    }
+    await copyImage(await fileToDataUrl(file), "参考图已复制到剪贴板", "复制失败");
   };
 
   const chooseOutpaintPreset = (preset: string) => {

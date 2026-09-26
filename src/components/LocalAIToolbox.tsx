@@ -5,6 +5,8 @@ import { validateUpscaleOutput } from "../lib/local-ai";
 import { b64FromDataUrl, b64ToDataUrl, fileToDataUrl } from "../lib/media";
 import { useDialog } from "./Dialogs";
 import { callIpc } from "./ipc";
+import { useCopyImage } from "./useCopy";
+import { useSaveImage } from "./useSaveImage";
 import { NavIcon } from "./icons";
 import type { StudioNotify } from "./StudioContext";
 
@@ -133,6 +135,8 @@ export function LocalAIToolbox({
   const taskIdRef = useRef("");
   const fileRef = useRef<HTMLInputElement>(null);
   const { requestConfirm } = useDialog();
+  const copyImage = useCopyImage(onNotice);
+  const saveImage = useSaveImage(onNotice);
 
   const refreshModels = useCallback(async () => {
     const response = await callIpc(() => window.imageStudio.localAI.models(), { fallbackError: "无法读取本地模型状态", onError: (message) => onNotice(message, true) });
@@ -297,18 +301,16 @@ export function LocalAIToolbox({
 
   const saveResult = async () => {
     if (!result) return;
-    const response = await callIpc(() => window.imageStudio.saveImage({
+    await saveImage({
       dataUrl: result.dataUrl,
       suggestedName: `${source?.title || "本地处理结果"}-${actionLabels[action]}.png`,
       recipe: result.recipe,
-    }), { fallbackError: "保存失败", onError: (message) => onNotice(message, true) });
-    if (!response.canceled) onNotice(`PNG 已保存：${response.path || "已完成"}`);
+    }, { onSaved: (path) => onNotice(`PNG 已保存：${path || "已完成"}`) });
   };
 
   const copyResult = async () => {
     if (!result) return;
-    const response = await window.imageStudio.clipboard.copyImage(b64FromDataUrl(result.dataUrl));
-    onNotice(response.ok ? "处理结果已复制到剪贴板" : response.error || "复制图片失败", !response.ok);
+    await copyImage(b64FromDataUrl(result.dataUrl), "处理结果已复制到剪贴板", "复制图片失败");
   };
 
   const previewStyle = background === "white" ? { background: "#fff" } : background === "gray" ? { background: "#d8dde6" } : background === "custom" ? { background: backgroundColor } : undefined;

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { canvasToPngFile, imageSizeFromFile } from "../lib/media";
+import { useObjectUrl } from "./useObjectUrl";
 
 type Point = { x: number; y: number };
 type Stroke = { points: Point[]; size: number };
@@ -24,11 +25,12 @@ async function createMask(strokes: Stroke[], dimensions: Dimensions) {
 }
 
 export function MaskPainter({ image, onMaskChange }: { image: File | null; onMaskChange: (file: File | null) => void }) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null); const drawing = useRef(false); const [dimensions, setDimensions] = useState<Dimensions | null>(null); const [strokes, setStrokes] = useState<Stroke[]>([]); const [brushSize, setBrushSize] = useState(38); const [previewUrl, setPreviewUrl] = useState("");
+  const canvasRef = useRef<HTMLCanvasElement | null>(null); const drawing = useRef(false); const [dimensions, setDimensions] = useState<Dimensions | null>(null); const [strokes, setStrokes] = useState<Stroke[]>([]); const [brushSize, setBrushSize] = useState(38);
+  const previewUrl = useObjectUrl(image);
 
   useEffect(() => {
-    setStrokes([]); onMaskChange(null); if (!image) { setDimensions(null); setPreviewUrl(""); return; }
-    const url = URL.createObjectURL(image); setPreviewUrl(url); imageSizeFromFile(image).then(setDimensions).catch(() => setDimensions(null)); return () => URL.revokeObjectURL(url);
+    setStrokes([]); onMaskChange(null); if (!image) { setDimensions(null); return; }
+    imageSizeFromFile(image).then(setDimensions).catch(() => setDimensions(null));
   }, [image, onMaskChange]);
 
   useEffect(() => {

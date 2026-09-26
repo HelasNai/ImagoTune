@@ -13,6 +13,7 @@ import {
   tutorialProgress,
 } from "../lib/tutorial";
 import { NavIcon } from "./icons";
+import { useGlobalKeyDown } from "./useKeyboard";
 
 export type TutorialView = "none" | "welcome" | "tour" | "center";
 
@@ -141,6 +142,22 @@ export function TutorialExperience({
     };
   }, [currentMode, step.id, step.target, view]);
 
+  // Escape / 方向键导航经共享 hook；Tab 焦点陷阱保留自身逻辑（下方独立监听）。
+  useGlobalKeyDown((event) => {
+    if (view === "none") return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      if (view === "tour") pauseTour();
+      else if (view === "welcome") {
+        onStateChange(postponeTutorial(state));
+        onViewChange("none");
+      } else onViewChange("none");
+      return;
+    }
+    if (view === "tour" && event.key === "ArrowRight") { event.preventDefault(); goToStep(state.currentStep + 1); return; }
+    if (view === "tour" && event.key === "ArrowLeft") { event.preventDefault(); goToStep(state.currentStep - 1); return; }
+  }, view !== "none");
+
   useEffect(() => {
     if (view === "none") return;
     const root = overlayRef.current;
@@ -150,17 +167,6 @@ export function TutorialExperience({
     const primaryAction = focusItems.find((item) => item.classList.contains("primary"));
     (primaryAction || focusItems[0])?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        if (view === "tour") pauseTour();
-        else if (view === "welcome") {
-          onStateChange(postponeTutorial(state));
-          onViewChange("none");
-        } else onViewChange("none");
-        return;
-      }
-      if (view === "tour" && event.key === "ArrowRight") { event.preventDefault(); goToStep(state.currentStep + 1); return; }
-      if (view === "tour" && event.key === "ArrowLeft") { event.preventDefault(); goToStep(state.currentStep - 1); return; }
       if (event.key !== "Tab") return;
       const items = focusableElements(root);
       if (!items.length) return;
