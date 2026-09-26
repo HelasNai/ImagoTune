@@ -78,17 +78,9 @@ export type SubmitOverride = {
   variationLabel?: string;
 };
 
-function fileToPayload(file: File) {
-  return new Promise<{ name: string; type: string; data: number[] }>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve({
-      name: file.name,
-      type: file.type,
-      data: Array.from(new Uint8Array(reader.result as ArrayBuffer)),
-    });
-    reader.onerror = () => reject(reader.error);
-    reader.readAsArrayBuffer(file);
-  });
+async function fileToPayload(file: File): Promise<{ name: string; type: string; data: number[] }> {
+  const buffer = await file.arrayBuffer();
+  return { name: file.name, type: file.type, data: Array.from(new Uint8Array(buffer)) };
 }
 
 function fileToDataUrl(file: File) {
