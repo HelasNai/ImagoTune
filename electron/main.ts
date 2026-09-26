@@ -18,6 +18,8 @@ import { LocalAIModelManager } from "./local-ai-model-manager";
 import { LocalAIModelId, localAIModelById } from "./local-ai-models";
 import { createDirectoryManager } from "./directory-manager";
 import { DEFAULT_CHAT_MODEL, DEFAULT_IMAGE_MODEL, INBOX_PROJECT_ID } from "./constants";
+import { errorMessage, joinBase, withTimeout } from "./net-utils";
+import { nowISO } from "./fs-utils";
 import {
   CLIPBOARD_COPY_IMAGE, CLIPBOARD_COPY_TEXT, CLIPBOARD_READ_IMAGE,
   GALLERY_BULK, GALLERY_DELETE, GALLERY_EXPORT_ZIP, GALLERY_LIST, GALLERY_LOAD_IMAGE,
@@ -303,7 +305,7 @@ async function downloadAppUpdate() {
     await autoUpdater.downloadUpdate();
     return { ok: true, message: "更新下载完成。" };
   } catch (error) {
-    const message = (error as Error).message || "更新下载失败";
+    const message = errorMessage(error, "更新下载失败");
     publishUpdateStatus({ phase: "error", message });
     return { ok: false, message };
   }
@@ -343,7 +345,7 @@ async function checkForAppUpdate() {
     await autoUpdater.checkForUpdates();
     return { ok: true, message: "已完成更新检查。" };
   } catch (error) {
-    const message = (error as Error).message || "检查更新失败";
+    const message = errorMessage(error, "检查更新失败");
     publishUpdateStatus({ phase: "error", message });
     return { ok: false, message };
   } finally {
@@ -466,7 +468,8 @@ async function callImages(win: BrowserWindow, endpoint: "generations" | "edits",
   const recipe = normalizeRecipe(input, endpoint === "edits" ? "edit" : "generate");
   const effectivePrompt = composeImagePrompt(recipe);
   const controller = new AbortController(); controllers.set(input.requestId, controller);
-  const timer = setTimeout(() => { timedOutRequests.add(input.requestId); controller.abort(); }, 300_000);
+  // 必须保留两项副作用：controllers 记账供 queue:cancel/IMAGE_CANCEL 中止，timedOutRequests 区分超时与用户取消。
+  const timeout = withTimeout(300_000, () => { timedOutRequests.add(input.requestId); controller.abort(); });
   const startedAt = Date.now();
   const heartbeat = setInterval(() => {
     const seconds = Math.max(1, Math.floor((Date.now() - startedAt) / 1000));
@@ -479,7 +482,7 @@ async function callImages(win: BrowserWindow, endpoint: "generations" | "edits",
     if (endpoint === "generations") {
       const body: Record<string, unknown> = { model: recipe.model, prompt: effectivePrompt, size: recipe.size, n: recipe.n, response_format: "b64_json", stream: true };
       if (recipe.quality && recipe.quality !== "auto") body.quality = recipe.quality;
-      response = await fetch(`${baseUrl.replace(/\/$/, "")}/images/generations`, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
+      response = await fetch(joinBase(baseUrl, "/images/generations"), { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
     } else {
       const edit = input as EditInput;
       const form = new FormData();
@@ -487,7 +490,7 @@ async function callImages(win: BrowserWindow, endpoint: "generations" | "edits",
       if (recipe.quality && recipe.quality !== "auto") form.append("quality", recipe.quality);
       form.append("image", new Blob([Buffer.from(edit.image.data)], { type: edit.image.type || "application/octet-stream" }), edit.image.name);
       if (edit.mask) form.append("mask", new Blob([Buffer.from(edit.mask.data)], { type: edit.mask.type || "application/octet-stream" }), edit.mask.name);
-      response = await fetch(`${baseUrl.replace(/\/$/, "")}/images/edits`, { method: "POST", headers: { Authorization: `Bearer ${apiKey}` }, body: form, signal: controller.signal });
+      response = await fetch(joinBase(baseUrl, "/images/edits"), { method: "POST", headers: { Authorization: `Bearer ${apiKey}` }, body: form, signal: controller.signal });
     }
     if (!response.ok) { const text = await response.text(); throw formatHttpError(response.status, text); }
     emit(win, input.requestId, "正在接收图片", 92, "图片服务已响应，正在读取结果");
@@ -510,7 +513,7 @@ async function callImages(win: BrowserWindow, endpoint: "generations" | "edits",
       try {
         gallery = await archiveImages(images, normalizedInput, true);
       } catch (error) {
-        archiveWarning = "图片已经生成成功，但自动归档失败：" + ((error as Error).message || "无法写入本地图库") + "。请立即在结果区手动保存，避免图片丢失。";
+        archiveWarning = "图片已经生成成功，但自动归档失败：" + errorMessage(error, "无法写入本地图库") + "。请立即在结果区手动保存，避免图片丢失。";
         emit(win, input.requestId, "生成完成，归档失败", 100, archiveWarning);
       }
     }
@@ -523,13 +526,13 @@ async function callImages(win: BrowserWindow, endpoint: "generations" | "edits",
         timedOut: timedOutRequests.has(input.requestId),
       }));
     }
-    const message = (error as Error).message || "生成失败";
+    const message = errorMessage(error, "生成失败");
     if (/quality/i.test(message) && /(unsupported|unknown|invalid|不支持)/i.test(message)) {
       throw new GenerationError({ category: "parameters", title: "清晰度参数不兼容", message: "当前接口不支持所选清晰度参数。", suggestion: "切换为“自动”后手动重试。", retryable: false, details: message });
     }
     throw new GenerationError(classifyRuntimeError(error));
   } finally {
-    clearTimeout(timer);
+    timeout.clear();
     clearInterval(heartbeat);
     controllers.delete(input.requestId);
     cancelledRequests.delete(input.requestId);
@@ -539,23 +542,22 @@ async function callImages(win: BrowserWindow, endpoint: "generations" | "edits",
 
 async function enhancePromptWithModel(prompt: string, mode: "generate" | "edit") {
   const { apiKey, baseUrl, chatModel } = await config(); if (!baseUrl || !apiKey) throw new Error("请先保存基础地址和 API 密钥");
-  const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 60_000);
+  const timeout = withTimeout(60_000);
   try {
-    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: chatModel, temperature: 0.7, max_tokens: 1200, messages: [{ role: "system", content: "你是图片提示词优化助手。保留用户意图，不增加不相关主体；输出一段可以直接用于图片生成的中文提示词，不要解释，不要加引号。" }, { role: "user", content: `模式：${mode === "edit" ? "图片编辑，保持主体不变" : "文生图"}\n原始提示词：${prompt}` }] }), signal: controller.signal });
+    const response = await fetch(joinBase(baseUrl, "/chat/completions"), { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: chatModel, temperature: 0.7, max_tokens: 1200, messages: [{ role: "system", content: "你是图片提示词优化助手。保留用户意图，不增加不相关主体；输出一段可以直接用于图片生成的中文提示词，不要解释，不要加引号。" }, { role: "user", content: `模式：${mode === "edit" ? "图片编辑，保持主体不变" : "文生图"}\n原始提示词：${prompt}` }] }), signal: timeout.signal });
     if (!response.ok) throw new Error(`提示词增强接口返回 ${response.status}`); const json = await response.json() as { choices?: Array<{ message?: { content?: string } }> }; const content = json.choices?.[0]?.message?.content?.trim(); if (!content) throw new Error("提示词增强没有返回内容"); return content;
-  } catch (error) { if ((error as Error).name === "AbortError") throw new Error("提示词增强超时，请保留原提示词重试"); throw error; } finally { clearTimeout(timer); }
+  } catch (error) { if ((error as Error).name === "AbortError") throw new Error("提示词增强超时，请保留原提示词重试"); throw error; } finally { timeout.clear(); }
 }
 
 async function reversePromptWithModel(image: BinaryInput) {
   const { apiKey, baseUrl, chatModel } = await config();
   if (!baseUrl || !apiKey) throw new Error("请先保存基础地址和 API 密钥");
   if (!image.data?.length) throw new Error("请选择需要分析的图片");
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 90_000);
+  const timeout = withTimeout(90_000);
   try {
     const mime = image.type === "image/png" ? "image/png" : "image/jpeg";
     const dataUrl = `data:${mime};base64,${Buffer.from(image.data).toString("base64")}`;
-    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+    const response = await fetch(joinBase(baseUrl, "/chat/completions"), {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -570,7 +572,7 @@ async function reversePromptWithModel(image: BinaryInput) {
           ] },
         ],
       }),
-      signal: controller.signal,
+      signal: timeout.signal,
     });
     if (!response.ok) {
       const body = await response.text();
@@ -586,15 +588,15 @@ async function reversePromptWithModel(image: BinaryInput) {
   } catch (error) {
     if ((error as Error).name === "AbortError") throw new Error("图反推超过 90 秒，请稍后重试，原提示词未改变。");
     throw error;
-  } finally { clearTimeout(timer); }
+  } finally { timeout.clear(); }
 }
 function broadcast(channel: string, value: unknown) { for (const win of BrowserWindow.getAllWindows()) win.webContents.send(channel, value); }
 async function queueSnapshot() { return queueStore ? queueStore.read() : []; }
 async function processQueue() {
   if (!queueStore || activeQueueJobId) return; const items = await queueStore.read(); const job = items.find(item => item.status === "queued"); if (!job) { broadcast(QUEUE_UPDATE, items); return; }
-  const win = BrowserWindow.getAllWindows()[0]; if (!win) return; activeQueueJobId = job.id; const running = { ...job, status: "running" as const, attempts: job.attempts + 1, updatedAt: new Date().toISOString(), error: undefined, errorInfo: undefined }; await queueStore.save(running); broadcast(QUEUE_UPDATE, await queueStore.read());
-  try { const raw = await queueStore.materialize(running); const result = await callImages(win, running.kind === "edit" ? "edits" : "generations", raw as RequestInput & Partial<EditInput>); const completed = { ...running, status: "completed" as const, elapsedMs: result.elapsedMs, resultGalleryIds: (result.gallery || []).map(item => item.id), updatedAt: new Date().toISOString() }; await queueStore.save(completed); broadcast(QUEUE_RESULT, { job: completed, result }); }
-  catch (error) { const current = (await queueStore.read()).find(item => item.id === running.id); if (current?.status === "cancelled") broadcast(QUEUE_ERROR, current); else { const errorInfo = classifyRuntimeError(error); const failed = { ...running, status: "failed" as const, error: errorInfoMessage(errorInfo), errorInfo, updatedAt: new Date().toISOString() }; await queueStore.save(failed); broadcast(QUEUE_ERROR, failed); } }
+  const win = BrowserWindow.getAllWindows()[0]; if (!win) return; activeQueueJobId = job.id; const running = { ...job, status: "running" as const, attempts: job.attempts + 1, updatedAt: nowISO(), error: undefined, errorInfo: undefined }; await queueStore.save(running); broadcast(QUEUE_UPDATE, await queueStore.read());
+  try { const raw = await queueStore.materialize(running); const result = await callImages(win, running.kind === "edit" ? "edits" : "generations", raw as RequestInput & Partial<EditInput>); const completed = { ...running, status: "completed" as const, elapsedMs: result.elapsedMs, resultGalleryIds: (result.gallery || []).map(item => item.id), updatedAt: nowISO() }; await queueStore.save(completed); broadcast(QUEUE_RESULT, { job: completed, result }); }
+  catch (error) { const current = (await queueStore.read()).find(item => item.id === running.id); if (current?.status === "cancelled") broadcast(QUEUE_ERROR, current); else { const errorInfo = classifyRuntimeError(error); const failed = { ...running, status: "failed" as const, error: errorInfoMessage(errorInfo), errorInfo, updatedAt: nowISO() }; await queueStore.save(failed); broadcast(QUEUE_ERROR, failed); } }
   finally { const current = (await queueStore.read()).find(item => item.id === running.id); if (current?.status === "completed") await queueStore.removeAssets(running); activeQueueJobId = null; broadcast(QUEUE_UPDATE, await queueStore.read()); void processQueue(); }
 }
 app.whenReady().then(async () => {
@@ -622,7 +624,7 @@ app.whenReady().then(async () => {
       win.minimize();
       return { ok: true };
     } catch (error) {
-      return { ok: false, error: (error as Error).message || "无法最小化窗口" };
+      return { ok: false, error: errorMessage(error, "无法最小化窗口") };
     }
   });
   ipcMain.handle(WINDOW_TOGGLE_MAXIMIZE, async (event) => {
@@ -633,7 +635,7 @@ app.whenReady().then(async () => {
       else win.maximize();
       return { ok: true, maximized: win.isMaximized() };
     } catch (error) {
-      return { ok: false, error: (error as Error).message || "无法切换窗口最大化状态" };
+      return { ok: false, error: errorMessage(error, "无法切换窗口最大化状态") };
     }
   });
   ipcMain.handle(WINDOW_CLOSE, async (event) => {
@@ -643,7 +645,7 @@ app.whenReady().then(async () => {
       win.close();
       return { ok: true };
     } catch (error) {
-      return { ok: false, error: (error as Error).message || "无法关闭窗口" };
+      return { ok: false, error: errorMessage(error, "无法关闭窗口") };
     }
   });
   ipcMain.handle(WINDOW_IS_MAXIMIZED, async (event) => {
@@ -652,7 +654,7 @@ app.whenReady().then(async () => {
       if (!win) return { ok: false, error: "窗口不存在" };
       return { ok: true, maximized: win.isMaximized() };
     } catch (error) {
-      return { ok: false, error: (error as Error).message || "无法读取窗口最大化状态" };
+      return { ok: false, error: errorMessage(error, "无法读取窗口最大化状态") };
     }
   });
   ipcMain.handle(WINDOW_GET_ZOOM, async (event) => {
@@ -661,7 +663,7 @@ app.whenReady().then(async () => {
       if (!win) return { ok: false, error: "窗口不存在" };
       return { ok: true, factor: win.webContents.getZoomFactor() };
     } catch (error) {
-      return { ok: false, error: (error as Error).message || "无法读取界面缩放" };
+      return { ok: false, error: errorMessage(error, "无法读取界面缩放") };
     }
   });
   ipcMain.handle(WINDOW_SET_ZOOM, async (event, factor: number) => {
@@ -673,13 +675,13 @@ app.whenReady().then(async () => {
       win.webContents.setZoomFactor(clamped);
       return { ok: true, factor: clamped };
     } catch (error) {
-      return { ok: false, error: (error as Error).message || "无法设置界面缩放" };
+      return { ok: false, error: errorMessage(error, "无法设置界面缩放") };
     }
   });
   ipcMain.handle(SETTINGS_RESET_SAVE_DIR, () => saveDirManager.reset());
   ipcMain.handle(SETTINGS_OPEN_SAVE_DIR, () => saveDirManager.open());
   ipcMain.handle(SETTINGS_CLEAR, async () => { await Promise.all([keytar.deletePassword(SERVICE, ACCOUNT), ...LEGACY_SERVICES.map((service) => keytar.deletePassword(service, ACCOUNT))]); return { ok: true }; });
-  ipcMain.handle(SETTINGS_TEST, async () => { const c = await config(); if (!c.baseUrl) return { ok: false, message: "尚未配置 API Base URL" }; if (!c.apiKey) return { ok: false, message: "尚未配置 API 密钥" }; try { new URL(c.baseUrl); const r = await fetch(`${c.baseUrl.replace(/\/$/, "")}/models`, { headers: { Authorization: `Bearer ${c.apiKey}` }, signal: AbortSignal.timeout(20_000) }); return r.ok ? { ok: true, message: "连接成功" } : { ok: false, message: `接口返回 ${r.status}` }; } catch (e) { return { ok: false, message: (e as Error).message }; } });
+  ipcMain.handle(SETTINGS_TEST, async () => { const c = await config(); if (!c.baseUrl) return { ok: false, message: "尚未配置 API Base URL" }; if (!c.apiKey) return { ok: false, message: "尚未配置 API 密钥" }; try { new URL(c.baseUrl); const r = await fetch(joinBase(c.baseUrl, "/models"), { headers: { Authorization: `Bearer ${c.apiKey}` }, signal: AbortSignal.timeout(20_000) }); return r.ok ? { ok: true, message: "连接成功" } : { ok: false, message: `接口返回 ${r.status}` }; } catch (e) { return { ok: false, message: (e as Error).message }; } });
   ipcMain.handle(LOCAL_AI_CAPABILITIES, async () => ({
     ok: true,
     webgpu: !app.commandLine.hasSwitch("disable-gpu"),
@@ -698,12 +700,12 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle(LOCAL_AI_DOWNLOAD_MODEL, async (_event, id: LocalAIModelId) => {
     try { return { ok: true, item: await localAIModels.download(id) }; }
-    catch (error) { return { ok: false, error: (error as Error).message || "模型下载失败" }; }
+    catch (error) { return { ok: false, error: errorMessage(error, "模型下载失败") }; }
   });
   ipcMain.handle(LOCAL_AI_PAUSE_DOWNLOAD, async (_event, id: LocalAIModelId) => ({ ok: localAIModels.pause(id) }));
   ipcMain.handle(LOCAL_AI_DELETE_MODEL, async (_event, id: LocalAIModelId) => {
     try { await localAIModels.delete(id); return { ok: true }; }
-    catch (error) { return { ok: false, error: (error as Error).message || "无法删除模型" }; }
+    catch (error) { return { ok: false, error: errorMessage(error, "无法删除模型") }; }
   });
   ipcMain.handle(LOCAL_AI_ARCHIVE_RESULT, async (_event, input: { dataUrl: string; title?: string; recipe: ImageRecipeV1 }) => {
     try {
@@ -712,7 +714,7 @@ app.whenReady().then(async () => {
       const recipe = normalizeRecipe({ recipe: input.recipe }, input.recipe.mode);
       const created = await galleryStore.addImages([{ b64_json: base64 }], { title: String(input.title || recipe.variationLabel || "本地 AI 处理结果"), recipe }, true);
       return created[0] ? { ok: true, item: created[0] } : { ok: false, error: "本地处理结果归档失败" };
-    } catch (error) { return { ok: false, error: (error as Error).message || "本地处理结果归档失败" }; }
+    } catch (error) { return { ok: false, error: errorMessage(error, "本地处理结果归档失败") }; }
   });
   ipcMain.handle(UPDATES_GET, async () => {
     const channel = await updateChannelPref();
@@ -727,7 +729,7 @@ app.whenReady().then(async () => {
       await applyUpdatePreferences();
       if ((await autoUpdatePref()) && app.isPackaged) void checkForAppUpdate();
       return { ok: true, channel: next };
-    } catch (error) { return { ok: false, error: (error as Error).message || "无法保存更新通道设置" }; }
+    } catch (error) { return { ok: false, error: errorMessage(error, "无法保存更新通道设置") }; }
   });
   ipcMain.handle(UPDATES_SET_ALPHA_UNLOCKED, async (_e, enabled: boolean) => {
     try {
@@ -741,7 +743,7 @@ app.whenReady().then(async () => {
         if ((await autoUpdatePref()) && app.isPackaged) void checkForAppUpdate();
       }
       return { ok: true, channel };
-    } catch (error) { return { ok: false, error: (error as Error).message || "无法保存内测渠道解锁状态" }; }
+    } catch (error) { return { ok: false, error: errorMessage(error, "无法保存内测渠道解锁状态") }; }
   });
   ipcMain.handle(UPDATES_SET_AUTO_UPDATE, async (_e, enabled: boolean) => {
     try {
@@ -749,7 +751,7 @@ app.whenReady().then(async () => {
       await applyUpdatePreferences();
       if (enabled && app.isPackaged && updateStatus.phase === "available") void downloadAppUpdate();
       return { ok: true, autoUpdate: enabled };
-    } catch (error) { return { ok: false, error: (error as Error).message || "无法保存自动更新设置" }; }
+    } catch (error) { return { ok: false, error: errorMessage(error, "无法保存自动更新设置") }; }
   });
   ipcMain.handle(UPDATES_CHECK, async () => checkForAppUpdate());
   ipcMain.handle(UPDATES_DOWNLOAD, async () => downloadAppUpdate());
@@ -782,7 +784,7 @@ app.whenReady().then(async () => {
       const raw = value.data ? Buffer.from(value.data) : Buffer.from(String(value.dataUrl || "").replace(/^data:image\/\w+;base64,/, ""), "base64");
       const recipe = readRecipeFromPng(raw);
       return recipe ? { ok: true, recipe } : { ok: false, error: "PNG 中没有 ImagoTune 配方元数据" };
-    } catch (error) { return { ok: false, error: (error as Error).message || "无法读取 PNG 元数据" }; }
+    } catch (error) { return { ok: false, error: errorMessage(error, "无法读取 PNG 元数据") }; }
   });
   ipcMain.handle(OUTPAINT_PREPARE, async (_e, input: { sourceWidth: number; sourceHeight: number; targetSize: string }) => {
     const match = /^(\d+)x(\d+)$/.exec(String(input.targetSize || ""));
@@ -805,10 +807,10 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle(GALLERY_TOGGLE_FAVORITE, async (_e, id: string) => { const state = await galleryStore.readState(); const item = state.items.find(value => value.id === id); if (!item) return { ok: false, error: "图库记录不存在" }; item.favorite = !item.favorite; await galleryStore.writeState(state); return { ok: true, item }; });
   ipcMain.handle(GALLERY_DELETE, async (_e, id: string) => { const state = await galleryStore.readState(); const item = state.items.find(value => value.id === id); if (!item) return { ok: false, error: "图库记录不存在" }; await fs.rm(path.join(galleryDir, path.basename(item.fileName)), { force: true }); await fs.rm(path.join(galleryStore.thumbsDir, `${item.id}.jpg`), { force: true }); state.items = state.items.filter(value => value.id !== id); for (const project of state.projects) if (project.coverId === id) delete project.coverId; await galleryStore.writeState(state); return { ok: true }; });
-  ipcMain.handle(PROJECTS_CREATE, async (_e, name: string) => { const state = await galleryStore.readState(); const clean = String(name || "").trim().slice(0, 80); if (!clean) return { ok: false, error: "项目名称不能为空" }; const timestamp = new Date().toISOString(); const project: GalleryProject = { id: randomUUID(), name: clean, createdAt: timestamp, updatedAt: timestamp }; state.projects.push(project); await galleryStore.writeState(state); return { ok: true, project }; });
-  ipcMain.handle(PROJECTS_RENAME, async (_e, id: string, name: string) => { const state = await galleryStore.readState(); const project = state.projects.find(value => value.id === id); const clean = String(name || "").trim().slice(0, 80); if (!project || id === INBOX_PROJECT_ID || !clean) return { ok: false, error: "项目不可修改" }; project.name = clean; project.updatedAt = new Date().toISOString(); await galleryStore.writeState(state); return { ok: true, project }; });
+  ipcMain.handle(PROJECTS_CREATE, async (_e, name: string) => { const state = await galleryStore.readState(); const clean = String(name || "").trim().slice(0, 80); if (!clean) return { ok: false, error: "项目名称不能为空" }; const timestamp = nowISO(); const project: GalleryProject = { id: randomUUID(), name: clean, createdAt: timestamp, updatedAt: timestamp }; state.projects.push(project); await galleryStore.writeState(state); return { ok: true, project }; });
+  ipcMain.handle(PROJECTS_RENAME, async (_e, id: string, name: string) => { const state = await galleryStore.readState(); const project = state.projects.find(value => value.id === id); const clean = String(name || "").trim().slice(0, 80); if (!project || id === INBOX_PROJECT_ID || !clean) return { ok: false, error: "项目不可修改" }; project.name = clean; project.updatedAt = nowISO(); await galleryStore.writeState(state); return { ok: true, project }; });
   ipcMain.handle(PROJECTS_DELETE, async (_e, id: string) => { if (id === INBOX_PROJECT_ID) return { ok: false, error: "收件箱不能删除" }; const state = await galleryStore.readState(); if (!state.projects.some(value => value.id === id)) return { ok: false, error: "项目不存在" }; state.items = state.items.map(item => item.recipe.projectId === id ? { ...item, recipe: { ...item.recipe, projectId: INBOX_PROJECT_ID } } : item); state.projects = state.projects.filter(value => value.id !== id); await galleryStore.writeState(state); return { ok: true }; });
-  ipcMain.handle(PROJECTS_SET_COVER, async (_e, projectId: string, itemId: string) => { const state = await galleryStore.readState(); const project = state.projects.find(value => value.id === projectId); const item = state.items.find(value => value.id === itemId); if (!project || !item || item.recipe.projectId !== projectId) return { ok: false, error: "图片不属于该项目" }; project.coverId = itemId; project.updatedAt = new Date().toISOString(); await galleryStore.writeState(state); return { ok: true, project }; });
+  ipcMain.handle(PROJECTS_SET_COVER, async (_e, projectId: string, itemId: string) => { const state = await galleryStore.readState(); const project = state.projects.find(value => value.id === projectId); const item = state.items.find(value => value.id === itemId); if (!project || !item || item.recipe.projectId !== projectId) return { ok: false, error: "图片不属于该项目" }; project.coverId = itemId; project.updatedAt = nowISO(); await galleryStore.writeState(state); return { ok: true, project }; });
   ipcMain.handle(GALLERY_BULK, async (_e, input: { ids: string[]; action: "move" | "favorite" | "delete" | "tags"; projectId?: string; favorite?: boolean; tags?: string[] }) => {
     const ids = new Set((input.ids || []).filter(Boolean)); const state = await galleryStore.readState(); const selected = state.items.filter(item => ids.has(item.id)); if (!selected.length) return { ok: false, error: "未选择图片" };
     if (input.action === "delete") { for (const item of selected) { await fs.rm(path.join(galleryDir, path.basename(item.fileName)), { force: true }); await fs.rm(path.join(galleryStore.thumbsDir, `${item.id}.jpg`), { force: true }); } state.items = state.items.filter(item => !ids.has(item.id)); for (const project of state.projects) if (project.coverId && ids.has(project.coverId)) delete project.coverId; }
@@ -817,12 +819,12 @@ app.whenReady().then(async () => {
     if (input.action === "tags") { const tags = tagsValue(input.tags || []); state.items = state.items.map(item => ids.has(item.id) ? { ...item, recipe: { ...item.recipe, tags } } : item); }
     await galleryStore.writeState(state); return { ok: true, count: selected.length };
   });
-  ipcMain.handle(PROMPT_ENHANCE, async (_e, input: { prompt: string; mode: "generate" | "edit" }) => { const prompt = String(input?.prompt || "").trim(); if (!prompt) return { ok: false, error: "请先输入提示词" }; try { return { ok: true, prompt: await enhancePromptWithModel(prompt, input.mode === "edit" ? "edit" : "generate") }; } catch (error) { return { ok: false, error: (error as Error).message || "提示词增强失败" }; } });
-  ipcMain.handle(PROMPT_REVERSE, async (_e, input: { image: BinaryInput }) => { try { return { ok: true, ...(await reversePromptWithModel(input.image)) }; } catch (error) { return { ok: false, error: (error as Error).message || "图反推失败，原提示词未改变" }; } });
+  ipcMain.handle(PROMPT_ENHANCE, async (_e, input: { prompt: string; mode: "generate" | "edit" }) => { const prompt = String(input?.prompt || "").trim(); if (!prompt) return { ok: false, error: "请先输入提示词" }; try { return { ok: true, prompt: await enhancePromptWithModel(prompt, input.mode === "edit" ? "edit" : "generate") }; } catch (error) { return { ok: false, error: errorMessage(error, "提示词增强失败") }; } });
+  ipcMain.handle(PROMPT_REVERSE, async (_e, input: { image: BinaryInput }) => { try { return { ok: true, ...(await reversePromptWithModel(input.image)) }; } catch (error) { return { ok: false, error: errorMessage(error, "图反推失败，原提示词未改变") }; } });
   ipcMain.handle(QUEUE_LIST, async () => ({ ok: true, items: await queueSnapshot() }));
-  ipcMain.handle(QUEUE_ENQUEUE, async (_e, input: { kind: "generate" | "edit"; payload: Record<string, unknown> }) => { try { const job = await queueStore.enqueue(input.kind, input.payload); broadcast(QUEUE_UPDATE, await queueStore.read()); setImmediate(() => { void processQueue(); }); return { ok: true, job }; } catch (error) { return { ok: false, error: (error as Error).message || "无法创建任务" }; } });
-  ipcMain.handle(QUEUE_RETRY, async (_e, id: string) => { const items = await queueStore.read(); const job = items.find(value => value.id === id); if (!job || !["failed", "interrupted", "cancelled"].includes(job.status)) return { ok: false, error: "任务不可重试" }; const next = { ...job, status: "queued" as const, error: undefined, errorInfo: undefined, updatedAt: new Date().toISOString() }; await queueStore.save(next); broadcast(QUEUE_UPDATE, await queueStore.read()); setImmediate(() => { void processQueue(); }); return { ok: true, job: next }; });
-  ipcMain.handle(QUEUE_CANCEL, async (_e, id: string) => { const items = await queueStore.read(); const job = items.find(value => value.id === id); if (!job || !["queued", "running"].includes(job.status)) return { ok: false, error: "任务不可取消" }; const errorInfo: GenerationErrorInfo = cancelledErrorInfo(); const next = { ...job, status: "cancelled" as const, error: errorInfoMessage(errorInfo), errorInfo, updatedAt: new Date().toISOString() }; await queueStore.save(next); if (job.status === "running") { cancelledRequests.add(job.requestId); controllers.get(job.requestId)?.abort(); } broadcast(QUEUE_UPDATE, await queueStore.read()); return { ok: true, job: next }; });
+  ipcMain.handle(QUEUE_ENQUEUE, async (_e, input: { kind: "generate" | "edit"; payload: Record<string, unknown> }) => { try { const job = await queueStore.enqueue(input.kind, input.payload); broadcast(QUEUE_UPDATE, await queueStore.read()); setImmediate(() => { void processQueue(); }); return { ok: true, job }; } catch (error) { return { ok: false, error: errorMessage(error, "无法创建任务") }; } });
+  ipcMain.handle(QUEUE_RETRY, async (_e, id: string) => { const items = await queueStore.read(); const job = items.find(value => value.id === id); if (!job || !["failed", "interrupted", "cancelled"].includes(job.status)) return { ok: false, error: "任务不可重试" }; const next = { ...job, status: "queued" as const, error: undefined, errorInfo: undefined, updatedAt: nowISO() }; await queueStore.save(next); broadcast(QUEUE_UPDATE, await queueStore.read()); setImmediate(() => { void processQueue(); }); return { ok: true, job: next }; });
+  ipcMain.handle(QUEUE_CANCEL, async (_e, id: string) => { const items = await queueStore.read(); const job = items.find(value => value.id === id); if (!job || !["queued", "running"].includes(job.status)) return { ok: false, error: "任务不可取消" }; const errorInfo: GenerationErrorInfo = cancelledErrorInfo(); const next = { ...job, status: "cancelled" as const, error: errorInfoMessage(errorInfo), errorInfo, updatedAt: nowISO() }; await queueStore.save(next); if (job.status === "running") { cancelledRequests.add(job.requestId); controllers.get(job.requestId)?.abort(); } broadcast(QUEUE_UPDATE, await queueStore.read()); return { ok: true, job: next }; });
   ipcMain.handle(QUEUE_REMOVE, async (_e, id: string) => { const items = await queueStore.read(); const job = items.find(value => value.id === id); if (!job || job.status === "running") return { ok: false, error: "运行中的任务不可移除" }; await queueStore.remove(id); broadcast(QUEUE_UPDATE, await queueStore.read()); return { ok: true }; });
   ipcMain.handle(CLIPBOARD_COPY_TEXT, async (_e, value: string) => { clipboard.writeText(String(value || "")); return { ok: true }; });
   ipcMain.handle(CLIPBOARD_COPY_IMAGE, async (_e, b64: string) => { const image = nativeImage.createFromBuffer(Buffer.from(String(b64 || "").replace(/^data:image\/\w+;base64,/, ""), "base64")); if (image.isEmpty()) return { ok: false, error: "图片数据无效" }; const png = image.toPNG(); const pngArrayBuffer = png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) as ArrayBuffer; await clipboard.write([new ClipboardItem({ "image/png": new Blob([pngArrayBuffer], { type: "image/png" }) })]); return { ok: true }; });
