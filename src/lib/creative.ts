@@ -1,4 +1,52 @@
+import { modeLabel } from "./format";
+
 export type PromptAction = "refine" | "detail" | "poster" | "social" | "realistic" | "premium";
+
+export const resolutionOptions = [
+  { value: "1k", label: "1K（标准）" },
+  { value: "2k", label: "2K（高清）" },
+  { value: "4k", label: "4K（超清）" },
+];
+
+export const ratioOptions = [
+  { value: "1:1", label: "1:1 正方形" },
+  { value: "4:3", label: "4:3 横向" },
+  { value: "3:4", label: "3:4 竖向" },
+  { value: "3:2", label: "3:2 横向" },
+  { value: "2:3", label: "2:3 竖向" },
+  { value: "16:9", label: "16:9 宽屏" },
+  { value: "9:16", label: "9:16 手机" },
+  { value: "4:5", label: "4:5 人像" },
+  { value: "5:4", label: "5:4 横幅" },
+  { value: "21:9", label: "21:9 超宽" },
+];
+
+export const sizeMatrix: Record<string, Record<string, string>> = {
+  "1k": {
+    "1:1": "1024x1024", "4:3": "1024x768", "3:4": "768x1024",
+    "3:2": "1536x1024", "2:3": "1024x1536", "16:9": "1536x864",
+    "9:16": "864x1536", "4:5": "1024x1280", "5:4": "1280x1024",
+    "21:9": "1536x656",
+  },
+  "2k": {
+    "1:1": "2048x2048", "4:3": "2048x1536", "3:4": "1536x2048",
+    "3:2": "2048x1360", "2:3": "1360x2048", "16:9": "2048x1152",
+    "9:16": "1152x2048", "4:5": "1632x2048", "5:4": "2048x1632",
+    "21:9": "2048x880",
+  },
+  "4k": {
+    "1:1": "2880x2880", "4:3": "3328x2480", "3:4": "2480x3328",
+    "3:2": "3520x2352", "2:3": "2352x3520", "16:9": "3840x2160",
+    "9:16": "2160x3840", "4:5": "2560x3200", "5:4": "3200x2560",
+    "21:9": "3840x1648",
+  },
+};
+
+/** 扩图页快捷比例：显式具名子集，顺序与 ratioOptions 前 4 项不同，勿改用 slice。 */
+export const outpaintQuickRatios = ["1:1", "4:5", "16:9", "9:16"];
+
+/** 图库清晰度筛选项：渲染时以 value.toUpperCase() 显示为 1K/2K/4K。 */
+export const resolutionLevels = ["1k", "2k", "4k"];
 
 const promptSuffix: Record<PromptAction, string> = {
   refine: "主体明确，构图聚焦，画面干净，避免无关元素。",
@@ -53,7 +101,7 @@ export function formatGenerationParameters(
     "比例：" + (recipe.ratio || "未记录"),
     "清晰度：" + (recipe.resolution || "未记录"),
     "细节质量：" + (recipe.quality || "自动"),
-    "模式：" + (recipe.mode === "outpaint" ? "智能扩图" : recipe.mode === "edit" ? "图片编辑" : "文生图"),
+    "模式：" + modeLabel(recipe),
     "Seed：" + (recipe.seed || "接口未返回"),
     "标签：" + (recipe.tags.join("、") || "无"),
     "项目：" + recipe.projectId,

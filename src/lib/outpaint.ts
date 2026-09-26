@@ -1,4 +1,5 @@
 import { validateCanvasSize } from "./creative";
+import { formatPixelSize, parsePixelSize, roundUp16 } from "./format";
 import { canvasToPngFile, readImage } from "./media";
 
 export type OutpaintMargins = { top: number; right: number; bottom: number; left: number };
@@ -13,12 +14,6 @@ export type OutpaintLayout = OutpaintMargins & {
 };
 
 const clampPercent = (value: number) => Math.max(0, Math.min(200, Number(value) || 0));
-const roundUp16 = (value: number) => Math.max(0, Math.ceil(value / 16) * 16);
-
-export function parsePixelSize(value: string) {
-  const match = /^\s*(\d+)\s*[x×]\s*(\d+)\s*$/i.exec(value);
-  return match ? { width: Number(match[1]), height: Number(match[2]) } : null;
-}
 
 export function outpaintFromPercent(sourceWidth: number, sourceHeight: number, margins: OutpaintMargins) {
   const left = roundUp16(sourceWidth * clampPercent(margins.left) / 100);
@@ -54,7 +49,7 @@ export function targetSizeForRatio(sourceWidth: number, sourceHeight: number, ra
   let targetHeight = sourceHeight;
   if (sourceWidth / sourceHeight < ratioValue) targetWidth = roundUp16(sourceHeight * ratioValue);
   else targetHeight = roundUp16(sourceWidth / ratioValue);
-  return `${roundUp16(targetWidth)}x${roundUp16(targetHeight)}`;
+  return formatPixelSize(roundUp16(targetWidth), roundUp16(targetHeight));
 }
 
 function validateLayout(sourceWidth: number, sourceHeight: number, margins: OutpaintMargins) {
@@ -70,7 +65,7 @@ function validateLayout(sourceWidth: number, sourceHeight: number, margins: Outp
     targetHeight,
     x: margins.left,
     y: margins.top,
-    targetSize: `${targetWidth}x${targetHeight}`,
+    targetSize: formatPixelSize(targetWidth, targetHeight),
     ...margins,
   };
   return { ok: true, layout } as const;

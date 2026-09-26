@@ -5,6 +5,7 @@ import { NavIcon } from "./icons";
 import { useStudio } from "./StudioContext";
 import { b64ToFile, dataUrlFor, drawContain, readImage } from "./media-utils";
 import { formatGenerationParameters, variationOptions } from "../lib/creative";
+import { modeLabel, parsePixelSize } from "../lib/format";
 import type { Output } from "./types";
 
 const socialPresets = [
@@ -15,10 +16,9 @@ const socialPresets = [
 ];
 
 async function exportSocialCanvas(output: Output, preset: string, fill: "light" | "blur") {
-  const match = /^(\d+)x(\d+)$/.exec(preset);
-  if (!match) throw new Error("导出尺寸无效");
-  const width = Number(match[1]);
-  const height = Number(match[2]);
+  const parsed = parsePixelSize(preset);
+  if (!parsed) throw new Error("导出尺寸无效");
+  const { width, height } = parsed;
   const image = await readImage(b64ToFile(output.b64, "export.png"));
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -132,7 +132,7 @@ export function ResultPanel({
             <article key={output.id}>
               <img className="result-image" onClick={() => onOpenPreview(output)} src={dataUrlFor(output)} alt="生成结果" />
               <div className="result-caption">
-                <strong>{output.recipe.variationLabel || (output.recipe.mode === "outpaint" ? "智能扩图" : "新生成图片")}</strong>
+                <strong>{output.recipe.variationLabel || modeLabel(output.recipe, { fallback: "新生成图片" })}</strong>
                 <small>{output.recipe.size} · {output.recipe.projectId}{output.recipe.seed ? " · Seed " + output.recipe.seed : ""}</small>
               </div>
               {output.recipe.seed && <button className="seed-chip" onClick={() => void window.imageStudio.clipboard.copyText(output.recipe.seed!).then(() => setNotice("Seed 已复制"))}>Seed：{output.recipe.seed} · 点击复制</button>}

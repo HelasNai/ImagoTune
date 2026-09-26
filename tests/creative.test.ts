@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   applyLocalPromptAction,
+  outpaintQuickRatios,
   parseTags,
+  ratioOptions,
+  resolutionLevels,
+  sizeMatrix,
   validateCanvasSize,
 } from "../src/lib/creative";
 import { normalizeImageBase64, prioritizeImageResponses } from "../electron/image-response";
@@ -33,5 +37,23 @@ describe("creative helpers", () => {
     expect(normalizeImageBase64(selected[0].b64_json!)).toBe("final-image");
     expect(prioritizeImageResponses([{ url: "https://cdn.example/final.png" }], 1))
       .toEqual([{ url: "https://cdn.example/final.png" }]);
+  });
+});
+
+describe("size and ratio presets", () => {
+  it("renders the outpaint quick ratios as the explicit 4-item subset", () => {
+    expect(outpaintQuickRatios).toEqual(["1:1", "4:5", "16:9", "9:16"]);
+  });
+
+  it("renders the gallery resolution filter as 1k/2k/4k", () => {
+    expect(resolutionLevels).toEqual(["1k", "2k", "4k"]);
+  });
+
+  it("keeps sizeMatrix keys consistent with ratioOptions and resolutionLevels", () => {
+    const ratioValues = ratioOptions.map((item) => item.value).sort();
+    expect(Object.keys(sizeMatrix).sort()).toEqual([...resolutionLevels].sort());
+    for (const level of resolutionLevels) {
+      expect(Object.keys(sizeMatrix[level]).sort()).toEqual(ratioValues);
+    }
   });
 });

@@ -1,3 +1,5 @@
+import { modeLabel } from "../lib/format";
+
 export function recipeFromQueueInput(input: Record<string, unknown>, kind: "generate" | "edit", fallbackSize: string): ImageRecipeV1 {
   if (input.recipe && typeof input.recipe === "object") return input.recipe as ImageRecipeV1;
   return {
@@ -21,5 +23,5 @@ export function recipeFromQueueInput(input: Record<string, unknown>, kind: "gene
 }
 
 export function recipeModeLabel(recipe: ImageRecipeV1) {
-  return recipe.mode === "outpaint" ? "智能扩图" : recipe.referenceCount ? "参考图生成" : recipe.mode === "edit" ? "图片编辑" : "文生图";
+  return modeLabel(recipe, { referenceAware: true });
 }

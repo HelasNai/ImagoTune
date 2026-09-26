@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { parseTags } from "../lib/creative";
+import { parseTags, resolutionLevels } from "../lib/creative";
 import { b64ToDataUrl } from "../lib/media";
 import type { LocalAIAction } from "./LocalAIToolbox";
 import { useDialog } from "./Dialogs";
@@ -278,9 +278,7 @@ export function GalleryWorkspace({
           <label>清晰度
             <select value={resolutionFilter} onChange={(event) => setResolutionFilter(event.target.value)}>
               <option value="">全部</option>
-              <option value="1k">1K</option>
-              <option value="2k">2K</option>
-              <option value="4k">4K</option>
+              {resolutionLevels.map((value) => <option key={value} value={value}>{value.toUpperCase()}</option>)}
             </select>
           </label>
           <label>精确分辨率

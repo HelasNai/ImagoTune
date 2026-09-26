@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { MaskPainter } from "./MaskPainter";
 import { NavIcon } from "./icons";
-import { ratioOptions, resolutionOptions, qualities } from "./useComposer";
+import { qualities } from "./useComposer";
 import type { ComposerActions, ComposerState } from "./useComposer";
+import { outpaintQuickRatios, ratioOptions, resolutionOptions } from "../lib/creative";
+import { compositeFileKey } from "../lib/format";
 import { useStudio } from "./StudioContext";
 import type { Mode } from "./types";
 
@@ -247,7 +249,7 @@ export function ComposerPanel({
         </div>
         {references.length > 0 ? <div className="reference-grid">
           {references.map((file, index) => <ReferenceThumbnail
-            key={`${file.name}-${file.size}-${file.lastModified}`}
+            key={compositeFileKey(file)}
             file={file}
             index={index}
             onCopy={(value) => void copyReferenceImage(value)}
@@ -265,7 +267,7 @@ export function ComposerPanel({
         <div className="outpaint-head"><div><strong>扩图画布</strong><small>{sourceDimensions ? `原图 ${sourceDimensions.width}x${sourceDimensions.height}` : "上传原图后可设置目标画布"}</small></div><span>仅扩展，不裁剪</span></div>
         <div className="outpaint-presets">
           <span>快捷转换</span>
-          {["1:1", "4:5", "16:9", "9:16"].map((value) => <button className={outpaintPreset === value ? "active" : ""} key={value} onClick={() => chooseOutpaintPreset(value)}>{value}</button>)}
+          {outpaintQuickRatios.map((value) => <button className={outpaintPreset === value ? "active" : ""} key={value} onClick={() => chooseOutpaintPreset(value)}>{value}</button>)}
         </div>
         <div className="outpaint-strategy">
           <label className="check"><input type="radio" checked={outpaintStrategy === "percent"} onChange={() => { setOutpaintStrategy("percent"); setOutpaintPreset(""); }} />四向百分比</label>

@@ -4,6 +4,9 @@ import {
   applyLocalPromptAction,
   parseTags,
   PromptAction,
+  ratioOptions,
+  resolutionOptions,
+  sizeMatrix,
   validateCanvasSize,
 } from "../lib/creative";
 import {
@@ -15,45 +18,9 @@ import {
 } from "../lib/outpaint";
 import type { ConfirmDialogOptions, TextDialogOptions } from "./Dialogs";
 import { b64ToFile, canvasToBlob, drawContain, fileToDataUrl, readImage } from "../lib/media";
+import { compositeFileKey, uniqueBy } from "../lib/format";
 import type { Mode, Output } from "./types";
 
-export const resolutionOptions = [
-  { value: "1k", label: "1K（标准）" },
-  { value: "2k", label: "2K（高清）" },
-  { value: "4k", label: "4K（超清）" },
-];
-export const ratioOptions = [
-  { value: "1:1", label: "1:1 正方形" },
-  { value: "4:3", label: "4:3 横向" },
-  { value: "3:4", label: "3:4 竖向" },
-  { value: "3:2", label: "3:2 横向" },
-  { value: "2:3", label: "2:3 竖向" },
-  { value: "16:9", label: "16:9 宽屏" },
-  { value: "9:16", label: "9:16 手机" },
-  { value: "4:5", label: "4:5 人像" },
-  { value: "5:4", label: "5:4 横幅" },
-  { value: "21:9", label: "21:9 超宽" },
-];
-const sizeMatrix: Record<string, Record<string, string>> = {
-  "1k": {
-    "1:1": "1024x1024", "4:3": "1024x768", "3:4": "768x1024",
-    "3:2": "1536x1024", "2:3": "1024x1536", "16:9": "1536x864",
-    "9:16": "864x1536", "4:5": "1024x1280", "5:4": "1280x1024",
-    "21:9": "1536x656",
-  },
-  "2k": {
-    "1:1": "2048x2048", "4:3": "2048x1536", "3:4": "1536x2048",
-    "3:2": "2048x1360", "2:3": "1360x2048", "16:9": "2048x1152",
-    "9:16": "1152x2048", "4:5": "1632x2048", "5:4": "2048x1632",
-    "21:9": "2048x880",
-  },
-  "4k": {
-    "1:1": "2880x2880", "4:3": "3328x2480", "3:4": "2480x3328",
-    "3:2": "3520x2352", "2:3": "2352x3520", "16:9": "3840x2160",
-    "9:16": "2160x3840", "4:5": "2560x3200", "5:4": "3200x2560",
-    "21:9": "3840x1648",
-  },
-};
 export const qualities = [
   { value: "auto", label: "自动" },
   { value: "low", label: "快速草图" },
@@ -383,9 +350,7 @@ export function useComposer({
       setError("请选择有效的图片文件");
       return;
     }
-    const combined = [...references, ...images].filter((file, index, all) =>
-      all.findIndex((item) => item.name === file.name && item.size === file.size && item.lastModified === file.lastModified) === index,
-    );
+    const combined = uniqueBy([...references, ...images], compositeFileKey);
     setReferences(combined.slice(0, 3));
     setError("");
     setNotice(combined.length > 3 ? "最多使用 3 张参考图，超出的图片未导入" : `已添加 ${Math.min(combined.length, 3)} 张参考图`);
