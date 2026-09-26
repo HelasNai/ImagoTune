@@ -1,12 +1,13 @@
 # tests — 纯逻辑单元测试
 
 ## OVERVIEW
-项目唯一测试层：10 个 `*.test.ts`（扁平结构），Vitest 4.x 纯 Node 环境，无 DOM。
+项目唯一测试层：17 个 `*.test.ts` / 102 个 it（扁平结构），Vitest 4.x 纯 Node 环境，无 DOM。
 
 ## COVERAGE BOUNDARY
 可测（仅纯逻辑，文件名 kebab-case 与模块一一对应）：
-- `electron/`：queue-store、gallery-store、png-metadata、image-recipe、generation-error、reverse-prompt、local-ai-model-manager
-- `src/lib/`：creative、local-ai、outpaint、tutorial
+- `electron/`：queue-store、gallery-store、png-metadata、image-recipe、generation-error（同测于 `recipe-error.test`）、reverse-prompt、local-ai-model-manager、fs-utils、data-url、constants
+- `src/lib/`：creative、local-ai、outpaint、tutorial、format、media
+- 跨层一致性测试（同时导入 electron 纯模块与 `src/lib` 同名常量/行为）：`constants.test`（默认模型 / inbox）、`outpaint-limits.test`（画布常量）、`local-ai-limits.test`（本地 AI 上限）、`data-url.test`（去前缀正则，含 `image/svg+xml` 与大写 MIME 用例）
 
 绝不测：
 - UI 组件（`src/components`、`src/main.tsx`）
@@ -28,4 +29,4 @@ npm test    # vitest run
 本目录不在 tsconfig 中，不参与 `npm run typecheck`。无 vitest.config，vite.config 无 `test` 块，纯默认配置。
 
 ## ADDING A TEST
-新逻辑若可测试，应落在 `electron/`（stores / 元数据 / 模型管理）或 `src/lib/`（纯函数）。新模块 → 同目录加 `*.test.ts`，遵循上方 conventions。UI / 主进程 / preload / worker 逻辑不写测试。
+新逻辑若可测试，应落在 `electron/`（stores / 元数据 / 模型管理 / 无副作用纯模块）或 `src/lib/`（纯函数）。新模块 → 同目录加 `*.test.ts`，遵循上方 conventions。UI / 主进程 / preload / worker 逻辑不写测试。声称与两端共享的常量/正则，须由跨层一致性测试锁定（同时 import `../electron/*` 与 `../src/lib/*`）。
