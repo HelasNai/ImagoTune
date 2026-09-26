@@ -70,10 +70,18 @@ export function classifyHttpError(status: number, body: string): GenerationError
   return { category: "unknown", title: "生成请求失败", message: "接口返回了未识别的错误。", suggestion: "检查接口详情和当前参数后再提交。", retryable: false, status, details };
 }
 
+export function cancelledErrorInfo(): GenerationErrorInfo {
+  return { category: "cancelled", title: "任务已取消", message: "请求已由用户取消。", suggestion: "修改参数后可重新加入队列。", retryable: false };
+}
+
+export function interruptedErrorInfo(): GenerationErrorInfo {
+  return { category: "cancelled", title: "任务已中断", message: "应用关闭时任务仍在运行。", suggestion: "确认参数后手动重试，软件不会自动重复计费。", retryable: true };
+}
+
 export function classifyRuntimeError(error: unknown, options: { timedOut?: boolean; cancelled?: boolean } = {}): GenerationErrorInfo {
   if (error instanceof GenerationError) return error.info;
   const message = error instanceof Error ? error.message : String(error || "未知错误");
-  if (options.cancelled) return { category: "cancelled", title: "任务已取消", message: "请求已由用户取消。", suggestion: "修改参数后可重新加入队列。", retryable: false };
+  if (options.cancelled) return cancelledErrorInfo();
   if (options.timedOut || /timeout|timed out|超时/i.test(message)) return { category: "timeout", title: "生成响应超时", message: "请求超过 300 秒仍未完成。", suggestion: "建议降低到 1K、单张并稍后手动重试。", retryable: true, details: message };
   if (/图片链接下载失败|无效的图片链接|不是有效图片|图片文件无效/i.test(message)) return { category: "network", title: "图片结果转存失败", message: "图片服务已经返回结果，但临时图片链接无法转存为本地 PNG。", suggestion: "请检查网络后手动重试；软件不会自动再次生成和计费。", retryable: false, details: message };
   if (/fetch failed|network|dns|socket|econn|enotfound|offline|网络/i.test(message)) return { category: "network", title: "网络连接失败", message: "客户端无法连接当前图片服务。", suggestion: "检查网络、代理和 API 地址后再手动提交。", retryable: true, details: message };

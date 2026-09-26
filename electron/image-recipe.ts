@@ -1,3 +1,5 @@
+import { DEFAULT_IMAGE_MODEL, INBOX_PROJECT_ID } from "./constants";
+
 export type RecipeMode = "generate" | "edit" | "outpaint";
 
 export type OutpaintRecipe = {
@@ -42,11 +44,11 @@ export type ImageRecipeV1 = {
   postProcessing?: PostProcessingStep[];
 };
 
-function stringValue(value: unknown, fallback = "") {
+export function stringValue(value: unknown, fallback = "") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
-function tagsValue(value: unknown) {
+export function tagsValue(value: unknown) {
   return Array.isArray(value)
     ? [...new Set(value.map((item) => String(item).trim()).filter(Boolean))].slice(0, 20)
     : [];
@@ -70,14 +72,14 @@ export function normalizeRecipe(
     version: 1,
     prompt,
     negativePrompt: stringValue(nested.negativePrompt),
-    model: stringValue(nested.model, "gpt-image-2"),
+    model: stringValue(nested.model, DEFAULT_IMAGE_MODEL),
     size: stringValue(nested.size, "1024x1024"),
     ratio: stringValue(nested.ratio) || undefined,
     resolution: stringValue(nested.resolution) || undefined,
     quality: stringValue(nested.quality) || undefined,
     n: Math.max(1, Math.min(4, Number(nested.n) || 1)),
     mode,
-    projectId: stringValue(nested.projectId, "inbox"),
+    projectId: stringValue(nested.projectId, INBOX_PROJECT_ID),
     tags: tagsValue(nested.tags),
     createdAt: stringValue(nested.createdAt, new Date().toISOString()),
     sourceId: stringValue(nested.sourceId) || undefined,
