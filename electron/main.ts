@@ -3,6 +3,7 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import { randomUUID } from "node:crypto";
+import { pathToFileURL } from "node:url";
 import keytar from "keytar";
 import archiver from "archiver";
 import { autoUpdater, type ProgressInfo, type UpdateInfo } from "electron-updater";
@@ -588,7 +589,7 @@ app.whenReady().then(async () => {
     if (!model) return new Response("Unknown model", { status: 404 });
     const status = await localAIModels.status(id);
     if (!status.installed) return new Response("Model is not installed", { status: 404 });
-    return net.fetch(new URL(`file:///${localAIModels.modelPath(id).replace(/\\/g, "/")}`).toString());
+    return net.fetch(pathToFileURL(localAIModels.modelPath(id)).toString());
   });
   // 无边框窗口由渲染层自绘标题栏，移除原生应用菜单（菜单项功能迁移至设置页 / 窗口快捷键）。
   Menu.setApplicationMenu(null);
