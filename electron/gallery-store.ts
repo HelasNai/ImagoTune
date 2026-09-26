@@ -5,7 +5,8 @@ import { ImageRecipeV1, normalizeRecipe } from "./image-recipe";
 import { embedRecipeInPng, readRecipeFromPng } from "./png-metadata";
 import { atomicWriteJson, ensureDir, nowISO } from "./fs-utils";
 
-export const INBOX_PROJECT_ID = "inbox";
+import { INBOX_PROJECT_ID } from "./constants";
+export { INBOX_PROJECT_ID };
 export type GalleryProject = { id: string; name: string; createdAt: string; updatedAt: string; coverId?: string };
 export type GalleryItem = { id: string; fileName: string; title: string; createdAt: string; favorite: boolean; recipe: ImageRecipeV1 };
 export type GalleryState = { version: 3; projects: GalleryProject[]; items: GalleryItem[] };
