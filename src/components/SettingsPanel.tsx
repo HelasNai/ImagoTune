@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useStudio } from "./StudioContext";
 
 export function SettingsPanel({
@@ -17,6 +17,7 @@ export function SettingsPanel({
   const [updateChannel, setUpdateChannel] = useState<UpdateChannel>("stable");
   const [autoUpdate, setAutoUpdate] = useState(true);
   const [appVersion, setAppVersion] = useState("");
+  const [alphaUnlocked, setAlphaUnlocked] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ phase: "idle", message: "尚未检查更新" });
   const [zoomFactor, setZoomFactor] = useState(1);
 
@@ -30,6 +31,7 @@ export function SettingsPanel({
       setAutoUpdate(value.autoUpdate);
       setAppVersion(value.appVersion);
       setUpdateStatus(value.status);
+      setAlphaUnlocked(value.alphaUnlocked);
     });
     void window.imageStudio.windowControls.getZoom().then((r) => {
       if (r.ok && typeof r.factor === "number") setZoomFactor(r.factor);
@@ -136,6 +138,40 @@ export function SettingsPanel({
     if (!result.ok) setError(result.message);
   };
 
+  // 隐藏手势：连续点击版本号 5 次（相邻间隔 ≤1.5s）解锁 Alpha 内测渠道；不加任何视觉提示。
+  const alphaClickCount = useRef(0);
+  const alphaClickTimer = useRef(0);
+
+  const handleVersionClick = () => {
+    if (alphaUnlocked) return;
+    window.clearTimeout(alphaClickTimer.current);
+    alphaClickCount.current += 1;
+    if (alphaClickCount.current >= 5) {
+      alphaClickCount.current = 0;
+      void window.imageStudio.updates.setAlphaUnlocked(true).then((result) => {
+        if (!result.ok) {
+          setError(result.error || "无法解锁 Alpha 测试渠道");
+          return;
+        }
+        setAlphaUnlocked(true);
+        setNotice("已解锁 Alpha 测试渠道");
+      });
+      return;
+    }
+    alphaClickTimer.current = window.setTimeout(() => { alphaClickCount.current = 0; }, 1500);
+  };
+
+  const exitAlphaChannel = async () => {
+    const result = await window.imageStudio.updates.setAlphaUnlocked(false);
+    if (!result.ok) {
+      setError(result.error || "无法退出内测渠道");
+      return;
+    }
+    setAlphaUnlocked(false);
+    if (result.channel) setUpdateChannel(result.channel);
+    setNotice("已退出内测渠道");
+  };
+
   return (
     <section className="card settings" data-tutorial="connection-settings">
       <span className="eyebrow">CONNECTION & STORAGE</span>
@@ -176,14 +212,16 @@ export function SettingsPanel({
         <div>
           <span className="eyebrow">APPLICATION UPDATE</span>
           <h3>软件更新</h3>
-          <p>当前版本：v{appVersion || "—"}。开启自动更新后会在后台检查并下载新版本，安装前仍会询问，不会强制重启；关闭后仅在你手动检查时提示下载。</p>
+          <p onClick={handleVersionClick}>当前版本：v{appVersion || "—"}。开启自动更新后会在后台检查并下载新版本，安装前仍会询问，不会强制重启；关闭后仅在你手动检查时提示下载。</p>
         </div>
         <div className="update-channel">
           <span className="update-channel-label">更新渠道</span>
-          <div className="update-channel-options">
+          <div className={alphaUnlocked ? "update-channel-options alpha-unlocked" : "update-channel-options"}>
             <button type="button" className={updateChannel === "stable" ? "active" : ""} onClick={() => void setUpdateChannelPreference("stable")}>正式版</button>
             <button type="button" className={updateChannel === "beta" ? "active" : ""} onClick={() => void setUpdateChannelPreference("beta")}>测试版 Beta</button>
+            {alphaUnlocked && <button type="button" className={updateChannel === "alpha" ? "active" : ""} onClick={() => void setUpdateChannelPreference("alpha")}>Alpha 测试版</button>}
           </div>
+          {alphaUnlocked && <button type="button" className="update-alpha-exit" onClick={() => void exitAlphaChannel()}>退出内测</button>}
         </div>
         <label className="archive-toggle">
           <input type="checkbox" checked={autoUpdate} onChange={(event) => void setAutoUpdatePreference(event.target.checked)} />

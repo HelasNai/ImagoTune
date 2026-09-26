@@ -3,7 +3,7 @@
 **Generated:** 2026-08-30
 **Commit:** 4ad073a
 **Branch:** main
-**同步日期:** 2026-09-25（T9 收尾核验：main.tsx 拆分后实测事实）
+**同步日期:** 2026-09-26（全局对话框改造：`DialogProvider`/`useDialog` 替代全部原生 prompt/confirm；main.tsx 466 行。前次同步 2026-09-25：T9 main.tsx 拆分）
 
 ## OVERVIEW
 Windows 桌面端 AI 图片创作工作台（Electron + React + TypeScript）：连接 OpenAI 兼容 API 出图，并提供完全本地的高清放大 / 抠图 / 人脸优化工具箱（WebGPU/WASM）。
@@ -26,7 +26,7 @@ image-studio/
 | IPC 类型契约 | `src/global.d.ts` | `window.imageStudio` 单一来源 + 共享类型 |
 | 图库/队列持久化 | `electron/{gallery,queue}-store.ts` | 原子写入、损坏恢复 |
 | 本地 AI 模型管理 | `electron/local-ai-model-manager.ts` | 下载 / SHA-256 校验 / 断点续传 |
-| React UI | `src/main.tsx` + `src/components/*` | main.tsx 为 **441 行 shell**（同步日期 2026-09-25）；创作/结果/队列/设置面板与 useComposer 已拆入 `src/components/*` |
+| React UI | `src/main.tsx` + `src/components/*` | main.tsx 为 **466 行 shell**（同步日期 2026-09-26）；创作/结果/队列/设置面板与 useComposer 已拆入 `src/components/*` |
 | WebGPU 推理 | `src/workers/local-ai.worker.ts` | Worker 内 WebGPU→WASM 回退 |
 | 纯函数逻辑 | `src/lib/*.ts` | creative / outpaint / local-ai / tutorial |
 | 纯逻辑测试 | `tests/*.test.ts` | 与 electron/、src/lib 一一对应 |
@@ -36,7 +36,7 @@ image-studio/
 |--------|------|----------|------|
 | `electron/main.ts` | entry | 主进程 | 窗口创建、IPC 注册、app 生命周期、自动更新 |
 | `electron/preload.ts` | bridge | 预加载 | contextBridge 暴露 `window.imageStudio` |
-| `src/main.tsx` | entry | 渲染进程 | App 根组件（441 行 shell：模式路由/导航/StudioProvider/订阅/灯箱；业务逻辑在 components/*） |
+| `src/main.tsx` | entry | 渲染进程 | App 根组件（466 行 shell：模式路由/导航/StudioProvider/订阅/灯箱；业务逻辑在 components/*） |
 | `src/global.d.ts` | types | 渲染进程 | IPC 契约 + 共享类型 |
 | `window.imageStudio` | API | 渲染进程 | 访问主进程能力的唯一通道 |
 
@@ -56,6 +56,7 @@ image-studio/
 - 文件写入必须临时文件 + `rename` 原子替换；禁止原地写
 - 本地处理结果禁止覆盖原图，必须作为新图归档
 - 禁止把打包产物目录合并（dist-renderer/dist-electron/dist 必须分离）
+- 渲染层禁止原生 `window.prompt/confirm/alert`：Electron 不支持 prompt（同步抛 `Error: prompt() is not supported.`），原生 confirm 在 Windows 会丢焦点（electron#31917）；输入/确认统一走 `src/components/Dialogs.tsx` 的 `useDialog()`
 
 ## COMMANDS
 ```bash
@@ -70,7 +71,8 @@ npm run package:win  # build && electron-builder NSIS x64 && package:verify
 ## NOTES
 - 无 CI，发布纯手动；每个 GitHub Release 必须上传 exe + `.exe.blockmap` + `latest.yml` 三者
 - 安装包未签名，Windows SmartScreen 会提醒（README 已说明）
-- `win.signAndEditExecutable: false` + `afterPack: tools/after-pack.cjs`（rcedit 写版本资源）是刻意设计，勿改回默认
+- `win.signAndEditExecutable: false` + `afterPack: tools/after-pack.cjs`（rcedit 写版本资源）是刻意设计，勿改回默认；版本资源与安装注册表的发布者（CompanyName/Publisher）单一来源 = `package.json` 的 `author`（NSIS 与 `appInfo.companyName` 均读取它），换发布者名字只需改 `author`
+- 安装器/卸载器自定义行为（`tools/installer.nsh`，经 `build.nsis.include` 接入；改动前先读该文件头注释）：①卸载欢迎页询问「是否删除用户数据」（默认保留；用户数据 = `%APPDATA%\imagotune`）；②真卸载保留安装根空目录并把路径记入 `HKCU\Software\ImagoTune\LastInstallDir`，重装时回填并**写回 InstallLocation 键**（`HKCU/HKLM\Software\{APP_GUID}`——安装模式页 leave 会执行 `setInstallModePerUser/AllUsers` 重读该键并重置 `$INSTDIR`，不写回则回填被覆盖）；升级（`--updated`）与静默卸载（`/S`）绝不触发删除。NSIS 警告被 electron-builder 视为错误：自定义脚本须在两轮编译（安装器/卸载器）均零警告——函数体必须放在宏内延迟到 MUI2 就绪后展开，仅卸载器使用的变量用 `!ifdef BUILD_UNINSTALLER` 保护
 - `npmRebuild: false`：原生模块 keytar 依赖预编译二进制，改 Electron/Node 版本需手动验证
 - `electron/main.ts` 存在硬编码 `LEGACY_SAVE_DIR = "D:\\codexproject\\生图\\保存图片"`（行 27），仅靠 try/catch 降级
 - 工作区有 `Open-Opencode.exe`（gitignore 不提交）与 `500行源码)`（未跟踪的目录统计文本，非目录）

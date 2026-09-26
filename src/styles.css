@@ -29,6 +29,11 @@
     radial-gradient(circle at 9% 21%, rgba(131, 211, 255, 0.22), transparent 28%),
     radial-gradient(circle at 91% 30%, rgba(255, 169, 205, 0.2), transparent 31%),
     linear-gradient(135deg, #f3fbff 0%, #fbf8ff 49%, #fff5f9 100%);
+  /* v2.8 全屏弹层遮罩单一来源：.lightbox / .compare-modal / .export-modal / .dialog-modal / .tutorial-modal
+     共用同一背景与模糊强度（用户反馈 10px 模糊度过高，统一为轻量毛玻璃、背景保持可辨）。
+     .tutorial-shade（教程聚光灯挖洞遮罩）语义不同，不引用本组 token。 */
+  --overlay-bg: rgba(22, 31, 55, 0.35);
+  --overlay-blur: 3px;
 }
 * {
   box-sizing: border-box;
@@ -355,12 +360,12 @@ label {
   position: fixed;
   inset: 0;
   z-index: 20;
-  background: rgba(9, 12, 29, 0.88);
+  background: var(--overlay-bg);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 5vh 5vw;
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(var(--overlay-blur));
 }
 .lightbox img {
   max-width: 90vw;
@@ -1287,6 +1292,24 @@ textarea {
   color: #526bbb;
   box-shadow: 0 5px 13px rgba(89, 112, 165, 0.13);
 }
+/* v2.6 隐藏 Alpha 内测渠道：解锁后渠道切换为三列网格，并追加「退出内测」入口。
+   未解锁时容器无 .alpha-unlocked 类，DOM 与两列布局逐像素一致。 */
+.update-channel-options.alpha-unlocked {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.update-alpha-exit {
+  align-self: flex-start;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: transparent;
+  color: #75849a;
+  font-size: 11px;
+  font-weight: 700;
+}
+.update-alpha-exit:hover {
+  background: #eff4fa;
+  color: #526bbb;
+}
 .update-settings .archive-toggle {
   margin: 0;
   line-height: 1.5;
@@ -2098,8 +2121,8 @@ textarea {
   display: grid;
   place-items: center;
   padding: 4vh 4vw;
-  background: rgba(22, 31, 55, 0.65);
-  backdrop-filter: blur(10px);
+  background: var(--overlay-bg);
+  backdrop-filter: blur(var(--overlay-blur));
 }
 .compare-modal > section,
 .export-modal > section {
@@ -2170,6 +2193,71 @@ textarea {
 }
 .lightbox img {
   background: #fff;
+}
+/* v2.8 应用内全局对话框：Electron renderer 的原生 prompt 不受支持（同步抛错）、原生 confirm 会触发 Windows 焦点异常（electron#31917） */
+.dialog-modal {
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 4vh 4vw;
+  background: var(--overlay-bg);
+  backdrop-filter: blur(var(--overlay-blur));
+}
+.dialog-modal > section {
+  position: relative;
+  width: min(440px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 22px;
+  border-radius: 20px;
+  background: linear-gradient(145deg, #fff, #fafdff);
+  box-shadow: 0 24px 75px rgba(7, 14, 38, 0.42);
+}
+.dialog-modal h2 {
+  margin: 5px 0 0;
+  color: #273a5e;
+}
+.dialog-modal p {
+  margin: 0;
+  color: #5b6e90;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.dialog-modal input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #e5edf7;
+  border-radius: 10px;
+  background: #fbfcfe;
+  color: #1d2532;
+  outline: none;
+}
+.dialog-modal input:focus {
+  border-color: #8e82e8;
+}
+.dialog-modal .dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.dialog-modal .primary.danger {
+  background: #b65a6b;
+  box-shadow: 0 8px 18px #b65a6b2b;
+}
+.dialog-modal .primary.danger:hover {
+  background: #a64e61;
+}
+.dialog-modal .lightbox-close {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  width: 32px;
+  height: 32px;
+  background: #f1f2f6;
+  color: #5b6e90;
 }
 @keyframes thumb-loading {
   to {
@@ -2244,11 +2332,13 @@ textarea {
     height: 130px;
   }
   .compare-modal,
-  .export-modal {
+  .export-modal,
+  .dialog-modal {
     padding: 2vh 2vw;
   }
   .compare-modal > section,
-  .export-modal > section {
+  .export-modal > section,
+  .dialog-modal > section {
     padding: 15px;
     border-radius: 16px;
   }
@@ -2319,8 +2409,15 @@ textarea {
 .feedback-toast {
   position: fixed;
   z-index: 90;
-  top: 16px;
+  /* v2.7 修复：.feedback-toast 是 header 的兄弟节点（非 header 后代），无法像
+     header::after 那样挖除 header 的拖拽矩形——原 top:16px 落在 header 拖拽盒
+     （高 --header-h）内、且压住右上原生按钮条（高 env(titlebar-area-height)），
+     拖动/点击会被 OS 当成拖窗口或被系统按钮吞掉。整体下移到 header 正下方，
+     彻底脱离拖拽区与按钮条；no-drag 为防御性兜底（远离拖拽盒时无副作用）。 */
+  top: calc(var(--header-h) + 12px);
   right: 18px;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -2337,6 +2434,8 @@ textarea {
   flex-direction: column;
   gap: 4px;
   min-width: 0;
+  /* v2.7 修复：占满剩余宽度，关闭按钮才会被推到气泡右上角（否则紧随文本右侧、右缘留白）。 */
+  flex: 1;
 }
 .feedback-toast strong {
   font-size: 13px;
@@ -2356,6 +2455,9 @@ textarea {
   width: 24px;
   height: 24px;
   flex: 0 0 auto;
+  /* v2.7 修复：清掉 UA 默认 padding（1px 6px）——内容盒小于 16px 图标时 grid 无法
+     水平居中，叉号会偏离按钮中心约 2px；置 0 后图标与圆形背景精确同心。 */
+  padding: 0;
   border-radius: 50%;
   display: grid;
   place-items: center;
@@ -2492,7 +2594,7 @@ textarea {
     flex: 1;
   }
   .feedback-toast {
-    top: 10px;
+    top: calc(var(--header-h) + 10px);
     right: 12px;
     width: calc(100vw - 24px);
   }
@@ -2607,7 +2709,8 @@ select:focus-visible {
 .lightbox,
 .compare-modal,
 .export-modal,
-.tutorial-modal {
+.tutorial-modal,
+.dialog-modal {
   animation: overlay-in var(--motion-base) var(--ease-soft) both;
 }
 .lightbox img,
@@ -2615,7 +2718,7 @@ select:focus-visible {
 .export-modal > section,
 .tutorial-welcome-card,
 .tutorial-step-card,
-.tutorial-center-modal {
+.dialog-modal > section {
   animation: modal-pop var(--motion-slow) var(--ease-out) both;
 }
 .empty span {
@@ -2706,9 +2809,11 @@ select:focus-visible {
   .compare-modal,
   .export-modal,
   .tutorial-modal,
+  .dialog-modal,
   .lightbox img,
   .compare-modal > section,
   .export-modal > section,
+  .dialog-modal > section,
   .tutorial-welcome-card,
   .tutorial-step-card,
   .tutorial-center-modal,
@@ -3495,8 +3600,8 @@ select:focus-visible {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(27, 39, 70, 0.62);
-  backdrop-filter: blur(14px);
+  background: var(--overlay-bg);
+  backdrop-filter: blur(var(--overlay-blur));
 }
 .tutorial-welcome-card {
   position: relative;
@@ -4097,7 +4202,6 @@ select:focus-visible {
   }
 }
 
-/* v1.5.1 品牌水印：艺术字放大为标题区右侧淡色背景水印 */
 .header-brand {
   position: relative;
   min-width: 0;
@@ -4107,25 +4211,6 @@ select:focus-visible {
   align-items: center;
   gap: 14px;
   flex-wrap: wrap;
-}
-.brand-watermark {
-  position: absolute;
-  z-index: 0;
-  top: 50%;
-  left: 330px;
-  transform: translate(-50%, -50%);
-  width: auto;
-  height: 64px;
-  max-width: 260px;
-  object-fit: contain;
-  opacity: 0.6;
-  pointer-events: none;
-  filter: saturate(0.6);
-}
-@media (max-width: 900px) {
-  .brand-watermark {
-    display: none;
-  }
 }
 
 /* v2.0 滚动条：外观由 ::-webkit-scrollbar 定制（常态 6px、悬停加粗到 10px、蓝紫、颜色不变）；

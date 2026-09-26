@@ -13,6 +13,7 @@ import {
   outpaintToSize,
   targetSizeForRatio,
 } from "../lib/outpaint";
+import type { ConfirmDialogOptions, TextDialogOptions } from "./Dialogs";
 import { b64ToFile, drawContain, readImage } from "./media-utils";
 import type { Mode, Output } from "./types";
 
@@ -207,6 +208,8 @@ export function useComposer({
   imageModel,
   chatModel,
   configured,
+  requestText,
+  requestConfirm,
 }: {
   refreshQueue: () => Promise<void>;
   mode: Mode;
@@ -221,6 +224,8 @@ export function useComposer({
   imageModel: string;
   chatModel: string;
   configured: boolean;
+  requestText: (options: TextDialogOptions) => Promise<string | null>;
+  requestConfirm: (options: ConfirmDialogOptions) => Promise<boolean>;
 }) {
   const [prompt, setPrompt] = useState("");
   const [negativePrompt, setNegativePrompt] = useState("");
@@ -308,7 +313,7 @@ export function useComposer({
       return;
     }
     if (update && (!selected || selected.builtin)) return;
-    const title = update ? selected!.title : window.prompt("模板名称", kind === "negative" ? "我的负面词" : "我的模板");
+    const title = update ? selected!.title : await requestText({ title: "保存提示词模板", defaultValue: kind === "negative" ? "我的负面词" : "我的模板", confirmLabel: "保存" });
     if (!title?.trim()) return;
     const result = await window.imageStudio.templates.save({
       id: update ? selected!.id : undefined,
@@ -331,7 +336,7 @@ export function useComposer({
   const deleteTemplate = async (kind: "positive" | "negative") => {
     const selectedId = kind === "negative" ? selectedNegativeTemplate : selectedTemplate;
     const item = templates.find((value) => value.id === selectedId && value.kind === kind);
-    if (!item || item.builtin || !window.confirm("删除模板“" + item.title + "”吗？")) return;
+    if (!item || item.builtin || !(await requestConfirm({ title: "删除模板", message: "删除模板“" + item.title + "”吗？", confirmLabel: "删除", danger: true }))) return;
     await window.imageStudio.templates.delete(item.id);
     setTemplates((current) => current.filter((value) => value.id !== item.id));
     if (kind === "negative") setSelectedNegativeTemplate("");

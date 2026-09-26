@@ -282,6 +282,67 @@ async function runAssertions(cdp, initialShotBytes) {
   );
 
   // -------------------------------------------------------------------------
+  // TOAST：通知弹窗 .feedback-toast 是 header 的兄弟节点（非 header 后代），无法
+  // 像 header::after 那样挖除 header 的拖拽矩形——若其矩形与 88px 高的 header 拖拽盒
+  // 重叠，拖动/点击会被 OS 解释为「拖窗口」；原 top:16px 还会压住右上原生按钮条
+  // （高 env(titlebar-area-height)），点击被系统按钮吞掉。故其顶部必须落在 header
+  // 盒下方、并低于按钮条高度，且显式 no-drag 兜底。
+  // 同时锁定气泡内部布局契约（v2.7）：内容块 flex:1 把关闭按钮推到右上角（右缘距
+  // 气泡边缘 ≈ padding，用宽度占比判定、不受界面缩放影响）；按钮 padding:0 让 16px
+  // 叉号图标与 24px 圆形背景同心（UA 默认 1px 6px 会让图标水平偏心约 2px）。
+  // 该弹窗条件渲染（无错误/通知时不在 DOM），这里用同 class 的同构隐藏探测节点
+  // 读取 CSS 规则的解析结果来断言样式契约。
+  // -------------------------------------------------------------------------
+  log("");
+  log("--- TOAST ---");
+  const toastRaw = await evaluate(
+    `(function(){
+      var probe=document.createElement('div');
+      probe.className='feedback-toast feedback-success';
+      var content=document.createElement('div');
+      var strong=document.createElement('strong');
+      strong.textContent='操作成功';
+      var span=document.createElement('span');
+      span.textContent='已退出内测渠道';
+      content.appendChild(strong);content.appendChild(span);
+      var btn=document.createElement('button');
+      btn.setAttribute('aria-label','关闭提示');
+      btn.innerHTML='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
+      probe.appendChild(content);probe.appendChild(btn);
+      probe.style.visibility='hidden';
+      document.body.appendChild(probe);
+      var cs=getComputedStyle(probe);
+      var top=parseFloat(cs.top)||0;
+      var region=cs['-webkit-app-region']||cs.getPropertyValue('-webkit-app-region')||cs.getPropertyValue('app-region');
+      function rect(el){var b=el.getBoundingClientRect();return {x:b.x,y:b.y,w:b.width,h:b.height};}
+      var tr=rect(probe),br=rect(btn),sr=rect(btn.querySelector('svg'));
+      var rightGap=+(tr.x+tr.w-(br.x+br.w)).toFixed(2);
+      var iconOffsetX=+((sr.x+sr.w/2)-(br.x+br.w/2)).toFixed(2);
+      var iconOffsetY=+((sr.y+sr.h/2)-(br.y+br.h/2)).toFixed(2);
+      probe.remove();
+      var headerHeight=document.querySelector('header').getBoundingClientRect().height;
+      var tp=document.createElement('div');
+      tp.style.paddingTop='env(titlebar-area-height, 0px)';
+      document.body.appendChild(tp);
+      var titlebarAreaHeight=parseFloat(getComputedStyle(tp).paddingTop)||0;
+      tp.remove();
+      return JSON.stringify({top:+top.toFixed(2),region:region,headerHeight:+headerHeight.toFixed(2),titlebarAreaHeight:+titlebarAreaHeight.toFixed(2),toastWidth:+tr.w.toFixed(2),rightGap:rightGap,iconOffsetX:iconOffsetX,iconOffsetY:iconOffsetY});
+    })()`
+  );
+  const toast = JSON.parse(toastRaw);
+  check(
+    "TOAST no-drag, top clears header drag box + button strip, close button pinned right, icon centered",
+    toast.region === "no-drag" &&
+      toast.top >= toast.headerHeight - 0.5 &&
+      toast.top >= toast.titlebarAreaHeight - 0.5 &&
+      toast.rightGap > 0 &&
+      toast.rightGap <= toast.toastWidth * 0.1 &&
+      Math.abs(toast.iconOffsetX) <= 0.5 &&
+      Math.abs(toast.iconOffsetY) <= 0.5,
+    toastRaw
+  );
+
+  // -------------------------------------------------------------------------
   // WCO：窗口按钮改由系统原生 Window Controls Overlay 承载——
   // DOM 内不再有 .window-controls；navigator.windowControlsOverlay 可见。
   // 注意：Electron 44 未实现 navigator.windowControlsOverlay.getTitleBarAreaRect()

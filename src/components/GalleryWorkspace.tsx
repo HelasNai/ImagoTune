@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { parseTags } from "../lib/creative";
 import type { LocalAIAction } from "./LocalAIToolbox";
+import { useDialog } from "./Dialogs";
 import { NavIcon } from "./icons";
 
 type OpenAction = "preview" | "reuse" | "edit" | "outpaint";
@@ -37,6 +38,7 @@ export function GalleryWorkspace({
   const [bulkProjectId, setBulkProjectId] = useState("inbox");
   const [bulkTags, setBulkTags] = useState("");
   const [compare, setCompare] = useState<CompareItem[]>([]);
+  const { requestText, requestConfirm } = useDialog();
 
   const refresh = useCallback(async (targetPage = page) => {
     try {
@@ -143,7 +145,7 @@ export function GalleryWorkspace({
   };
 
   const renameProject = async (project: GalleryProject) => {
-    const name = window.prompt("项目名称", project.name);
+    const name = await requestText({ title: "重命名项目", message: "输入新的项目名称", defaultValue: project.name, confirmLabel: "重命名" });
     if (!name?.trim()) return;
     const response = await window.imageStudio.projects.rename(project.id, name);
     onNotice(response.ok ? "项目已重命名" : response.error || "重命名失败");
@@ -151,8 +153,7 @@ export function GalleryWorkspace({
   };
 
   const deleteProject = async (project: GalleryProject) => {
-    const message = "删除项目后，其中图片会回到收件箱，确定继续吗？";
-    if (!window.confirm(message)) return;
+    if (!(await requestConfirm({ title: "删除项目", message: "删除项目后，其中图片会回到收件箱，确定继续吗？", confirmLabel: "删除", danger: true }))) return;
     const response = await window.imageStudio.projects.delete(project.id);
     if (activeProject === project.id) setActiveProject("all");
     onNotice(response.ok ? "项目已删除，图片已移回收件箱" : response.error || "删除失败");
@@ -160,9 +161,9 @@ export function GalleryWorkspace({
   };
 
   const updateMetadata = async (item: GalleryItem) => {
-    const title = window.prompt("图片标题", item.title);
+    const title = await requestText({ title: "编辑图片标题", defaultValue: item.title });
     if (title === null) return;
-    const tags = window.prompt("标签（用逗号分隔）", item.recipe.tags.join("，"));
+    const tags = await requestText({ title: "编辑标签", message: "用逗号分隔", defaultValue: item.recipe.tags.join("，") });
     const response = await window.imageStudio.gallery.update(item.id, {
       title,
       tags: tags === null ? item.recipe.tags : parseTags(tags),
@@ -180,7 +181,7 @@ export function GalleryWorkspace({
       onNotice("请先选择图片");
       return;
     }
-    if (action === "delete" && !window.confirm("删除所选图片及原始 PNG 文件吗？")) return;
+    if (action === "delete" && !(await requestConfirm({ title: "删除所选图片", message: "删除所选图片及原始 PNG 文件吗？", confirmLabel: "删除", danger: true }))) return;
     const response = await window.imageStudio.gallery.bulk({ ids, action, ...extra });
     onNotice(response.ok
       ? "已处理 " + String(response.count || ids.length) + " 张图片"

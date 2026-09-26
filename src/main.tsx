@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
-import imaginationTitle from "./assets/imagination-title-cropped.png";
 import { ComposerPanel } from "./components/ComposerPanel";
+import { DialogProvider, useDialog } from "./components/Dialogs";
 import { GalleryWorkspace } from "./components/GalleryWorkspace";
 import { LocalAIAction, LocalAISource, LocalAIToolbox } from "./components/LocalAIToolbox";
 import { initialTutorialView, TutorialExperience, TutorialView } from "./components/TutorialExperience";
@@ -23,6 +23,10 @@ import {
   TutorialMode,
   TutorialState,
 } from "./lib/tutorial";
+
+// 通知自动关闭时长（v2.7）：成功/信息 5s；错误/需处理 12s（留足阅读「建议」的时间）。
+const NOTICE_TOAST_MS = 5000;
+const ERROR_TOAST_MS = 12000;
 
 function App() {
   const initialTutorial = useMemo(() => parseTutorialState(window.localStorage.getItem(TUTORIAL_STORAGE_KEY)), []);
@@ -72,6 +76,8 @@ function App() {
     setQueueItems(result.items || []);
   }, []);
 
+  const { requestText, requestConfirm } = useDialog();
+
   const studioComposer = useComposer({
     refreshQueue,
     mode,
@@ -86,6 +92,8 @@ function App() {
     imageModel,
     chatModel,
     configured,
+    requestText,
+    requestConfirm,
   });
 
   const handleSaveDirChanged = useCallback(async () => {
@@ -125,13 +133,31 @@ function App() {
     void refreshWorkspace();
   }, [initialTutorial, refreshWorkspace, updateTutorialState]);
 
+  // v2.7：通知不再随模式切换清空——toast 有自己的生命周期（见下方自动关闭计时），
+  // 切换侧栏仅重置滚动位置与右键菜单。
   useEffect(() => {
     appRef.current?.scrollTo({ top: 0, behavior: "auto" });
     setPreviewContextMenu(null);
-    setError("");
-    setNotice("");
-    setErrorInfo(null);
   }, [mode]);
+
+  // v2.7 通知自动关闭：成功/信息 5s、错误/需处理 12s；新通知出现会重置计时。
+  // notice 出现时顺带清掉旧错误——否则新的成功提示会被更高优先级的旧错误遮挡。
+  useEffect(() => {
+    if (!notice) return;
+    setError("");
+    setErrorInfo(null);
+    const timer = window.setTimeout(() => setNotice(""), NOTICE_TOAST_MS);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  useEffect(() => {
+    if (!error && !errorInfo) return;
+    const timer = window.setTimeout(() => {
+      setError("");
+      setErrorInfo(null);
+    }, ERROR_TOAST_MS);
+    return () => window.clearTimeout(timer);
+  }, [error, errorInfo]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -313,7 +339,6 @@ function App() {
       <div className="app" ref={appRef}>
         <header>
           <div className="header-brand">
-            <img className="brand-watermark" src={imaginationTitle} alt="" aria-hidden="true" />
             <div className="header-title-row">
               <span className="eyebrow">IMAGOTUNE · V{appVersion || "2.0.0"}</span>
             </div>
@@ -437,5 +462,5 @@ function App() {
 }
 
 createRoot(document.getElementById("root")!).render(
-  <React.StrictMode><App /></React.StrictMode>,
+  <React.StrictMode><DialogProvider><App /></DialogProvider></React.StrictMode>,
 );

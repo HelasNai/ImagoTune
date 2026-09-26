@@ -8,15 +8,18 @@ module.exports = async function applyWindowsResources(context) {
   const executable = path.join(context.appOutDir, `${appInfo.productFilename}.exe`);
   const icon = path.join(context.packager.projectDir, "ImagoTune.ico");
 
+  // 发布者名称单一来源：package.json 的 author（electron-builder 已规范化为 appInfo.companyName）
+  const companyName = appInfo.companyName || appInfo.productName;
+
   const options = {
     icon,
     "file-version": appInfo.version,
     "product-version": appInfo.version,
     "version-string": {
-      CompanyName: "zztnbnb",
+      CompanyName: companyName,
       FileDescription: "ImagoTune",
       InternalName: "ImagoTune",
-      LegalCopyright: "Copyright (c) zztnbnb",
+      LegalCopyright: `Copyright (c) ${companyName}`,
       OriginalFilename: `${appInfo.productFilename}.exe`,
       ProductName: "ImagoTune",
     },

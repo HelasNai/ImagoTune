@@ -33,7 +33,7 @@ const controllers = new Map<string, AbortController>();
 const cancelledRequests = new Set<string>();
 const timedOutRequests = new Set<string>();
 type UpdatePhase = "idle" | "checking" | "available" | "downloading" | "downloaded" | "not-available" | "error";
-type UpdateChannel = "stable" | "beta";
+type UpdateChannel = "stable" | "beta" | "alpha";
 type UpdateStatus = { phase: UpdatePhase; version?: string; progress?: number; message: string };
 let updateStatus: UpdateStatus = { phase: "idle", message: "尚未检查更新" };
 let updateCheckInFlight = false;
@@ -250,7 +250,13 @@ async function config() {
 }
 
 async function updateChannelPref(): Promise<UpdateChannel> {
-  return (await storedCredential(`${ACCOUNT}:updateChannel`)) === "beta" ? "beta" : "stable";
+  const stored = await storedCredential(`${ACCOUNT}:updateChannel`);
+  return stored === "beta" ? "beta" : stored === "alpha" ? "alpha" : "stable";
+}
+
+// 隐藏 Alpha 内测渠道的解锁标志：仅存于 keytar，渲染层无法直接读写。
+async function alphaChannelUnlocked(): Promise<boolean> {
+  return (await storedCredential(`${ACCOUNT}:alphaChannelUnlocked`)) === "true";
 }
 
 async function autoUpdatePref(): Promise<boolean> {
@@ -327,8 +333,8 @@ async function checkForAppUpdate() {
 
 async function applyUpdatePreferences() {
   const channel = await updateChannelPref();
-  autoUpdater.channel = channel === "beta" ? "beta" : "latest";
-  autoUpdater.allowPrerelease = channel === "beta";
+  autoUpdater.channel = channel === "stable" ? "latest" : channel;
+  autoUpdater.allowPrerelease = channel !== "stable";
   // electron-updater's channel setter unconditionally flips allowDowngrade to true.
   // Force it back off so switching beta -> stable never silently downgrades.
   autoUpdater.allowDowngrade = false;
@@ -746,15 +752,34 @@ app.whenReady().then(async () => {
       return created[0] ? { ok: true, item: created[0] } : { ok: false, error: "本地处理结果归档失败" };
     } catch (error) { return { ok: false, error: (error as Error).message || "本地处理结果归档失败" }; }
   });
-  ipcMain.handle("updates:get", async () => ({ ok: true, appVersion: app.getVersion(), channel: await updateChannelPref(), autoUpdate: await autoUpdatePref(), supported: app.isPackaged, status: updateStatus }));
+  ipcMain.handle("updates:get", async () => {
+    const channel = await updateChannelPref();
+    return { ok: true, appVersion: app.getVersion(), channel, autoUpdate: await autoUpdatePref(), supported: app.isPackaged, status: updateStatus, alphaUnlocked: (await alphaChannelUnlocked()) || channel === "alpha" };
+  });
   ipcMain.handle("updates:setChannel", async (_e, channel: UpdateChannel) => {
     try {
-      const next: UpdateChannel = channel === "beta" ? "beta" : "stable";
+      const next: UpdateChannel = channel === "beta" ? "beta" : channel === "alpha" ? "alpha" : "stable";
+      // Alpha 渠道必须先经隐藏手势解锁，未解锁时拒绝写入。
+      if (next === "alpha" && !(await alphaChannelUnlocked())) return { ok: false, error: "Alpha 测试渠道尚未解锁" };
       await keytar.setPassword(SERVICE, `${ACCOUNT}:updateChannel`, next);
       await applyUpdatePreferences();
       if ((await autoUpdatePref()) && app.isPackaged) void checkForAppUpdate();
       return { ok: true, channel: next };
     } catch (error) { return { ok: false, error: (error as Error).message || "无法保存更新通道设置" }; }
+  });
+  ipcMain.handle("updates:setAlphaUnlocked", async (_e, enabled: boolean) => {
+    try {
+      await keytar.setPassword(SERVICE, `${ACCOUNT}:alphaChannelUnlocked`, enabled ? "true" : "false");
+      let channel = await updateChannelPref();
+      // 退出内测时若当前渠道仍是 alpha，回落到 stable 并按偏好立即重查更新。
+      if (enabled === false && channel === "alpha") {
+        await keytar.setPassword(SERVICE, `${ACCOUNT}:updateChannel`, "stable");
+        channel = "stable";
+        await applyUpdatePreferences();
+        if ((await autoUpdatePref()) && app.isPackaged) void checkForAppUpdate();
+      }
+      return { ok: true, channel };
+    } catch (error) { return { ok: false, error: (error as Error).message || "无法保存内测渠道解锁状态" }; }
   });
   ipcMain.handle("updates:setAutoUpdate", async (_e, enabled: boolean) => {
     try {

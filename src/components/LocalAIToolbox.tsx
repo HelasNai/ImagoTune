@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { validateUpscaleOutput } from "../lib/local-ai";
+import { useDialog } from "./Dialogs";
 import { NavIcon } from "./icons";
 
 export type LocalAISource = {
@@ -136,6 +137,7 @@ export function LocalAIToolbox({
   const workerRef = useRef<Worker | null>(null);
   const taskIdRef = useRef("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const { requestConfirm } = useDialog();
 
   const refreshModels = useCallback(async () => {
     const response = await window.imageStudio.localAI.models();
@@ -265,7 +267,7 @@ export function LocalAIToolbox({
   };
 
   const deleteModel = async (id: LocalAIModelId) => {
-    if (!window.confirm("删除后再次使用该功能需要重新下载模型，确定继续吗？")) return;
+    if (!(await requestConfirm({ title: "删除本地模型", message: "删除后再次使用该功能需要重新下载模型，确定继续吗？", confirmLabel: "删除", danger: true }))) return;
     const response = await window.imageStudio.localAI.deleteModel(id);
     if (!response.ok) onNotice(response.error || "模型删除失败", true);
     await refreshModels();
