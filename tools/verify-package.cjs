@@ -38,7 +38,7 @@ function verifyRendererAssets(packageRoot) {
     const relativePath = decodeURIComponent(reference.replace(/^\.\//, ""));
     const assetPath = path.resolve(rendererRoot, relativePath);
     const rel = path.relative(rendererRoot, assetPath);
-    const inside = rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+    const inside = rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
     if (!inside || !fs.existsSync(assetPath)) {
       throw new Error(`Packaged renderer asset is missing or invalid: ${reference}`);
     }
