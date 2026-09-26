@@ -1,6 +1,7 @@
 import path from "node:path";
 import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { GenerationErrorInfo } from "./generation-error";
 
 export type BinaryPayload = { name: string; type: string; data: number[] };
@@ -55,7 +56,7 @@ export function createQueueStore(baseDir: string) {
       const parsed = JSON.parse(raw) as unknown;
       const items = Array.isArray(parsed) ? parsed as QueueJob[] : [];
       const normalized = recoverRunning ? items.map(item => item.status === "running" ? { ...item, status: "interrupted" as const, error: "应用关闭时任务正在运行，请手动重试。", errorInfo: { category: "cancelled" as const, title: "任务已中断", message: "应用关闭时任务仍在运行。", suggestion: "确认参数后手动重试，软件不会自动重复计费。", retryable: true }, updatedAt: timestamp() } : item) : items;
-      if (recoverRunning && JSON.stringify(normalized) !== JSON.stringify(items)) await write(normalized);
+      if (recoverRunning && !isDeepStrictEqual(normalized, items)) await write(normalized);
       return normalized;
     } catch { return [] as QueueJob[]; }
   }
