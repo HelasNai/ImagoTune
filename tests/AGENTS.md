@@ -1,17 +1,18 @@
 # tests — 纯逻辑单元测试
 
 ## OVERVIEW
-项目唯一测试层：17 个 `*.test.ts` / 102 个 it（扁平结构），Vitest 4.x 纯 Node 环境，无 DOM。
+项目唯一测试层：18 个 `*.test.ts` / 106 个 it（扁平结构），Vitest 4.x 纯 Node 环境，无 DOM。
 
 ## COVERAGE BOUNDARY
 可测（仅纯逻辑，文件名 kebab-case 与模块一一对应）：
 - `electron/`：queue-store、gallery-store、png-metadata、image-recipe、generation-error（同测于 `recipe-error.test`）、reverse-prompt、local-ai-model-manager、fs-utils、data-url、constants
 - `src/lib/`：creative、local-ai、outpaint、tutorial、format、media
 - 跨层一致性测试（同时导入 electron 纯模块与 `src/lib` 同名常量/行为）：`constants.test`（默认模型 / inbox）、`outpaint-limits.test`（画布常量）、`local-ai-limits.test`（本地 AI 上限）、`data-url.test`（去前缀正则，含 `image/svg+xml` 与大写 MIME 用例）
+- 源码文本一致性测试：`preload-channels.test`（导入 `../electron/channels` 并读取 `../electron/preload.ts` 源码，双向锁定 71 个通道字符串；因沙箱化 preload 无法 `import` 本地模块，用源码文本守卫替代运行时单源化）
 
 绝不测：
 - UI 组件（`src/components`、`src/main.tsx`）
-- `electron/main.ts`、`electron/preload.ts`（IPC / 窗口 / 生命周期）
+- `electron/main.ts`（IPC / 窗口 / 生命周期）；`electron/preload.ts` 无运行时测试，但由 `tests/preload-channels.test.ts` 做源码文本一致性检查（preload↔channels 71 通道双向锁定）
 - `src/workers/`（WebGPU 推理）
 
 ## CONVENTIONS
@@ -29,4 +30,4 @@ npm test    # vitest run
 本目录不在 tsconfig 中，不参与 `npm run typecheck`。无 vitest.config，vite.config 无 `test` 块，纯默认配置。
 
 ## ADDING A TEST
-新逻辑若可测试，应落在 `electron/`（stores / 元数据 / 模型管理 / 无副作用纯模块）或 `src/lib/`（纯函数）。新模块 → 同目录加 `*.test.ts`，遵循上方 conventions。UI / 主进程 / preload / worker 逻辑不写测试。声称与两端共享的常量/正则，须由跨层一致性测试锁定（同时 import `../electron/*` 与 `../src/lib/*`）。
+新逻辑若可测试，应落在 `electron/`（stores / 元数据 / 模型管理 / 无副作用纯模块）或 `src/lib/`（纯函数）。新模块 → 同目录加 `*.test.ts`，遵循上方 conventions。UI / 主进程 / worker 逻辑不写运行时测试；`electron/preload.ts` 无运行时测试，仅可写源码文本一致性检查（如 `preload-channels.test` 对 preload↔channels 通道的双向锁定）。声称与两端共享的常量/正则，须由跨层一致性测试锁定（同时 import `../electron/*` 与 `../src/lib/*`）。
