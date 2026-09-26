@@ -1,6 +1,7 @@
 import React from "react";
 import { MaskPainter } from "./MaskPainter";
 import { NavIcon } from "./icons";
+import { ImageDropInput } from "./ImageDropInput";
 import { qualities } from "./useComposer";
 import type { ComposerActions, ComposerState } from "./useComposer";
 import { outpaintQuickRatios, ratioOptions, resolutionOptions } from "../lib/creative";
@@ -195,10 +196,13 @@ export function ComposerPanel({
       <details className="reverse-prompt">
         <summary>图反推提示词 · {chatModel}</summary>
         <div className="reverse-upload-row">
-          <label className="upload ghost">
-            {reverseImage ? "待分析：" + reverseImage.name : "选择需要反推的图片"}
-            <input type="file" accept="image/*" onChange={(event) => { setReverseImage(event.target.files?.[0] || null); setReverseResult(null); }} />
-          </label>
+          <ImageDropInput accept="image/*" onFiles={(files) => { setReverseImage(files[0] ?? null); setReverseResult(null); }}>
+            {({ inputId, dropProps }) => (
+              <label className="upload ghost" htmlFor={inputId} {...dropProps}>
+                {reverseImage ? "待分析：" + reverseImage.name : "选择需要反推的图片"}
+              </label>
+            )}
+          </ImageDropInput>
           <button className="assistant-ai" onClick={() => void reversePrompt()} disabled={reversing}>{reversing ? "分析中…" : "生成中英文提示词"}</button>
         </div>
         {reverseResult && <div className="reverse-results">
@@ -214,14 +218,20 @@ export function ComposerPanel({
       {(mode === "edit" || mode === "outpaint") && (
         <>
           <div className="upload-row">
-            <label className="upload">
-              {image ? "原图：" + image.name : mode === "outpaint" ? "上传扩图原图" : "上传原图"}
-              <input type="file" accept="image/*" onChange={(event) => setImage(event.target.files?.[0] || null)} />
-            </label>
-            {mode === "edit" && <label className="upload ghost">
-              {externalMask ? "外部蒙版：" + externalMask.name : "可选外部蒙版"}
-              <input type="file" accept="image/*" onChange={(event) => setExternalMask(event.target.files?.[0] || null)} />
-            </label>}
+            <ImageDropInput accept="image/*" onFiles={(files) => setImage(files[0] ?? null)}>
+              {({ inputId, dropProps }) => (
+                <label className="upload" htmlFor={inputId} {...dropProps}>
+                  {image ? "原图：" + image.name : mode === "outpaint" ? "上传扩图原图" : "上传原图"}
+                </label>
+              )}
+            </ImageDropInput>
+            {mode === "edit" && <ImageDropInput accept="image/*" onFiles={(files) => setExternalMask(files[0] ?? null)}>
+              {({ inputId, dropProps }) => (
+                <label className="upload ghost" htmlFor={inputId} {...dropProps}>
+                  {externalMask ? "外部蒙版：" + externalMask.name : "可选外部蒙版"}
+                </label>
+              )}
+            </ImageDropInput>}
           </div>
           {mode === "edit" && <MaskPainter image={image} onMaskChange={maskChange} />}
         </>
@@ -234,13 +244,11 @@ export function ComposerPanel({
             <small>{mode === "generate" ? "可参考构图、风格、配色或主体特征生成新画面" : "与原图合成参考画板，帮助模型理解风格和元素"}</small>
           </div>
           <div className="reference-actions">
-            <label className="upload ghost">
-              导入图片
-              <input type="file" accept="image/*" multiple onChange={(event) => {
-                addReferenceFiles(Array.from(event.target.files || []));
-                event.currentTarget.value = "";
-              }} />
-            </label>
+            <ImageDropInput accept="image/*" multiple onFiles={addReferenceFiles}>
+              {({ inputId, dropProps }) => (
+                <label className="upload ghost" htmlFor={inputId} {...dropProps}>导入图片</label>
+              )}
+            </ImageDropInput>
             <button type="button" className="secondary" onClick={() => void pasteReferenceImage()}>从剪贴板粘贴</button>
             {references.length > 0 && <button type="button" className="secondary" onClick={() => setReferences([])}>清空</button>}
           </div>

@@ -7,6 +7,7 @@ import { useDialog } from "./Dialogs";
 import { callIpc } from "./ipc";
 import { useCopyImage } from "./useCopy";
 import { useSaveImage } from "./useSaveImage";
+import { ImageDropInput } from "./ImageDropInput";
 import { NavIcon } from "./icons";
 import type { StudioNotify } from "./StudioContext";
 
@@ -133,7 +134,6 @@ export function LocalAIToolbox({
   const [zoom, setZoom] = useState(false);
   const workerRef = useRef<Worker | null>(null);
   const taskIdRef = useRef("");
-  const fileRef = useRef<HTMLInputElement>(null);
   const { requestConfirm } = useDialog();
   const copyImage = useCopyImage(onNotice);
   const saveImage = useSaveImage(onNotice);
@@ -338,9 +338,12 @@ export function LocalAIToolbox({
     <div className="local-ai-grid">
       <section className="local-ai-source card">
         <div className="section-head"><div><span className="eyebrow">SOURCE</span><h3>待处理图片</h3></div>{source && <button className="secondary" onClick={() => { onSourceChange(null); setResult(null); }}>清除</button>}</div>
-        <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void importFile(file); event.currentTarget.value = ""; }} />
-        {source ? <div className="local-source-preview"><img src={source.dataUrl} alt={source.title} /><strong>{source.title}</strong><small>{source.recipe.size} · 原图始终保留</small></div> : <button className="local-drop-zone" onClick={() => fileRef.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const file = event.dataTransfer.files[0]; if (file) void importFile(file); }}><strong>导入一张图片</strong><span>点击选择、拖放或从剪贴板粘贴</span></button>}
-        <div className="local-source-actions"><button onClick={() => fileRef.current?.click()}>导入文件</button><button onClick={() => void pasteImage()}>粘贴图片</button></div>
+        <ImageDropInput accept="image/png,image/jpeg,image/webp" onFiles={(files) => void importFile(files[0])}>
+          {({ open, dropProps }) => <>
+            {source ? <div className="local-source-preview"><img src={source.dataUrl} alt={source.title} /><strong>{source.title}</strong><small>{source.recipe.size} · 原图始终保留</small></div> : <button className="local-drop-zone" onClick={open} {...dropProps}><strong>导入一张图片</strong><span>点击选择、拖放或从剪贴板粘贴</span></button>}
+            <div className="local-source-actions"><button onClick={open}>导入文件</button><button onClick={() => void pasteImage()}>粘贴图片</button></div>
+          </>}
+        </ImageDropInput>
 
         <div className="tool-segments" role="tablist">
           {(Object.keys(actionLabels) as LocalAIAction[]).map((value) => <button key={value} className={action === value ? "active" : ""} onClick={() => setAction(value)}>{actionLabels[value]}</button>)}
