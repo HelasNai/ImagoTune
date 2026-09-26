@@ -16,6 +16,7 @@ import { isVisionInputUnsupported, parseReversePrompt } from "./reverse-prompt";
 import { normalizeImageBase64, prioritizeImageResponses, type ImageResponse } from "./image-response";
 import { LocalAIModelManager } from "./local-ai-model-manager";
 import { LocalAIModelId, localAIModelById } from "./local-ai-models";
+import { createDirectoryManager } from "./directory-manager";
 import { DEFAULT_CHAT_MODEL, DEFAULT_IMAGE_MODEL, INBOX_PROJECT_ID } from "./constants";
 import {
   CLIPBOARD_COPY_IMAGE, CLIPBOARD_COPY_TEXT, CLIPBOARD_READ_IMAGE,
@@ -80,21 +81,38 @@ let queueStore: QueueStore;
 let localAIModels: LocalAIModelManager;
 let activeQueueJobId: string | null = null;
 
+const saveDirManager = createDirectoryManager({
+  credentialKey: `${ACCOUNT}:saveDir`,
+  systemDir: systemSaveDir,
+  legacyDir: LEGACY_SAVE_DIR,
+  activate: activateSaveDirectory,
+  currentDir: () => saveDir,
+  dialogTitle: "选择 ImagoTune 保存位置",
+  resultKey: "saveDir",
+  guard: () => (activeQueueJobId ? { ok: false, error: "当前有任务正在生成，请等待完成后再切换保存位置" } : null),
+  chooseError: "无法使用所选保存位置",
+  resetError: "无法恢复系统默认保存位置",
+  readCredential: storedCredential,
+  writeCredential: (account, value) => keytar.setPassword(SERVICE, account, value),
+});
+
+const modelDirManager = createDirectoryManager({
+  credentialKey: `${ACCOUNT}:modelDir`,
+  systemDir: systemModelDir,
+  activate: activateModelDirectory,
+  currentDir: () => localAIModels.modelsDir,
+  dialogTitle: "选择本地 AI 模型保存位置",
+  resultKey: "modelsDir",
+  guard: () => (localAIModels.hasActiveDownloads() ? { ok: false, error: "当前有模型正在下载，请先暂停或等待完成" } : null),
+  resultExtras: async () => ({ items: await localAIModels.list() }),
+  chooseError: "无法使用所选模型位置",
+  resetError: "无法恢复默认模型位置",
+  readCredential: storedCredential,
+  writeCredential: (account, value) => keytar.setPassword(SERVICE, account, value),
+});
+
 function systemModelDir() {
   return path.join(app.getPath("userData"), "models");
-}
-
-async function resolveModelDir() {
-  const preferred = await storedCredential(`${ACCOUNT}:modelDir`);
-  if (preferred) {
-    try {
-      await fs.mkdir(preferred, { recursive: true });
-      return path.resolve(preferred);
-    } catch {
-      // A removable or network drive may be unavailable. Fall back to userData.
-    }
-  }
-  return systemModelDir();
 }
 
 async function copyModelFiles(source: string, target: string) {
@@ -133,24 +151,6 @@ async function archiveImages(images: ApiImage[], input: RequestInput | EditInput
 
 function systemSaveDir() {
   return path.join(app.getPath("pictures"), "ImagoTune");
-}
-
-async function resolveSaveDir() {
-  const preferred = await storedCredential(`${ACCOUNT}:saveDir`);
-  if (preferred) {
-    try {
-      await fs.mkdir(preferred, { recursive: true });
-      return path.resolve(preferred);
-    } catch {
-      // The configured drive may be temporarily unavailable. Fall back safely.
-    }
-  }
-  try {
-    if ((await fs.stat(LEGACY_SAVE_DIR)).isDirectory()) return LEGACY_SAVE_DIR;
-  } catch {
-    // 新安装设备通常没有开发机的 D 盘目录，改用系统“图片”文件夹。
-  }
-  return systemSaveDir();
 }
 
 async function activateSaveDirectory(directory: string) {
@@ -599,9 +599,9 @@ async function processQueue() {
 }
 app.whenReady().then(async () => {
   await migrateLegacyUserData();
-  await activateSaveDirectory(await resolveSaveDir());
+  await saveDirManager.activate(await saveDirManager.resolve());
   queueStore = createQueueStore(app.getPath("userData")); await queueStore.recover();
-  await activateModelDirectory(await resolveModelDir());
+  await modelDirManager.activate(await modelDirManager.resolve());
   protocol.handle("local-ai-model", async (request) => {
     const id = decodeURIComponent(new URL(request.url).hostname) as LocalAIModelId;
     const model = localAIModelById(id);
@@ -614,22 +614,7 @@ app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   ipcMain.handle(SETTINGS_GET, async () => { const c = await config(); return { configured: Boolean(c.apiKey && c.baseUrl), hasSavedApiKey: Boolean(c.apiKey), baseUrl: c.baseUrl, imageModel: c.imageModel, chatModel: c.chatModel, autoArchive: c.autoArchive, saveDir }; });
   ipcMain.handle(SETTINGS_SAVE, async (_e, value: { apiKey: string; baseUrl: string; imageModel: string; chatModel: string; autoArchive?: boolean }) => { if (value.apiKey.trim()) await keytar.setPassword(SERVICE, ACCOUNT, value.apiKey.trim()); await keytar.setPassword(SERVICE, `${ACCOUNT}:baseUrl`, value.baseUrl.trim()); await keytar.setPassword(SERVICE, `${ACCOUNT}:imageModel`, value.imageModel.trim() || DEFAULT_IMAGE_MODEL); await keytar.setPassword(SERVICE, `${ACCOUNT}:chatModel`, value.chatModel.trim() || DEFAULT_CHAT_MODEL); await keytar.setPassword(SERVICE, `${ACCOUNT}:autoArchive`, value.autoArchive === false ? "false" : "true"); return { ok: true }; });
-  ipcMain.handle(SETTINGS_CHOOSE_SAVE_DIR, async () => {
-    if (activeQueueJobId) return { ok: false, error: "当前有任务正在生成，请等待完成后再切换保存位置" };
-    const result = await dialog.showOpenDialog({
-      title: "选择 ImagoTune 保存位置",
-      defaultPath: saveDir,
-      properties: ["openDirectory", "createDirectory"],
-    });
-    if (result.canceled || !result.filePaths[0]) return { ok: true, canceled: true, saveDir };
-    try {
-      const next = await activateSaveDirectory(result.filePaths[0]);
-      await keytar.setPassword(SERVICE, `${ACCOUNT}:saveDir`, next);
-      return { ok: true, canceled: false, saveDir: next };
-    } catch (error) {
-      return { ok: false, error: (error as Error).message || "无法使用所选保存位置" };
-    }
-  });
+  ipcMain.handle(SETTINGS_CHOOSE_SAVE_DIR, () => saveDirManager.choose());
   ipcMain.handle(WINDOW_MINIMIZE, async (event) => {
     try {
       const win = BrowserWindow.fromWebContents(event.sender);
@@ -691,21 +676,8 @@ app.whenReady().then(async () => {
       return { ok: false, error: (error as Error).message || "无法设置界面缩放" };
     }
   });
-  ipcMain.handle(SETTINGS_RESET_SAVE_DIR, async () => {
-    if (activeQueueJobId) return { ok: false, error: "当前有任务正在生成，请等待完成后再切换保存位置" };
-    try {
-      const next = await activateSaveDirectory(systemSaveDir());
-      await keytar.setPassword(SERVICE, `${ACCOUNT}:saveDir`, next);
-      return { ok: true, saveDir: next };
-    } catch (error) {
-      return { ok: false, error: (error as Error).message || "无法恢复系统默认保存位置" };
-    }
-  });
-  ipcMain.handle(SETTINGS_OPEN_SAVE_DIR, async () => {
-    await fs.mkdir(saveDir, { recursive: true });
-    const error = await shell.openPath(saveDir);
-    return error ? { ok: false, error } : { ok: true };
-  });
+  ipcMain.handle(SETTINGS_RESET_SAVE_DIR, () => saveDirManager.reset());
+  ipcMain.handle(SETTINGS_OPEN_SAVE_DIR, () => saveDirManager.open());
   ipcMain.handle(SETTINGS_CLEAR, async () => { await Promise.all([keytar.deletePassword(SERVICE, ACCOUNT), ...LEGACY_SERVICES.map((service) => keytar.deletePassword(service, ACCOUNT))]); return { ok: true }; });
   ipcMain.handle(SETTINGS_TEST, async () => { const c = await config(); if (!c.baseUrl) return { ok: false, message: "尚未配置 API Base URL" }; if (!c.apiKey) return { ok: false, message: "尚未配置 API 密钥" }; try { new URL(c.baseUrl); const r = await fetch(`${c.baseUrl.replace(/\/$/, "")}/models`, { headers: { Authorization: `Bearer ${c.apiKey}` }, signal: AbortSignal.timeout(20_000) }); return r.ok ? { ok: true, message: "连接成功" } : { ok: false, message: `接口返回 ${r.status}` }; } catch (e) { return { ok: false, message: (e as Error).message }; } });
   ipcMain.handle(LOCAL_AI_CAPABILITIES, async () => ({
@@ -717,39 +689,9 @@ app.whenReady().then(async () => {
     modelsDir: localAIModels.modelsDir,
   }));
   ipcMain.handle(LOCAL_AI_MODELS, async () => ({ ok: true, items: await localAIModels.list() }));
-  ipcMain.handle(LOCAL_AI_CHOOSE_MODEL_DIR, async () => {
-    if (localAIModels.hasActiveDownloads()) return { ok: false, error: "当前有模型正在下载，请先暂停或等待完成" };
-    const result = await dialog.showOpenDialog({
-      title: "选择本地 AI 模型保存位置",
-      defaultPath: localAIModels.modelsDir,
-      properties: ["openDirectory", "createDirectory"],
-    });
-    if (result.canceled || !result.filePaths[0]) return { ok: true, canceled: true, modelsDir: localAIModels.modelsDir };
-    try {
-      const previous = localAIModels.modelsDir;
-      const next = await activateModelDirectory(result.filePaths[0], previous);
-      await keytar.setPassword(SERVICE, `${ACCOUNT}:modelDir`, next);
-      return { ok: true, canceled: false, modelsDir: next, items: await localAIModels.list() };
-    } catch (error) {
-      return { ok: false, error: (error as Error).message || "无法使用所选模型位置" };
-    }
-  });
-  ipcMain.handle(LOCAL_AI_RESET_MODEL_DIR, async () => {
-    if (localAIModels.hasActiveDownloads()) return { ok: false, error: "当前有模型正在下载，请先暂停或等待完成" };
-    try {
-      const previous = localAIModels.modelsDir;
-      const next = await activateModelDirectory(systemModelDir(), previous);
-      await keytar.setPassword(SERVICE, `${ACCOUNT}:modelDir`, next);
-      return { ok: true, modelsDir: next, items: await localAIModels.list() };
-    } catch (error) {
-      return { ok: false, error: (error as Error).message || "无法恢复默认模型位置" };
-    }
-  });
-  ipcMain.handle(LOCAL_AI_OPEN_MODEL_DIR, async () => {
-    await fs.mkdir(localAIModels.modelsDir, { recursive: true });
-    const error = await shell.openPath(localAIModels.modelsDir);
-    return error ? { ok: false, error } : { ok: true };
-  });
+  ipcMain.handle(LOCAL_AI_CHOOSE_MODEL_DIR, () => modelDirManager.choose());
+  ipcMain.handle(LOCAL_AI_RESET_MODEL_DIR, () => modelDirManager.reset());
+  ipcMain.handle(LOCAL_AI_OPEN_MODEL_DIR, () => modelDirManager.open());
   ipcMain.handle(LOCAL_AI_MODEL_URL, async (_event, id: LocalAIModelId) => {
     const status = await localAIModels.status(id);
     return status.installed ? { ok: true, url: `local-ai-model://${id}/${encodeURIComponent(localAIModelById(id)!.fileName)}` } : { ok: false, error: "模型尚未安装" };
