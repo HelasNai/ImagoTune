@@ -1,26 +1,9 @@
+import { crc32 } from "node:zlib";
 import { ImageRecipeV1 } from "./image-recipe";
 
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const KEYWORD = "image-studio.recipe";
 const LEGACY_KEYWORD = "pinaic.recipe";
-
-let crcTable: number[] | undefined;
-function table() {
-  if (crcTable) return crcTable;
-  crcTable = Array.from({ length: 256 }, (_, index) => {
-    let value = index;
-    for (let bit = 0; bit < 8; bit += 1) value = (value & 1) ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
-    return value >>> 0;
-  });
-  return crcTable;
-}
-
-function crc32(buffer: Buffer) {
-  let crc = 0xffffffff;
-  const values = table();
-  for (const value of buffer) crc = values[(crc ^ value) & 0xff] ^ (crc >>> 8);
-  return (crc ^ 0xffffffff) >>> 0;
-}
 
 function makeChunk(type: string, data: Buffer) {
   const typeBuffer = Buffer.from(type, "ascii");
