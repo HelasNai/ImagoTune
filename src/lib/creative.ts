@@ -105,6 +105,11 @@ export function applyLocalPromptAction(prompt: string, action: PromptAction) {
   return source + "\n\n创作要求：" + promptSuffix[action];
 }
 
+/** 画布尺寸上限（与 electron/outpaint-limits.ts 一致，由跨层一致性测试锁定）。 */
+export const CANVAS_MULTIPLE = 16;
+export const CANVAS_MAX_EDGE = 3840;
+export const CANVAS_MAX_PIXELS = 8_294_400;
+
 export function validateCanvasSize(value: string) {
   const match = /^\s*(\d{2,5})\s*[x×]\s*(\d{2,5})\s*$/i.exec(value);
   if (!match) return { ok: false, message: "请输入宽 x 高，例如 1536x1024" } as const;
@@ -113,10 +118,10 @@ export function validateCanvasSize(value: string) {
   const longEdge = Math.max(width, height);
   const shortEdge = Math.min(width, height);
   const pixels = width * height;
-  if (width % 16 || height % 16) return { ok: false, message: "宽高需要是 16 的倍数" } as const;
-  if (longEdge > 3840) return { ok: false, message: "最长边不能超过 3840 px" } as const;
+  if (width % CANVAS_MULTIPLE || height % CANVAS_MULTIPLE) return { ok: false, message: "宽高需要是 16 的倍数" } as const;
+  if (longEdge > CANVAS_MAX_EDGE) return { ok: false, message: "最长边不能超过 3840 px" } as const;
   if (longEdge / shortEdge > 3) return { ok: false, message: "长宽比不能超过 3:1" } as const;
-  if (pixels < 655_360 || pixels > 8_294_400) {
+  if (pixels < 655_360 || pixels > CANVAS_MAX_PIXELS) {
     return { ok: false, message: "总像素需在 65 万到 829 万之间" } as const;
   }
   return {

@@ -20,6 +20,7 @@ import { createDirectoryManager } from "./directory-manager";
 import { DEFAULT_CHAT_MODEL, DEFAULT_IMAGE_MODEL, INBOX_PROJECT_ID } from "./constants";
 import { errorMessage, joinBase, withTimeout } from "./net-utils";
 import { nowISO } from "./fs-utils";
+import { CANVAS_MAX_EDGE, CANVAS_MAX_PIXELS, CANVAS_MULTIPLE } from "./outpaint-limits";
 import {
   CLIPBOARD_COPY_IMAGE, CLIPBOARD_COPY_TEXT, CLIPBOARD_READ_IMAGE,
   GALLERY_BULK, GALLERY_DELETE, GALLERY_EXPORT_ZIP, GALLERY_LIST, GALLERY_LOAD_IMAGE,
@@ -791,7 +792,7 @@ app.whenReady().then(async () => {
     if (!match) return { ok: false, error: "目标分辨率格式无效" };
     const width = Number(match[1]); const height = Number(match[2]);
     if (width < Number(input.sourceWidth) || height < Number(input.sourceHeight)) return { ok: false, error: "扩图目标不能小于原图" };
-    if (width % 16 || height % 16 || width > 3840 || height > 3840 || width * height > 8_294_400) return { ok: false, error: "目标尺寸超出安全范围或不是 16 的倍数" };
+    if (width % CANVAS_MULTIPLE || height % CANVAS_MULTIPLE || width > CANVAS_MAX_EDGE || height > CANVAS_MAX_EDGE || width * height > CANVAS_MAX_PIXELS) return { ok: false, error: "目标尺寸超出安全范围或不是 16 的倍数" };
     return { ok: true, size: `${width}x${height}` };
   });
   ipcMain.handle(GALLERY_LIST, async () => { const result = await galleryStore.search({ pageSize: 100 }); return { ok: true, ...result, projects: await galleryStore.getProjects() }; });
