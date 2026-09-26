@@ -16,6 +16,8 @@ import { recipeFromQueueInput } from "./components/queue-utils";
 import { dataUrlFor } from "./components/media-utils";
 import type { Mode, Output } from "./components/types";
 import { variationOptions } from "./lib/creative";
+import { formatDurationSeconds } from "./lib/format";
+import { b64ToDataUrl } from "./lib/media";
 import {
   parseTutorialState,
   shouldInitializeAsExistingUser,
@@ -196,7 +198,7 @@ function App() {
       if (value.job.id === studioComposer.activeJobId) {
         setOutputs(items);
         studioComposer.setActiveJobId("");
-        const elapsed = "生成完成，用时 " + ((result.elapsedMs || 0) / 1000).toFixed(1) + " 秒。";
+        const elapsed = "生成完成，用时 " + formatDurationSeconds(result.elapsedMs || 0) + "。";
         setNotice(result.archiveWarning
           ? elapsed + result.archiveWarning
           : gallery.length
@@ -317,7 +319,7 @@ function App() {
   }
 
   function openGalleryLocalAI(item: GalleryItem, b64: string, action: LocalAIAction) {
-    setLocalAISource({ title: item.title || item.id, dataUrl: `data:image/png;base64,${b64}`, recipe: item.recipe, sourceId: item.id });
+    setLocalAISource({ title: item.title || item.id, dataUrl: b64ToDataUrl(b64), recipe: item.recipe, sourceId: item.id });
     setLocalAIAction(action);
     setMode("local-ai");
   }

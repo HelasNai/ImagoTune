@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { parseTags } from "../lib/creative";
+import { b64ToDataUrl } from "../lib/media";
 import type { LocalAIAction } from "./LocalAIToolbox";
 import { useDialog } from "./Dialogs";
 import { NavIcon } from "./icons";
@@ -347,7 +348,7 @@ export function GalleryWorkspace({
                   <input type="checkbox" checked={selected.has(item.id)} onChange={() => toggleSelection(item.id)} />
                 </label>
                 <button className={thumbs[item.id] ? "archive-preview" : "archive-preview loading"} onClick={() => void open(item, "preview")}>
-                  {thumbs[item.id] ? <img src={"data:image/jpeg;base64," + thumbs[item.id]} alt={item.title} /> : <span>加载预览…</span>}
+                  {thumbs[item.id] ? <img src={b64ToDataUrl(thumbs[item.id], "image/jpeg")} alt={item.title} /> : <span>加载预览…</span>}
                 </button>
                 <div className="archive-meta">
                   <strong>{item.title}</strong>
@@ -394,7 +395,7 @@ export function GalleryWorkspace({
             <div className="compare-grid">
               {compare.map((value) => (
                 <article key={value.item.id}>
-                  <img src={"data:image/png;base64," + value.b64} alt={value.item.title} />
+                  <img src={b64ToDataUrl(value.b64)} alt={value.item.title} />
                   <strong>{value.item.title}</strong>
                   <button onClick={() => void setCover(value.item)}>设为项目封面</button>
                 </article>

@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { formatBytes, formatDurationSeconds } from "../lib/format";
 import { validateUpscaleOutput } from "../lib/local-ai";
+import { b64FromDataUrl, b64ToDataUrl, fileToDataUrl } from "../lib/media";
 import { useDialog } from "./Dialogs";
 import { NavIcon } from "./icons";
 
@@ -56,11 +58,6 @@ const actionGuides: Record<LocalAIAction, { title: string; summary: string; outp
     badge: "组合流程",
   },
 };
-
-function formatBytes(value: number) {
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(0)} KB`;
-  return `${(value / 1024 / 1024).toFixed(1)} MB`;
-}
 
 function dataUrlToPixels(dataUrl: string) {
   return new Promise<{ width: number; height: number; data: ArrayBuffer }>((resolve, reject) => {
@@ -170,9 +167,7 @@ export function LocalAIToolbox({
 
   const importFile = async (file: File) => {
     if (!file.type.startsWith("image/")) { onNotice("请选择 PNG、JPEG 或 WebP 图片", true); return; }
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsDataURL(file);
-    });
+    const dataUrl = await fileToDataUrl(file);
     const decoded = await dataUrlToPixels(dataUrl);
     onSourceChange({ dataUrl, title: file.name.replace(/\.[^.]+$/, "") || "本地图片", recipe: { ...recipeForImportedSource(decoded.width, decoded.height), projectId: projectId || "inbox" } });
     setResult(null);
@@ -181,7 +176,7 @@ export function LocalAIToolbox({
   const pasteImage = async () => {
     const response = await window.imageStudio.clipboard.readImage();
     if (!response.b64) { onNotice(response.error || "剪贴板中没有图片", true); return; }
-    const dataUrl = "data:image/png;base64," + response.b64;
+    const dataUrl = b64ToDataUrl(response.b64);
     const decoded = await dataUrlToPixels(dataUrl);
     onSourceChange({ dataUrl, title: "剪贴板图片", recipe: { ...recipeForImportedSource(decoded.width, decoded.height), projectId: projectId || "inbox" } });
     setResult(null);
@@ -248,8 +243,8 @@ export function LocalAIToolbox({
         };
         const archive = await window.imageStudio.localAI.archiveResult({ dataUrl, title: `${source.title} - ${actionLabels[action]}`, recipe });
         setResult({ dataUrl, width: value.width, height: value.height, recipe });
-        setBusy(false); setProgress({ value: 100, message: `处理完成，用时 ${(value.elapsedMs / 1000).toFixed(1)} 秒`, device: value.steps.at(-1)?.device || "" });
-        onArchived({ b64: dataUrl.replace(/^data:image\/png;base64,/, ""), recipe, galleryId: archive.item?.id });
+        setBusy(false); setProgress({ value: 100, message: `处理完成，用时 ${formatDurationSeconds(value.elapsedMs)}`, device: value.steps.at(-1)?.device || "" });
+        onArchived({ b64: b64FromDataUrl(dataUrl), recipe, galleryId: archive.item?.id });
         onNotice(archive.ok ? "本地处理完成，成品已作为新图片归档" : `处理完成，但归档失败：${archive.error || "未知错误"}`, !archive.ok);
         worker.terminate();
       };
@@ -307,7 +302,7 @@ export function LocalAIToolbox({
 
   const copyResult = async () => {
     if (!result) return;
-    const response = await window.imageStudio.clipboard.copyImage(result.dataUrl.replace(/^data:image\/png;base64,/, ""));
+    const response = await window.imageStudio.clipboard.copyImage(b64FromDataUrl(result.dataUrl));
     onNotice(response.ok ? "处理结果已复制到剪贴板" : response.error || "复制图片失败", !response.ok);
   };
 

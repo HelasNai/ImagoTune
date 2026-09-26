@@ -1,4 +1,5 @@
 import { validateCanvasSize } from "./creative";
+import { canvasToPngFile, readImage } from "./media";
 
 export type OutpaintMargins = { top: number; right: number; bottom: number; left: number };
 export type OutpaintLayout = OutpaintMargins & {
@@ -83,17 +84,8 @@ export function buildOutpaintMaskAlpha(layout: OutpaintLayout) {
   return alpha;
 }
 
-function readImage(file: File) {
-  return new Promise<HTMLImageElement>((resolve, reject) => {
-    const image = new Image(); const url = URL.createObjectURL(file);
-    image.onload = () => { URL.revokeObjectURL(url); resolve(image); };
-    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error("无法读取扩图原图")); };
-    image.src = url;
-  });
-}
-
 export async function createOutpaintFiles(source: File, layout: OutpaintLayout) {
-  const image = await readImage(source);
+  const image = await readImage(source, "无法读取扩图原图");
   const canvas = document.createElement("canvas");
   canvas.width = layout.targetWidth;
   canvas.height = layout.targetHeight;
@@ -109,13 +101,10 @@ export async function createOutpaintFiles(source: File, layout: OutpaintLayout) 
   maskContext.clearRect(0, 0, mask.width, mask.height);
   maskContext.fillStyle = "#ffffff";
   maskContext.fillRect(layout.x, layout.y, layout.sourceWidth, layout.sourceHeight);
-  const [imageBlob, maskBlob] = await Promise.all([
-    new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png")),
-    new Promise<Blob | null>((resolve) => mask.toBlob(resolve, "image/png")),
+  const [imageFile, maskFile] = await Promise.all([
+    canvasToPngFile(canvas, "image-studio-outpaint-source.png"),
+    canvasToPngFile(mask, "image-studio-outpaint-mask.png"),
   ]);
-  if (!imageBlob || !maskBlob) throw new Error("无法导出扩图画布");
-  return {
-    image: new File([imageBlob], "image-studio-outpaint-source.png", { type: "image/png" }),
-    mask: new File([maskBlob], "image-studio-outpaint-mask.png", { type: "image/png" }),
-  };
+  if (!imageFile || !maskFile) throw new Error("无法导出扩图画布");
+  return { image: imageFile, mask: maskFile };
 }

@@ -14,7 +14,7 @@ import {
   targetSizeForRatio,
 } from "../lib/outpaint";
 import type { ConfirmDialogOptions, TextDialogOptions } from "./Dialogs";
-import { b64ToFile, drawContain, readImage } from "./media-utils";
+import { b64ToFile, canvasToBlob, drawContain, fileToDataUrl, readImage } from "../lib/media";
 import type { Mode, Output } from "./types";
 
 export const resolutionOptions = [
@@ -83,15 +83,6 @@ async function fileToPayload(file: File): Promise<{ name: string; type: string; 
   return { name: file.name, type: file.type, data: Array.from(new Uint8Array(buffer)) };
 }
 
-function fileToDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
-
 async function prepareUpload(file: File) {
   const image = await readImage(file);
   const longEdge = Math.max(image.naturalWidth, image.naturalHeight);
@@ -104,9 +95,7 @@ async function prepareUpload(file: File) {
   if (!context) return file;
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
   const type = file.type === "image/png" ? "image/png" : "image/jpeg";
-  const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, type, type === "image/jpeg" ? 0.9 : undefined),
-  );
+  const blob = await canvasToBlob(canvas, type, type === "image/jpeg" ? 0.9 : undefined);
   const extension = type === "image/png" ? ".png" : ".jpg";
   return blob
     ? new File([blob], file.name.replace(/\.[^.]+$/, extension), { type })
@@ -123,7 +112,7 @@ async function resizeMaskToMatch(mask: File, target: File) {
   if (!context) throw new Error("无法调整蒙版尺寸");
   context.clearRect(0, 0, canvas.width, canvas.height);
   context.drawImage(maskImage, 0, 0, canvas.width, canvas.height);
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+  const blob = await canvasToBlob(canvas);
   if (!blob) throw new Error("无法导出匹配尺寸的蒙版");
   return new File([blob], "image-studio-matched-mask.png", { type: "image/png" });
 }
@@ -145,13 +134,13 @@ async function prepareVisionUpload(file: File) {
     }
   }
   const type = transparent ? "image/png" : "image/jpeg";
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, type === "image/jpeg" ? 0.88 : undefined));
+  const blob = await canvasToBlob(canvas, type, type === "image/jpeg" ? 0.88 : undefined);
   return blob ? new File([blob], transparent ? "reverse-source.png" : "reverse-source.jpg", { type }) : file;
 }
 
 async function createReferenceBoard(main: File, references: File[], kind: "edit" | "generate" = "edit") {
   if (!references.length) return main;
-  const images = await Promise.all([main, ...references.slice(0, 3)].map(readImage));
+  const images = await Promise.all([main, ...references.slice(0, 3)].map((file) => readImage(file)));
   const canvas = document.createElement("canvas");
   canvas.width = 2048;
   canvas.height = 2048;
@@ -176,9 +165,7 @@ async function createReferenceBoard(main: File, references: File[], kind: "edit"
         : "参考图 " + String(index) + "：借鉴风格 / 元素";
     context.fillText(caption, x + 42, y + 55);
   });
-  const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, "image/jpeg", 0.92),
-  );
+  const blob = await canvasToBlob(canvas, "image/jpeg", 0.92);
   return blob
     ? new File([blob], "image-studio-reference-board.jpg", { type: "image/jpeg" })
     : main;

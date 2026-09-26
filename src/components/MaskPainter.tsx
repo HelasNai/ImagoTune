@@ -1,17 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
+import { canvasToPngFile, imageSizeFromFile } from "../lib/media";
 
 type Point = { x: number; y: number };
 type Stroke = { points: Point[]; size: number };
 type Dimensions = { width: number; height: number };
-
-function readDimensions(file: File) {
-  return new Promise<Dimensions>((resolve, reject) => {
-    const image = new Image(); const url = URL.createObjectURL(file);
-    image.onload = () => { URL.revokeObjectURL(url); resolve({ width: image.naturalWidth, height: image.naturalHeight }); };
-    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error("无法读取图片尺寸")); };
-    image.src = url;
-  });
-}
 
 function drawStrokes(context: CanvasRenderingContext2D, strokes: Stroke[], scale: number, color: string, erase = false) {
   context.save(); context.lineCap = "round"; context.lineJoin = "round"; context.strokeStyle = color; context.globalCompositeOperation = erase ? "destination-out" : "source-over";
@@ -27,8 +19,8 @@ async function createMask(strokes: Stroke[], dimensions: Dimensions) {
   if (!strokes.length) return null;
   const canvas = document.createElement("canvas"); canvas.width = dimensions.width; canvas.height = dimensions.height; const context = canvas.getContext("2d"); if (!context) return null;
   context.fillStyle = "#ffffff"; context.fillRect(0, 0, canvas.width, canvas.height); drawStrokes(context, strokes, 1, "#000000", true);
-  const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/png"));
-  return blob ? new File([blob], "image-studio-painted-mask.png", { type: "image/png" }) : null;
+  const blob = await canvasToPngFile(canvas, "image-studio-painted-mask.png");
+  return blob;
 }
 
 export function MaskPainter({ image, onMaskChange }: { image: File | null; onMaskChange: (file: File | null) => void }) {
@@ -36,7 +28,7 @@ export function MaskPainter({ image, onMaskChange }: { image: File | null; onMas
 
   useEffect(() => {
     setStrokes([]); onMaskChange(null); if (!image) { setDimensions(null); setPreviewUrl(""); return; }
-    const url = URL.createObjectURL(image); setPreviewUrl(url); readDimensions(image).then(setDimensions).catch(() => setDimensions(null)); return () => URL.revokeObjectURL(url);
+    const url = URL.createObjectURL(image); setPreviewUrl(url); imageSizeFromFile(image).then(setDimensions).catch(() => setDimensions(null)); return () => URL.revokeObjectURL(url);
   }, [image, onMaskChange]);
 
   useEffect(() => {
