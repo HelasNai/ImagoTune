@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
+import { createReadStream } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { pipeline } from "node:stream/promises";
 import { LOCAL_AI_MODELS, LocalAIModelId, LocalAIModelManifest } from "./local-ai-models";
 
 export type ModelDownloadState = "missing" | "partial" | "downloading" | "verifying" | "installed" | "error";
@@ -25,20 +27,8 @@ type ActiveDownload = { controller: AbortController; promise: Promise<LocalAIMod
 type ModelFetcher = (input: string, init?: RequestInit) => Promise<Response>;
 
 export async function sha256File(filePath: string) {
-  const handle = await fs.open(filePath, "r");
   const hash = createHash("sha256");
-  const buffer = Buffer.allocUnsafe(1024 * 1024);
-  try {
-    let position = 0;
-    while (true) {
-      const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
-      if (!bytesRead) break;
-      hash.update(buffer.subarray(0, bytesRead));
-      position += bytesRead;
-    }
-  } finally {
-    await handle.close();
-  }
+  await pipeline(createReadStream(filePath), hash);
   return hash.digest("hex");
 }
 
