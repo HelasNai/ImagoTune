@@ -21,6 +21,7 @@ import { DEFAULT_CHAT_MODEL, DEFAULT_IMAGE_MODEL, INBOX_PROJECT_ID } from "./con
 import { errorMessage, joinBase, withTimeout } from "./net-utils";
 import { nowISO } from "./fs-utils";
 import { CANVAS_MAX_EDGE, CANVAS_MAX_PIXELS, CANVAS_MULTIPLE } from "./outpaint-limits";
+import { LOCAL_AI_MAX_EDGE, LOCAL_AI_MAX_PIXELS } from "./local-ai-limits";
 import type { ApiImage, BinaryPayload, PromptTemplate, UpdateChannel, UpdatePhase, UpdateStatus } from "../shared/types";
 import {
   CLIPBOARD_COPY_IMAGE, CLIPBOARD_COPY_TEXT, CLIPBOARD_READ_IMAGE,
@@ -684,8 +685,8 @@ app.whenReady().then(async () => {
     ok: true,
     webgpu: !app.commandLine.hasSwitch("disable-gpu"),
     wasm: true,
-    maxOutputEdge: 8192,
-    maxOutputPixels: 70_000_000,
+    maxOutputEdge: LOCAL_AI_MAX_EDGE,
+    maxOutputPixels: LOCAL_AI_MAX_PIXELS,
     modelsDir: localAIModels.modelsDir,
   }));
   ipcMain.handle(LOCAL_AI_MODELS, async () => ({ ok: true, items: await localAIModels.list() }));
