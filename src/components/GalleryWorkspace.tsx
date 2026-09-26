@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { parseTags, resolutionLevels } from "../lib/creative";
+import { INBOX_PROJECT_ID } from "../lib/constants";
 import { formatTags } from "../lib/format";
 import { b64ToDataUrl } from "../lib/media";
 import type { LocalAIAction } from "./LocalAIToolbox";
@@ -39,7 +40,7 @@ export function GalleryWorkspace({
   const [total, setTotal] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [newProject, setNewProject] = useState("");
-  const [bulkProjectId, setBulkProjectId] = useState("inbox");
+  const [bulkProjectId, setBulkProjectId] = useState(INBOX_PROJECT_ID);
   const [bulkTags, setBulkTags] = useState("");
   const [compare, setCompare] = useState<CompareItem[]>([]);
   const { requestText, requestConfirm } = useDialog();
@@ -212,7 +213,7 @@ export function GalleryWorkspace({
   };
 
   const setCover = async (item: GalleryItem) => {
-    if (item.recipe.projectId === "inbox") {
+    if (item.recipe.projectId === INBOX_PROJECT_ID) {
       onNotice("收件箱没有项目封面，请先把图片移入一个项目");
       return;
     }
@@ -233,9 +234,9 @@ export function GalleryWorkspace({
           {projects.map((project) => (
             <div className={activeProject === project.id ? "project-row active" : "project-row"} key={project.id}>
               <button onClick={() => setActiveProject(project.id)}>
-                {project.name}{project.id === "inbox" ? "（收件箱）" : ""}
+                {project.name}{project.id === INBOX_PROJECT_ID ? "（收件箱）" : ""}
               </button>
-              {project.id !== "inbox" && (
+              {project.id !== INBOX_PROJECT_ID && (
                 <>
                   <button className="project-action" onClick={() => void renameProject(project)}><NavIcon name="pen-line" size={14} /></button>
                   <button className="project-action" onClick={() => void deleteProject(project)}><NavIcon name="trash" size={14} /></button>
@@ -369,7 +370,7 @@ export function GalleryWorkspace({
                       {item.favorite ? "取消收藏" : "收藏"}
                     </button>
                     <button onClick={() => void updateMetadata(item)}>编辑信息</button>
-                    {item.recipe.projectId !== "inbox" && <button onClick={() => void setCover(item)}>设为封面</button>}
+                    {item.recipe.projectId !== INBOX_PROJECT_ID && <button onClick={() => void setCover(item)}>设为封面</button>}
                   </div>
                 </details>
               </article>

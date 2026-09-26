@@ -22,6 +22,7 @@ import { callIpc } from "./ipc";
 import type { StudioNotify } from "./StudioContext";
 import { useCopyImage } from "./useCopy";
 import { b64ToFile, canvasToBlob, drawContain, fileToDataUrl, readImage } from "../lib/media";
+import { INBOX_PROJECT_ID } from "../lib/constants";
 import { compositeFileKey, formatTags, uniqueBy } from "../lib/format";
 import type { Mode, Output } from "./types";
 
@@ -562,7 +563,7 @@ export function useComposer({
       if (recipe.ratio) setRatio(recipe.ratio);
       if (recipe.resolution) setResolution(recipe.resolution);
       if (recipe.quality) setQuality(recipe.quality);
-      setProjectId(recipe.projectId || "inbox");
+      setProjectId(recipe.projectId || INBOX_PROJECT_ID);
       setTagsText(formatTags(recipe.tags));
       setNotice("已带入图片和参数，可局部涂抹蒙版后继续编辑");
     } else {
@@ -570,7 +571,7 @@ export function useComposer({
       setPrompt(recipe.prompt);
       setNegativePrompt(recipe.negativePrompt);
       setImage(b64ToFile(output.b64, "image-studio-outpaint-source.png"));
-      setProjectId(recipe.projectId || "inbox");
+      setProjectId(recipe.projectId || INBOX_PROJECT_ID);
       setTagsText(formatTags(recipe.tags));
       setOutpaintStrategy("percent");
       setOutpaintMargins({ top: 25, right: 25, bottom: 25, left: 25 });

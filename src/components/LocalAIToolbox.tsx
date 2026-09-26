@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRecipe } from "../lib/creative";
+import { INBOX_PROJECT_ID } from "../lib/constants";
 import { formatBytes, formatDurationSeconds } from "../lib/format";
 import { validateUpscaleOutput } from "../lib/local-ai";
 import { b64FromDataUrl, b64ToDataUrl, fileToDataUrl } from "../lib/media";
@@ -172,7 +173,7 @@ export function LocalAIToolbox({
     if (!file.type.startsWith("image/")) { onNotice("请选择 PNG、JPEG 或 WebP 图片", true); return; }
     const dataUrl = await fileToDataUrl(file);
     const decoded = await dataUrlToPixels(dataUrl);
-    onSourceChange({ dataUrl, title: file.name.replace(/\.[^.]+$/, "") || "本地图片", recipe: { ...recipeForImportedSource(decoded.width, decoded.height), projectId: projectId || "inbox" } });
+    onSourceChange({ dataUrl, title: file.name.replace(/\.[^.]+$/, "") || "本地图片", recipe: { ...recipeForImportedSource(decoded.width, decoded.height), projectId: projectId || INBOX_PROJECT_ID } });
     setResult(null);
   };
 
@@ -181,7 +182,7 @@ export function LocalAIToolbox({
     if (!response.b64) return;
     const dataUrl = b64ToDataUrl(response.b64);
     const decoded = await dataUrlToPixels(dataUrl);
-    onSourceChange({ dataUrl, title: "剪贴板图片", recipe: { ...recipeForImportedSource(decoded.width, decoded.height), projectId: projectId || "inbox" } });
+    onSourceChange({ dataUrl, title: "剪贴板图片", recipe: { ...recipeForImportedSource(decoded.width, decoded.height), projectId: projectId || INBOX_PROJECT_ID } });
     setResult(null);
   };
 

@@ -19,6 +19,7 @@ import { useCopyImage } from "./components/useCopy";
 import { useEscapeKey } from "./components/useKeyboard";
 import type { Mode, Output } from "./components/types";
 import { createRecipe, variationOptions } from "./lib/creative";
+import { DEFAULT_CHAT_MODEL, DEFAULT_IMAGE_MODEL, INBOX_PROJECT_ID } from "./lib/constants";
 import { formatDateTime, formatDurationSeconds, formatTags } from "./lib/format";
 import { b64ToDataUrl } from "./lib/media";
 import {
@@ -44,12 +45,12 @@ function App() {
   const [preview, setPreview] = useState<Output | null>(null);
   const [previewContextMenu, setPreviewContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [configured, setConfigured] = useState(false);
-  const [imageModel, setImageModel] = useState("gpt-image-2");
-  const [chatModel, setChatModel] = useState("gpt-4o");
+  const [imageModel, setImageModel] = useState(DEFAULT_IMAGE_MODEL);
+  const [chatModel, setChatModel] = useState(DEFAULT_CHAT_MODEL);
   const [autoArchive, setAutoArchive] = useState(true);
   const [appVersion, setAppVersion] = useState("");
   const [projects, setProjects] = useState<GalleryProject[]>([]);
-  const [projectId, setProjectId] = useState("inbox");
+  const [projectId, setProjectId] = useState(INBOX_PROJECT_ID);
   const [tagsText, setTagsText] = useState("");
   const [queueItems, setQueueItems] = useState<QueueJob[]>([]);
   const [notice, setNotice] = useState("");
@@ -83,7 +84,7 @@ function App() {
       const workspace = await callIpc(() => window.imageStudio.gallery.workspace(), { fallbackError: "本地图库读取失败" });
       setProjects(workspace.projects || []);
       if (!workspace.projects.some((project) => project.id === projectId)) {
-        setProjectId("inbox");
+        setProjectId(INBOX_PROJECT_ID);
       }
     } catch (cause) {
       setError("本地图库读取失败：" + ((cause as Error).message || "请检查保存目录"));
@@ -117,7 +118,7 @@ function App() {
   });
 
   const handleSaveDirChanged = useCallback(async () => {
-    setProjectId("inbox");
+    setProjectId(INBOX_PROJECT_ID);
     await refreshWorkspace();
   }, [refreshWorkspace]);
 
