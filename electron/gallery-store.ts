@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { ImageRecipeV1, normalizeRecipe } from "./image-recipe";
 import { embedRecipeInPng, readRecipeFromPng } from "./png-metadata";
 import { atomicWriteJson, ensureDir, nowISO } from "./fs-utils";
+import { stripDataUrlPrefix } from "./data-url";
 
 import { INBOX_PROJECT_ID } from "./constants";
 export { INBOX_PROJECT_ID };
@@ -190,7 +191,7 @@ export function createGalleryStore(galleryDir: string) {
         seed: image.seed === undefined ? metadata.recipe.seed : String(image.seed),
       };
       const fileName = `${createdAt.replace(/[:.]/g, "-")}-${id}.png`;
-      const base64 = image.b64_json.replace(/^data:image\/\w+;base64,/, "");
+      const base64 = stripDataUrlPrefix(image.b64_json);
       const png = embedRecipeInPng(Buffer.from(base64, "base64"), recipe);
       await fs.writeFile(path.join(galleryDir, fileName), png);
       created.push({ id, fileName, title: metadata.title, createdAt, favorite: false, recipe });

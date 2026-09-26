@@ -1,10 +1,11 @@
 import type { ApiImage as ImageResponse } from "../shared/types";
+import { stripDataUrlPrefix } from "./data-url";
 
 export type { ApiImage } from "../shared/types";
 export type { ImageResponse };
 
 function rawBase64(value: string) {
-  return value.replace(/^data:image\/[^;]+;base64,/i, "").trim();
+  return stripDataUrlPrefix(value).trim();
 }
 
 function keyOf(image: ImageResponse) {

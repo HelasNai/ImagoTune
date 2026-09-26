@@ -14,6 +14,7 @@ import { classifyHttpError, classifyRuntimeError, cancelledErrorInfo, errorInfoM
 import { embedRecipeInPng, readRecipeFromPng } from "./png-metadata";
 import { isVisionInputUnsupported, parseReversePrompt } from "./reverse-prompt";
 import { normalizeImageBase64, prioritizeImageResponses, type ImageResponse } from "./image-response";
+import { stripDataUrlPrefix } from "./data-url";
 import { LocalAIModelManager } from "./local-ai-model-manager";
 import { LocalAIModelId, localAIModelById } from "./local-ai-models";
 import { createDirectoryManager } from "./directory-manager";
@@ -708,7 +709,7 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle(LOCAL_AI_ARCHIVE_RESULT, async (_event, input: { dataUrl: string; title?: string; recipe: ImageRecipeV1 }) => {
     try {
-      const base64 = String(input.dataUrl || "").replace(/^data:image\/\w+;base64,/, "");
+      const base64 = stripDataUrlPrefix(String(input.dataUrl || ""));
       if (!base64) return { ok: false, error: "本地处理结果为空" };
       const recipe = normalizeRecipe({ recipe: input.recipe }, input.recipe.mode);
       const created = await galleryStore.addImages([{ b64_json: base64 }], { title: String(input.title || recipe.variationLabel || "本地 AI 处理结果"), recipe }, true);
@@ -767,7 +768,7 @@ app.whenReady().then(async () => {
     await fs.mkdir(saveDir, { recursive: true });
     const result = await dialog.showSaveDialog({ defaultPath: path.join(saveDir, value.suggestedName || `image-studio-${Date.now()}.png`), filters: [{ name: "PNG 图片", extensions: ["png"] }] });
     if (result.canceled || !result.filePath) return { canceled: true };
-    const base64 = value.dataUrl.replace(/^data:image\/\w+;base64,/, "");
+    const base64 = stripDataUrlPrefix(value.dataUrl);
     const raw = Buffer.from(base64, "base64");
     const output = value.recipe ? embedRecipeInPng(raw, normalizeRecipe({ recipe: value.recipe }, value.recipe.mode)) : raw;
     // The dialog is filtered to PNG, but Windows still lets users type a different
@@ -780,7 +781,7 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle(PNG_READ_RECIPE, async (_e, value: { dataUrl?: string; data?: number[] }) => {
     try {
-      const raw = value.data ? Buffer.from(value.data) : Buffer.from(String(value.dataUrl || "").replace(/^data:image\/\w+;base64,/, ""), "base64");
+      const raw = value.data ? Buffer.from(value.data) : Buffer.from(stripDataUrlPrefix(String(value.dataUrl || "")), "base64");
       const recipe = readRecipeFromPng(raw);
       return recipe ? { ok: true, recipe } : { ok: false, error: "PNG 中没有 ImagoTune 配方元数据" };
     } catch (error) { return { ok: false, error: errorMessage(error, "无法读取 PNG 元数据") }; }
@@ -826,7 +827,7 @@ app.whenReady().then(async () => {
   ipcMain.handle(QUEUE_CANCEL, async (_e, id: string) => { const items = await queueStore.read(); const job = items.find(value => value.id === id); if (!job || !["queued", "running"].includes(job.status)) return { ok: false, error: "任务不可取消" }; const errorInfo: GenerationErrorInfo = cancelledErrorInfo(); const next = { ...job, status: "cancelled" as const, error: errorInfoMessage(errorInfo), errorInfo, updatedAt: nowISO() }; await queueStore.save(next); if (job.status === "running") { cancelledRequests.add(job.requestId); controllers.get(job.requestId)?.abort(); } broadcast(QUEUE_UPDATE, await queueStore.read()); return { ok: true, job: next }; });
   ipcMain.handle(QUEUE_REMOVE, async (_e, id: string) => { const items = await queueStore.read(); const job = items.find(value => value.id === id); if (!job || job.status === "running") return { ok: false, error: "运行中的任务不可移除" }; await queueStore.remove(id); broadcast(QUEUE_UPDATE, await queueStore.read()); return { ok: true }; });
   ipcMain.handle(CLIPBOARD_COPY_TEXT, async (_e, value: string) => { clipboard.writeText(String(value || "")); return { ok: true }; });
-  ipcMain.handle(CLIPBOARD_COPY_IMAGE, async (_e, b64: string) => { const image = nativeImage.createFromBuffer(Buffer.from(String(b64 || "").replace(/^data:image\/\w+;base64,/, ""), "base64")); if (image.isEmpty()) return { ok: false, error: "图片数据无效" }; const png = image.toPNG(); const pngArrayBuffer = png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) as ArrayBuffer; await clipboard.write([new ClipboardItem({ "image/png": new Blob([pngArrayBuffer], { type: "image/png" }) })]); return { ok: true }; });
+  ipcMain.handle(CLIPBOARD_COPY_IMAGE, async (_e, b64: string) => { const image = nativeImage.createFromBuffer(Buffer.from(stripDataUrlPrefix(String(b64 || "")), "base64")); if (image.isEmpty()) return { ok: false, error: "图片数据无效" }; const png = image.toPNG(); const pngArrayBuffer = png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) as ArrayBuffer; await clipboard.write([new ClipboardItem({ "image/png": new Blob([pngArrayBuffer], { type: "image/png" }) })]); return { ok: true }; });
   ipcMain.handle(CLIPBOARD_READ_IMAGE, async () => {
     const items = await clipboard.read();
     const imageItem = items.find((item) => item.types.some((type) => type === "image/png" || type.startsWith("image/")));
