@@ -6,6 +6,7 @@ import { b64FromDataUrl, b64ToDataUrl, fileToDataUrl } from "../lib/media";
 import { useDialog } from "./Dialogs";
 import { callIpc } from "./ipc";
 import { NavIcon } from "./icons";
+import type { StudioNotify } from "./StudioContext";
 
 export type LocalAISource = {
   dataUrl: string;
@@ -110,7 +111,7 @@ export function LocalAIToolbox({
   projectId?: string;
   onSourceChange: (source: LocalAISource | null) => void;
   onArchived: (input: { b64: string; recipe: ImageRecipeV1; galleryId?: string }) => void;
-  onNotice: (message: string, error?: boolean) => void;
+  onNotice: StudioNotify;
 }) {
   const [action, setAction] = useState<LocalAIAction>(initialAction);
   const [models, setModels] = useState<LocalAIModelStatus[]>([]);

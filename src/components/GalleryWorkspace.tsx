@@ -6,6 +6,7 @@ import type { LocalAIAction } from "./LocalAIToolbox";
 import { useDialog } from "./Dialogs";
 import { callIpc } from "./ipc";
 import { NavIcon } from "./icons";
+import type { StudioNotify } from "./StudioContext";
 
 type OpenAction = "preview" | "reuse" | "edit" | "outpaint";
 type CompareItem = { item: GalleryItem; b64: string };
@@ -19,7 +20,7 @@ export function GalleryWorkspace({
   onOpen: (item: GalleryItem, b64: string, action: OpenAction) => void;
   onVariation: (item: GalleryItem) => void;
   onLocalAI: (item: GalleryItem, b64: string, action: LocalAIAction) => void;
-  onNotice: (message: string) => void;
+  onNotice: StudioNotify;
 }) {
   const [projects, setProjects] = useState<GalleryProject[]>([]);
   const [items, setItems] = useState<GalleryItem[]>([]);

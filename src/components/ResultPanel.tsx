@@ -64,7 +64,7 @@ export function ResultPanel({
   onCreateVariation: (source: Output, option: (typeof variationOptions)[number]) => void;
   onOpenPreview: (output: Output) => void;
 }) {
-  const { error, notice, errorInfo, setError, setNotice } = useStudio();
+  const { setError, setNotice } = useStudio();
   const [exportOutput, setExportOutput] = useState<Output | null>(null);
   const [socialPreset, setSocialPreset] = useState("1080x1080");
   const [socialFill, setSocialFill] = useState<"light" | "blur">("light");
@@ -114,13 +114,6 @@ export function ResultPanel({
         <div><span className="eyebrow">RESULTS</span><h2>生成结果</h2></div>
         {outputs.length > 0 && <span className="muted">{outputs.length} 张图片 · 点击查看大图</span>}
       </div>
-      {errorInfo && <div className="generation-error">
-        <div><span>{errorInfo.category.replace("_", " ")}</span><strong>{errorInfo.title}</strong></div>
-        <p>{errorInfo.message}</p><small>{errorInfo.suggestion}</small>
-        {errorInfo.details && <details><summary>查看接口详情</summary><pre>{errorInfo.details}</pre></details>}
-      </div>}
-      {error && <div className="error"><span>{error}</span></div>}
-      {notice && <div className="notice">{notice}</div>}
       {outputs.length === 0 ? (
         <div className="empty">
           <span><NavIcon name="sparkles" size={40} /></span>

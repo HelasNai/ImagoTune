@@ -10,7 +10,7 @@ import { NavIcon } from "./components/icons";
 import { QueuePanel } from "./components/QueuePanel";
 import { ResultPanel } from "./components/ResultPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
-import { StudioProvider } from "./components/StudioContext";
+import { StudioProvider, type StudioNotify } from "./components/StudioContext";
 import { useComposer } from "./components/useComposer";
 import { recipeFromQueueInput } from "./components/queue-utils";
 import { dataUrlFor } from "./components/media-utils";
@@ -53,6 +53,18 @@ function App() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [errorInfo, setErrorInfo] = useState<GenerationErrorInfo | null>(null);
+  const notify = useCallback<StudioNotify>((message, isError = false) => {
+    if (!message) return;
+    // 成功/失败互斥：同一时刻只保留一种状态，避免旧错误遮挡新的成功提示。
+    if (isError) {
+      setNotice("");
+      setError(message);
+    } else {
+      setError("");
+      setErrorInfo(null);
+      setNotice(message);
+    }
+  }, []);
   const [localAISource, setLocalAISource] = useState<LocalAISource | null>(null);
   const [localAIAction, setLocalAIAction] = useState<LocalAIAction>("upscale");
 
@@ -333,6 +345,7 @@ function App() {
         error, setError,
         notice, setNotice,
         errorInfo, setErrorInfo,
+        notify,
         projectId, setProjectId,
         tagsText, setTagsText,
         imageModel, setImageModel,
@@ -358,8 +371,15 @@ function App() {
           <div className={error || errorInfo ? "feedback-toast feedback-error" : "feedback-toast feedback-success"} role={error || errorInfo ? "alert" : "status"}>
             <div>
               <strong>{errorInfo?.title || (error ? "需要处理" : "操作成功")}</strong>
+              {errorInfo?.category && <span>{errorInfo.category.replace("_", " ")}</span>}
               <span>{error || errorInfo?.message || notice}</span>
               {errorInfo?.suggestion && <small>{errorInfo.suggestion}</small>}
+              {errorInfo?.details && (
+                <details>
+                  <summary>查看接口详情</summary>
+                  <pre style={{ margin: 0, maxHeight: 150, overflow: "auto", whiteSpace: "pre-wrap", font: "11px/1.5 monospace" }}>{errorInfo.details}</pre>
+                </details>
+              )}
             </div>
             <button aria-label="关闭提示" onClick={() => { setError(""); setNotice(""); setErrorInfo(null); }}><NavIcon name="x" size={16} /></button>
           </div>
@@ -386,7 +406,7 @@ function App() {
                 onOpen={galleryOpen}
                 onVariation={(item) => createVariation(item)}
                 onLocalAI={openGalleryLocalAI}
-                onNotice={setNotice}
+                onNotice={notify}
               />
             ) : mode === "local-ai" ? (
               <LocalAIToolbox
@@ -401,10 +421,7 @@ function App() {
                   galleryId,
                   recipe,
                 }, ...current])}
-                onNotice={(message, isError) => {
-                  if (isError) { setError(message); setNotice(""); }
-                  else { setNotice(message); setError(""); }
-                }}
+                onNotice={notify}
               />
             ) : mode === "queue" ? <QueuePanel queueItems={queueItems} onRefresh={refreshQueue} /> : <><ComposerPanel mode={mode} projects={projects} activeJobId={studioComposer.activeJobId} isEnqueueing={studioComposer.isEnqueueing} progress={studioComposer.progress} composerState={studioComposer.state} composerActions={studioComposer.actions} /><ResultPanel outputs={outputs} onRegenerate={regenerate} onContinueEdit={continueEdit} onStartOutpaint={startOutpaint} onOpenLocalAI={openLocalAI} onCreateVariation={createVariation} onOpenPreview={setPreview} /></>}
             </div>
