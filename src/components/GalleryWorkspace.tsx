@@ -73,7 +73,7 @@ export function GalleryWorkspace({
       });
       setTotal(result.total || 0);
     } catch (cause) {
-      onNotice("图库读取失败：" + ((cause as Error).message || "请检查本地保存目录"));
+      onNotice("图库读取失败：" + ((cause as Error).message || "请检查本地保存目录"), true);
     }
   }, [activeProject, favoriteOnly, page, query, resolutionFilter, seedFilter, sizeFilter, sort, tag]);
 
