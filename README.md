@@ -144,6 +144,8 @@ API 密钥由 Electron 主进程写入 Windows 凭据库，不写入源码、项
 
 项目依赖已按兼容性升级至 Electron 44、Vite 8、React 19、Vitest 4、Archiver 8、ONNX Runtime Web 1.29 和 electron-builder 26。生产安装包会锁定 `package-lock.json` 中的确切依赖树；升级后首次安装建议使用 `npm.cmd ci`。
 
+React、ONNX Runtime Web 等前端依赖为构建时依赖（devDependencies），由 Vite 打包进渲染层产物，不进入安装包；安装包只包含 Electron 运行时、应用构建产物和主进程所需的最小运行时依赖（archiver、electron-updater、keytar 等）。源代码、测试与开发工具不会进入安装包。
+
 ```powershell
 npm.cmd install
 npm.cmd run dev
