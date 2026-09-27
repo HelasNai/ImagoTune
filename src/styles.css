@@ -2818,10 +2818,12 @@ select:focus-visible {
   .tutorial-step-card,
   .tutorial-center-modal,
   .empty span,
+  .combobox-list,
   .progress-track div:not([style*="width: 0"]) {
     animation: none !important;
   }
   .card,
+  .provider-card,
   .local-ai-guide button,
   .archive-card,
   .reference-item,
@@ -4313,4 +4315,502 @@ header [role="button"] {
    .update-actions 行与 .secondary 按钮外观，仅复位 a 元素的下划线，避免默认蓝链接破坏视觉语言。 */
 .update-settings a.secondary {
   text-decoration: none;
+}
+
+/* v2.9 多供应商配置 UI：供应商卡片 / 模型角色面板 / 角色绑定 / 可搜索下拉（Combobox）
+   与队列重试选择行。视觉语言跟随设置页（浅蓝粉渐变、柔和边框与阴影、8–14px 圆角）。
+   - Combobox 列表的定位（fixed + left/top/width）由组件内联 JS 提供，本分区只管外观；
+     它不是全屏遮罩，故不进 v2.8 的 --overlay-bg / 700px 弹层 padding 清单，仅：
+     ① 模糊强度复用 --overlay-blur（单一来源）；② 入场动画复用 modal-pop 关键帧
+     （--motion-base），并已登记进 v1.5.1 分区的 prefers-reduced-motion 组。
+   - z-index 30：高于设置卡片与内容浮层，低于 header(40) / 固定底栏(45) / 各弹层(≥50)。
+   - .model-list 与本地 AI 模型管理页同名（那边是 grid + article 卡片），本分区所有
+     model-* 规则一律挂在 .model-role-block / .model-row 之下，覆盖其 span 等后代规则。 */
+
+/* —— 供应商区块 —— */
+.provider-block {
+  margin-top: 24px;
+}
+.provider-block-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.provider-block-head > div,
+.role-binding-block > div {
+  min-width: 0;
+}
+.provider-block-head h3,
+.role-binding-block h3 {
+  margin: 4px 0 5px;
+  color: #3e557e;
+  font-size: 18px;
+}
+.provider-block-head p,
+.role-binding-block p {
+  margin: 0;
+  line-height: 1.6;
+}
+/* 卡片内表单 label 紧凑堆叠（覆盖 .settings label 的 18px 外边距）。 */
+.provider-block label {
+  margin: 8px 0 0;
+}
+.provider-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 14px 15px;
+  border: 1px solid rgba(150, 173, 210, 0.28);
+  border-radius: 14px;
+  background: linear-gradient(120deg, rgba(251, 253, 255, 0.96), rgba(255, 250, 253, 0.94));
+  transition:
+    border-color var(--motion-base) var(--ease-out),
+    box-shadow var(--motion-base) var(--ease-out);
+}
+.provider-card:hover {
+  border-color: rgba(122, 179, 221, 0.42);
+  box-shadow: 0 14px 30px rgba(84, 116, 168, 0.12);
+}
+.provider-card-new {
+  border-style: dashed;
+  background: linear-gradient(120deg, rgba(240, 251, 255, 0.9), rgba(255, 244, 250, 0.9));
+}
+.provider-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.provider-card-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.provider-card-title strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #35496c;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.key-badge {
+  flex: none;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.key-badge.ok {
+  background: #eaf9f1;
+  color: #398067;
+}
+.key-badge.missing {
+  background: #fff3e2;
+  color: #b0763a;
+}
+.provider-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.provider-card-actions .secondary,
+.provider-form-actions .primary,
+.provider-form-actions .secondary {
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+.provider-card code {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: rgba(240, 246, 252, 0.88);
+  color: #5d7295;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.provider-meta {
+  margin: 0;
+  color: #8a94a6;
+  font-size: 11px;
+}
+.provider-message {
+  margin: 0;
+  color: #5f7fa5;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.provider-message.error-text {
+  color: #b25e6c;
+}
+.provider-form {
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  border: 1px solid rgba(155, 185, 220, 0.3);
+  border-radius: 12px;
+  background: rgba(247, 251, 255, 0.82);
+}
+.provider-form-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* —— 模型角色面板 —— */
+.model-role-block {
+  margin-top: 2px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(150, 173, 210, 0.36);
+}
+.model-role-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.model-role-head .model-search {
+  flex: 1 1 150px;
+  min-width: 0;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.model-role-head button {
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: #edf7ff;
+  color: #5879a9;
+  font-size: 11px;
+  font-weight: 700;
+}
+.model-role-head button:hover,
+.model-bulk-group button:hover {
+  background: linear-gradient(135deg, #e8f7ff, #fff0f7);
+  color: #5067bd;
+}
+.model-bulk {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  color: #8a94a6;
+  font-size: 11px;
+}
+.model-bulk-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.model-bulk-group button {
+  padding: 5px 8px;
+  border-radius: 7px;
+  background: #f0f6fc;
+  color: #5879a9;
+  font-size: 10px;
+  font-weight: 700;
+}
+.model-role-block .model-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  max-height: 280px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.model-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid #e4ebf3;
+  border-radius: 10px;
+  background: #fafcff;
+}
+.model-row.missing {
+  border-color: rgba(214, 156, 112, 0.5);
+  background: #fffaf3;
+}
+.model-role-block .model-id {
+  flex: 1 1 170px;
+  min-width: 0;
+  overflow: hidden;
+  color: #415675;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-role-block .model-custom,
+.model-role-block .model-missing {
+  flex: none;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.model-role-block .model-custom {
+  background: #eeedff;
+  color: #6a5fc4;
+}
+.model-role-block .model-missing {
+  background: #fff0e3;
+  color: #b0763a;
+}
+.model-row .model-role-check {
+  flex: none;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  color: #6c7c94;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.model-row .model-role-check input {
+  width: auto;
+  accent-color: #78c8f2;
+}
+.model-remove {
+  flex: none;
+  padding: 5px 8px;
+  border-radius: 7px;
+  background: #fff0f1;
+  color: #b25e6c;
+  font-size: 10px;
+  font-weight: 700;
+}
+.model-remove:hover {
+  background: #ffe3e6;
+}
+.model-role-block .model-empty {
+  margin: 0;
+  padding: 14px;
+  border: 1px dashed rgba(150, 173, 210, 0.38);
+  border-radius: 10px;
+  color: #94a0b0;
+  font-size: 11px;
+  text-align: center;
+}
+
+/* —— 角色绑定（模型分配）—— */
+.role-binding-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(147, 162, 206, 0.16);
+}
+.role-binding-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid rgba(155, 185, 220, 0.26);
+  border-radius: 12px;
+  background: rgba(249, 252, 255, 0.78);
+}
+.role-label {
+  flex: none;
+  width: 72px;
+  color: #52688c;
+  font-size: 12px;
+  font-weight: 700;
+}
+.role-provider,
+.role-model {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.role-model {
+  flex-grow: 1.4;
+}
+.role-binding-row .combobox-input {
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.role-clear {
+  flex: none;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: #f1f2f6;
+  color: #596271;
+  font-size: 11px;
+  font-weight: 700;
+}
+.role-clear:hover {
+  background: #e8ebf2;
+}
+
+/* —— 可搜索下拉（Combobox，portal 渲染、fixed 内联定位）—— */
+.combobox {
+  position: relative;
+  min-width: 0;
+}
+.combobox-input {
+  min-width: 0;
+}
+.combobox-input::placeholder {
+  color: #a9b3c2;
+}
+.combobox-input:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  background: #f4f6f9;
+}
+.combobox-list {
+  z-index: 30;
+  max-height: 260px;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid rgba(150, 173, 210, 0.34);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 14px 34px rgba(10, 24, 54, 0.2);
+  list-style: none;
+  backdrop-filter: blur(var(--overlay-blur));
+  animation: modal-pop var(--motion-base) var(--ease-out) both;
+}
+.combobox-option {
+  display: block;
+  min-width: 0;
+  padding: 8px 10px;
+  overflow: hidden;
+  border-radius: 8px;
+  color: #405c89;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.combobox-option.active {
+  background: linear-gradient(135deg, #e8f7ff, #fff0f7);
+  color: #5067bd;
+}
+.combobox-option[aria-selected="true"] {
+  font-weight: 700;
+}
+.combobox-hint {
+  margin-left: 8px;
+  color: #9aa8bd;
+  font-size: 11px;
+}
+.combobox-empty {
+  padding: 10px;
+  color: #94a0b0;
+  font-size: 11px;
+  text-align: center;
+}
+
+/* —— 队列重试选择行 —— */
+/* 队列卡片原为「任务信息 + 操作」两列 flex，第三块（选择行）需独占整行：
+   仅补 flex-wrap（两列时布局不变）+ 100% 基准。 */
+.queue-list article {
+  flex-wrap: wrap;
+}
+.retry-choice {
+  flex: 1 1 100%;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px dashed rgba(150, 173, 210, 0.5);
+  border-radius: 12px;
+  background: rgba(244, 249, 253, 0.85);
+}
+.retry-choice small {
+  flex-basis: 100%;
+  margin: 0;
+  color: #71829a;
+}
+.retry-choice button {
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: #edf7ff;
+  color: #5876a4;
+  font-size: 11px;
+  font-weight: 700;
+}
+.retry-choice .secondary {
+  background: #f1f2f6;
+  color: #596271;
+}
+
+/* —— ≤700px：卡片堆叠、绑定行换行、零横向溢出 —— */
+@media (max-width: 700px) {
+  .provider-block-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .provider-block-head .secondary {
+    align-self: flex-start;
+  }
+  .provider-card-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .provider-card-actions {
+    justify-content: flex-start;
+  }
+  .model-role-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  /* 列方向下 flex-basis 作用于高度：必须复位，否则搜索框被拉高到 150px。 */
+  .model-role-head .model-search {
+    flex: none;
+    width: 100%;
+  }
+  .model-role-head button {
+    align-self: flex-start;
+  }
+  .role-binding-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .role-label {
+    width: auto;
+  }
+  .role-provider,
+  .role-model {
+    flex: 1 1 auto;
+  }
+  .role-clear {
+    align-self: flex-start;
+  }
+  .model-row {
+    align-items: flex-start;
+  }
+  .model-role-block .model-id {
+    flex-basis: 100%;
+  }
+  .combobox-list {
+    max-height: 220px;
+  }
 }
