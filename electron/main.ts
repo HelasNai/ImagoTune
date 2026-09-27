@@ -21,10 +21,10 @@ import { createDirectoryManager } from "./directory-manager";
 import { DEFAULT_CHAT_MODEL, DEFAULT_IMAGE_MODEL, INBOX_PROJECT_ID } from "./constants";
 import { errorMessage, joinBase, withTimeout } from "./net-utils";
 import { atomicWriteJson, ensureDir, nowISO } from "./fs-utils";
-import { buildLegacyModelConfig, runSavePlan, stripProviderSecrets, validateSavePayload } from "./model-config";
+import { buildLegacyModelConfig, findProvider, resolveRoleBinding, runSavePlan, stripProviderSecrets, validateSavePayload } from "./model-config";
 import { CANVAS_MAX_EDGE, CANVAS_MAX_PIXELS, CANVAS_MULTIPLE } from "./outpaint-limits";
 import { LOCAL_AI_MAX_EDGE, LOCAL_AI_MAX_PIXELS } from "./local-ai-limits";
-import type { ApiImage, BinaryPayload, ModelConfig, PromptTemplate, SettingsSavePayload, UpdateChannel, UpdateStatus } from "../shared/types";
+import type { ApiImage, BinaryPayload, ModelConfig, ModelRole, PromptTemplate, RoleBinding, SettingsSavePayload, UpdateChannel, UpdateStatus } from "../shared/types";
 import {
   CLIPBOARD_COPY_IMAGE, CLIPBOARD_COPY_TEXT, CLIPBOARD_READ_IMAGE,
   GALLERY_BULK, GALLERY_DELETE, GALLERY_EXPORT_ZIP, GALLERY_LIST, GALLERY_LOAD_IMAGE,
@@ -446,6 +446,57 @@ function getModelConfigCache(): ModelConfig | null {
 // 只读访问配置告警（正常时为 undefined）。
 function getConfigWarning(): string | undefined {
   return modelConfigWarning;
+}
+
+// 凭据读取的类型化错误：keytar 失败绝不把错误串当凭据返回（D2）。
+class ProviderCredentialError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProviderCredentialError";
+  }
+}
+
+// 读取某供应商的密钥：legacy 沿用旧 ACCOUNT 键，其余用 provider:<id>；
+// keytar 抛错时包装为 ProviderCredentialError 抛出。
+async function providerCredential(id: string): Promise<string | null> {
+  try {
+    if (id === "legacy") return await storedCredential(ACCOUNT);
+    return await keytar.getPassword(SERVICE, "provider:" + id);
+  } catch (error) {
+    throw new ProviderCredentialError(errorMessage(error, "读取供应商密钥失败"));
+  }
+}
+
+// 解析供应商可用凭据（唯一凭据读取点）：provider 不存在 / 密钥缺失 / keytar 失败 → null。
+async function resolveProvider(id: string): Promise<{ baseUrl: string; apiKey: string } | null> {
+  try {
+    const config = getModelConfigCache();
+    if (!config) return null;
+    const provider = findProvider(config, id);
+    if (!provider) return null;
+    const apiKey = await providerCredential(id);
+    if (typeof apiKey !== "string" || apiKey.length === 0) return null;
+    return { baseUrl: provider.baseUrl, apiKey };
+  } catch {
+    return null;
+  }
+}
+
+// 纯配置解析（D2：零 keytar 读）：返回角色绑定的 {providerId, model} 或 null。
+function resolveRole(role: ModelRole): RoleBinding | null {
+  const config = getModelConfigCache();
+  if (!config) return null;
+  return resolveRoleBinding(config, role);
+}
+
+// 供应商是否有可用密钥（供设置页 hasKey 标记）；失败 → false。
+async function providerHasKey(id: string): Promise<boolean> {
+  try {
+    const value = await providerCredential(id);
+    return typeof value === "string" && value.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 async function updateChannelPref(): Promise<UpdateChannel> {
