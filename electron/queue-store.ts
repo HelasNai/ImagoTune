@@ -33,14 +33,14 @@ export function createQueueStore(baseDir: string) {
     } catch { return [] as QueueJob[]; }
   }
   async function save(item: QueueJob) { const items = await read(); const next = [...items.filter(value => value.id !== item.id), item]; await write(next); return item; }
-  async function enqueue(kind: "generate" | "edit", rawInput: Record<string, unknown>) {
+  async function enqueue(kind: "generate" | "edit", rawInput: Record<string, unknown>, snapshot?: { providerId: string; model: string }) {
     const existing = await read();
     if (existing.filter((item) => ACTIVE_STATUSES.has(item.status)).length >= 100) {
       throw new Error("待执行任务已达到 100 条，请先处理或移除旧任务。");
     }
     const id = randomUUID(); const now = nowISO(); const { image, mask, ...input } = rawInput as Record<string, unknown> & { image?: BinaryPayload; mask?: BinaryPayload }; const attachments: QueueJob["attachments"] = {}; await ensureDir(assetsDir);
     for (const [key, value] of [["image", image], ["mask", mask]] as const) { if (!value) continue; const filePath = path.join(assetsDir, `${id}-${key}.bin`); await fs.writeFile(filePath, Buffer.from(value.data)); attachments[key] = { name: value.name, type: value.type, path: filePath }; }
-    const item: QueueJob = { id, requestId: String(input.requestId || randomUUID()), kind, status: "queued", createdAt: now, updatedAt: now, attempts: 0, input, attachments }; await save(item); return item;
+    const item: QueueJob = { id, requestId: String(input.requestId || randomUUID()), kind, status: "queued", createdAt: now, updatedAt: now, attempts: 0, input, attachments }; if (snapshot) { item.providerId = snapshot.providerId; item.model = snapshot.model; } await save(item); return item;
   }
   async function materialize(item: QueueJob) {
     const input: Record<string, unknown> = { ...item.input, requestId: item.requestId }; for (const key of ["image", "mask"] as const) { const attachment = item.attachments?.[key]; if (attachment) input[key] = { name: attachment.name, type: attachment.type, data: Array.from(await fs.readFile(attachment.path)) }; } return input;

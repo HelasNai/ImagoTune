@@ -21,7 +21,7 @@ import { createDirectoryManager } from "./directory-manager";
 import { INBOX_PROJECT_ID } from "./constants";
 import { errorMessage, joinBase, withTimeout } from "./net-utils";
 import { atomicWriteJson, ensureDir, nowISO } from "./fs-utils";
-import { buildLegacyModelConfig, deriveConfigured, findProvider, parseModelsResponse, resolveRoleBinding, runSavePlan, stripProviderSecrets, validateSavePayload } from "./model-config";
+import { buildLegacyModelConfig, deriveConfigured, findProvider, parseModelsResponse, resolveJobBinding, resolveRoleBinding, runSavePlan, stripProviderSecrets, validateSavePayload } from "./model-config";
 import { CANVAS_MAX_EDGE, CANVAS_MAX_PIXELS, CANVAS_MULTIPLE } from "./outpaint-limits";
 import { LOCAL_AI_MAX_EDGE, LOCAL_AI_MAX_PIXELS } from "./local-ai-limits";
 import type { ApiImage, BinaryPayload, ModelConfig, ModelRole, PromptTemplate, ProviderSummary, RoleBinding, SettingsSavePayload, SettingsSnapshot, SettingsTestInput, UpdateChannel, UpdateStatus } from "../shared/types";
@@ -684,7 +684,7 @@ async function callImages(win: BrowserWindow, endpoint: "generations" | "edits",
   const effectiveBinding = binding ?? resolveRole("image");
   if (!effectiveBinding) throw new GenerationError({ category: "authentication", title: "尚未配置生图模型", message: "当前没有为「生图」角色绑定任何供应商与模型。", suggestion: "请在设置中为「生图」选择供应商与模型后重试。", retryable: false });
   const provider = await resolveProvider(effectiveBinding.providerId);
-  if (!provider) throw new GenerationError({ category: "authentication", title: "生图服务不可用", message: "所选供应商不存在，或尚未在凭据库中保存 API 密钥。", suggestion: "请在设置中检查「生图」绑定的供应商配置与密钥。", retryable: false });
+  if (!provider) throw new ProviderUnavailableError();
   const { baseUrl, apiKey } = provider;
   const recipe = normalizeRecipe(input, endpoint === "edits" ? "edit" : "generate");
   const effectivePrompt = composeImagePrompt(recipe);
@@ -821,13 +821,31 @@ async function reversePromptWithModel(image: BinaryInput) {
     throw error;
   } finally { timeout.clear(); }
 }
+// 队列绑定专用错误：执行期解析失败（原供应商不可用 / 原任务缺模型记录）时抛出；
+// processQueue 将其映射为明确失败文案，绝不触发自动重试（防重复计费红线）。
+class QueueBindingError extends Error {
+  info: GenerationErrorInfo;
+  constructor(info: GenerationErrorInfo) { super(info.message); this.name = "QueueBindingError"; this.info = info; }
+}
+
+// 供应商解析失败（不存在 / 无密钥）：直接路径保持用户可读的 GenerationError 语义；
+// 队列路径通过子类识别并映射为「原供应商不可用」。
+class ProviderUnavailableError extends GenerationError {
+  constructor() {
+    super({ category: "authentication", title: "生图服务不可用", message: "所选供应商不存在，或尚未在凭据库中保存 API 密钥。", suggestion: "请在设置中检查「生图」绑定的供应商配置与密钥。", retryable: false });
+    this.name = "ProviderUnavailableError";
+  }
+}
+
 function broadcast(channel: string, value: unknown) { for (const win of BrowserWindow.getAllWindows()) win.webContents.send(channel, value); }
 async function queueSnapshot() { return queueStore ? queueStore.read() : []; }
 async function processQueue() {
   if (!queueStore || activeQueueJobId) return; const items = await queueStore.read(); const job = items.find(item => item.status === "queued"); if (!job) { broadcast(QUEUE_UPDATE, items); return; }
   const win = BrowserWindow.getAllWindows()[0]; if (!win) return; activeQueueJobId = job.id; const running = { ...job, status: "running" as const, attempts: job.attempts + 1, updatedAt: nowISO(), error: undefined, errorInfo: undefined }; await queueStore.save(running); broadcast(QUEUE_UPDATE, await queueStore.read());
-  try { const raw = await queueStore.materialize(running); const result = await callImages(win, running.kind === "edit" ? "edits" : "generations", raw as RequestInput & Partial<EditInput>); const completed = { ...running, status: "completed" as const, elapsedMs: result.elapsedMs, resultGalleryIds: (result.gallery || []).map(item => item.id), updatedAt: nowISO() }; await queueStore.save(completed); broadcast(QUEUE_RESULT, { job: completed, result }); }
-  catch (error) { const current = (await queueStore.read()).find(item => item.id === running.id); if (current?.status === "cancelled") broadcast(QUEUE_ERROR, current); else { const errorInfo = classifyRuntimeError(error); const failed = { ...running, status: "failed" as const, error: errorInfoMessage(errorInfo), errorInfo, updatedAt: nowISO() }; await queueStore.save(failed); broadcast(QUEUE_ERROR, failed); } }
+  try { const bindingResult = resolveJobBinding(running, resolveRole("image")); if (!bindingResult.ok) throw new QueueBindingError(bindingResult.reason === "missing-model" ? { category: "authentication", title: "原任务缺少模型记录", message: "请重新入队后重试", suggestion: "原任务缺少模型记录，无法安全地沿用当前配置。", retryable: true } : { category: "authentication", title: "原供应商不可用", message: "请在设置中恢复原供应商配置，或重新入队后重试", suggestion: "原供应商已不存在或未绑定，请恢复配置或删除任务后重新入队。", retryable: true });
+    const raw = await queueStore.materialize(running); let result; try { result = await callImages(win, running.kind === "edit" ? "edits" : "generations", raw as RequestInput & Partial<EditInput>, bindingResult.binding); } catch (error) { if (error instanceof ProviderUnavailableError) throw new QueueBindingError({ category: "authentication", title: "原供应商不可用", message: "请在设置中恢复原供应商配置，或重新入队后重试", suggestion: "原供应商已不存在或未保存密钥，请恢复配置或删除任务后重新入队。", retryable: true }); throw error; }
+    const completed = { ...running, status: "completed" as const, elapsedMs: result.elapsedMs, resultGalleryIds: (result.gallery || []).map(item => item.id), updatedAt: nowISO() }; await queueStore.save(completed); broadcast(QUEUE_RESULT, { job: completed, result }); }
+  catch (error) { const current = (await queueStore.read()).find(item => item.id === running.id); if (current?.status === "cancelled") broadcast(QUEUE_ERROR, current); else { const errorInfo = error instanceof QueueBindingError ? error.info : classifyRuntimeError(error); const failed = { ...running, status: "failed" as const, error: errorInfoMessage(errorInfo), errorInfo, updatedAt: nowISO() }; await queueStore.save(failed); broadcast(QUEUE_ERROR, failed); } }
   finally { const current = (await queueStore.read()).find(item => item.id === running.id); if (current?.status === "completed") await queueStore.removeAssets(running); activeQueueJobId = null; broadcast(QUEUE_UPDATE, await queueStore.read()); void processQueue(); }
 }
 app.whenReady().then(async () => {
@@ -1124,7 +1142,7 @@ app.whenReady().then(async () => {
   ipcMain.handle(PROMPT_ENHANCE, async (_e, input: { prompt: string; mode: "generate" | "edit" }) => { const prompt = String(input?.prompt || "").trim(); if (!prompt) return { ok: false, error: "请先输入提示词" }; try { return { ok: true, prompt: await enhancePromptWithModel(prompt, input.mode === "edit" ? "edit" : "generate") }; } catch (error) { return { ok: false, error: errorMessage(error, "提示词增强失败") }; } });
   ipcMain.handle(PROMPT_REVERSE, async (_e, input: { image: BinaryInput }) => { try { return { ok: true, ...(await reversePromptWithModel(input.image)) }; } catch (error) { return { ok: false, error: errorMessage(error, "图反推失败，原提示词未改变") }; } });
   ipcMain.handle(QUEUE_LIST, async () => ({ ok: true, items: await queueSnapshot() }));
-  ipcMain.handle(QUEUE_ENQUEUE, async (_e, input: { kind: "generate" | "edit"; payload: Record<string, unknown> }) => { try { const job = await queueStore.enqueue(input.kind, input.payload); broadcast(QUEUE_UPDATE, await queueStore.read()); setImmediate(() => { void processQueue(); }); return { ok: true, job }; } catch (error) { return { ok: false, error: errorMessage(error, "无法创建任务") }; } });
+  ipcMain.handle(QUEUE_ENQUEUE, async (_e, input: { kind: "generate" | "edit"; payload: Record<string, unknown> }) => { try { const binding = resolveRole("image"); if (!binding) return { ok: false, error: "请先配置生图模型" }; const job = await queueStore.enqueue(input.kind, input.payload, binding); broadcast(QUEUE_UPDATE, await queueStore.read()); setImmediate(() => { void processQueue(); }); return { ok: true, job }; } catch (error) { return { ok: false, error: errorMessage(error, "无法创建任务") }; } });
   ipcMain.handle(QUEUE_RETRY, async (_e, id: string) => { const items = await queueStore.read(); const job = items.find(value => value.id === id); if (!job || !["failed", "interrupted", "cancelled"].includes(job.status)) return { ok: false, error: "任务不可重试" }; const next = { ...job, status: "queued" as const, error: undefined, errorInfo: undefined, updatedAt: nowISO() }; await queueStore.save(next); broadcast(QUEUE_UPDATE, await queueStore.read()); setImmediate(() => { void processQueue(); }); return { ok: true, job: next }; });
   ipcMain.handle(QUEUE_CANCEL, async (_e, id: string) => { const items = await queueStore.read(); const job = items.find(value => value.id === id); if (!job || !["queued", "running"].includes(job.status)) return { ok: false, error: "任务不可取消" }; const errorInfo: GenerationErrorInfo = cancelledErrorInfo(); const next = { ...job, status: "cancelled" as const, error: errorInfoMessage(errorInfo), errorInfo, updatedAt: nowISO() }; await queueStore.save(next); if (job.status === "running") { cancelledRequests.add(job.requestId); controllers.get(job.requestId)?.abort(); } broadcast(QUEUE_UPDATE, await queueStore.read()); return { ok: true, job: next }; });
   ipcMain.handle(QUEUE_REMOVE, async (_e, id: string) => { const items = await queueStore.read(); const job = items.find(value => value.id === id); if (!job || job.status === "running") return { ok: false, error: "运行中的任务不可移除" }; await queueStore.remove(id); broadcast(QUEUE_UPDATE, await queueStore.read()); return { ok: true }; });
