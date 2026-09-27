@@ -20,10 +20,11 @@ import { LocalAIModelId, localAIModelById } from "./local-ai-models";
 import { createDirectoryManager } from "./directory-manager";
 import { DEFAULT_CHAT_MODEL, DEFAULT_IMAGE_MODEL, INBOX_PROJECT_ID } from "./constants";
 import { errorMessage, joinBase, withTimeout } from "./net-utils";
-import { nowISO } from "./fs-utils";
+import { atomicWriteJson, ensureDir, nowISO } from "./fs-utils";
+import { buildLegacyModelConfig, runSavePlan, stripProviderSecrets, validateSavePayload } from "./model-config";
 import { CANVAS_MAX_EDGE, CANVAS_MAX_PIXELS, CANVAS_MULTIPLE } from "./outpaint-limits";
 import { LOCAL_AI_MAX_EDGE, LOCAL_AI_MAX_PIXELS } from "./local-ai-limits";
-import type { ApiImage, BinaryPayload, PromptTemplate, UpdateChannel, UpdateStatus } from "../shared/types";
+import type { ApiImage, BinaryPayload, ModelConfig, PromptTemplate, SettingsSavePayload, UpdateChannel, UpdateStatus } from "../shared/types";
 import {
   CLIPBOARD_COPY_IMAGE, CLIPBOARD_COPY_TEXT, CLIPBOARD_READ_IMAGE,
   GALLERY_BULK, GALLERY_DELETE, GALLERY_EXPORT_ZIP, GALLERY_LIST, GALLERY_LOAD_IMAGE,
@@ -62,6 +63,10 @@ const timedOutRequests = new Set<string>();
 let updateStatus: UpdateStatus = { phase: "idle", message: "尚未检查更新" };
 let updateCheckInFlight = false;
 let updatePromptOpen = false;
+// 多供应商模型配置缓存：启动时由 loadModelConfig() 填充；读取失败或未加载时为 null。
+let modelConfigCache: ModelConfig | null = null;
+// 配置损坏等异常情况下的用户可见告警（中文）；正常时为 undefined。
+let modelConfigWarning: string | undefined;
 
 type BinaryInput = BinaryPayload;
 type RequestInput = Record<string, unknown> & { requestId: string; recipe?: ImageRecipeV1; title?: string };
@@ -269,6 +274,178 @@ async function config() {
     chatModel: (await storedCredential(`${ACCOUNT}:chatModel`)) || DEFAULT_CHAT_MODEL,
     autoArchive: archiveSetting !== "false",
   };
+}
+
+// 多供应商元数据文件路径（userData/model-config.json；密钥永不落此文件）。
+function modelConfigPath() {
+  return path.join(app.getPath("userData"), "model-config.json");
+}
+
+// 磁盘 JSON 结构校验（C1 version 门控 + 形状检查）：仅认合法的 ModelConfig。
+function isValidModelConfig(value: unknown): value is ModelConfig {
+  if (typeof value !== "object" || value === null) return false;
+  const config = value as Record<string, unknown>;
+  if (config.version !== 1) return false;
+  if (!Array.isArray(config.providers)) return false;
+  if (typeof config.roles !== "object" || config.roles === null) return false;
+  if (typeof config.autoArchive !== "boolean") return false;
+  return true;
+}
+
+// 由旧版单供应商 keytar 键合成迁移配置（供首次迁移与损坏恢复视图复用，不写盘）。
+async function synthesizeLegacyModelConfig(): Promise<ModelConfig> {
+  const [baseUrl, imageModel, chatModel, archiveSetting] = await Promise.all([
+    storedCredential(`${ACCOUNT}:baseUrl`),
+    storedCredential(`${ACCOUNT}:imageModel`),
+    storedCredential(`${ACCOUNT}:chatModel`),
+    storedCredential(`${ACCOUNT}:autoArchive`),
+  ]);
+  return buildLegacyModelConfig({
+    baseUrl: baseUrl ?? "",
+    imageModel: imageModel ?? "",
+    chatModel: chatModel ?? "",
+    // D4：仅字面量 "false" 视为关闭，缺失或其它值一律视为开启。
+    autoArchive: archiveSetting !== "false",
+  });
+}
+
+// D6 损坏恢复：固定名备份（已存在则不新建）+ 内存恢复视图（不写盘）+ 中文告警；绝不覆盖原始文件。
+async function recoverCorruptModelConfig(filePath: string, error: unknown) {
+  const backupPath = path.join(path.dirname(filePath), "model-config.corrupt.json");
+  try {
+    const existingBackup = await fs.stat(backupPath).catch(() => null);
+    if (!existingBackup) await fs.copyFile(filePath, backupPath);
+  } catch (backupError) {
+    console.error("备份损坏的模型配置失败：", backupError);
+  }
+  try {
+    // 恢复视图仅存在于内存；用户下次保存时按 D5 重建磁盘 JSON。
+    modelConfigCache = await synthesizeLegacyModelConfig();
+  } catch (synthesizeError) {
+    modelConfigCache = null;
+    console.error("合成旧版连接设置失败：", synthesizeError);
+  }
+  modelConfigWarning = "配置文件损坏，已临时使用旧版连接设置；保存后将重建";
+  console.error("模型配置文件损坏：", error);
+}
+
+// 启动时加载模型配置：缺失→合成 legacy 并写盘；损坏→幂等备份+恢复视图；绝不抛出。
+async function loadModelConfig(): Promise<void> {
+  const filePath = modelConfigPath();
+  try {
+    let raw: string | null = null;
+    try {
+      raw = await fs.readFile(filePath, "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    if (raw === null) {
+      // C1 首次迁移：文件不存在时由旧键合成并写盘。
+      const config = await synthesizeLegacyModelConfig();
+      await ensureDir(path.dirname(filePath));
+      await atomicWriteJson(filePath, config);
+      modelConfigCache = config;
+      modelConfigWarning = undefined;
+      return;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw) as unknown;
+    } catch (error) {
+      await recoverCorruptModelConfig(filePath, error);
+      return;
+    }
+    if (!isValidModelConfig(parsed)) {
+      await recoverCorruptModelConfig(filePath, new Error("配置结构不合法"));
+      return;
+    }
+    modelConfigCache = parsed;
+    modelConfigWarning = undefined;
+  } catch (error) {
+    // 绝不阻断启动：任何意外错误都只保留空缓存并给出告警。
+    modelConfigCache = null;
+    modelConfigWarning = "读取模型配置失败：" + errorMessage(error, "未知错误");
+    console.error("读取模型配置失败：", error);
+  }
+}
+
+// D5 保存事务（固定五步）：①校验 → ②写变更 secret → ③剥离密钥写 JSON → ④best-effort 删 removal → ⑤前缀限定 GC。
+async function saveModelConfig(payload: SettingsSavePayload, removalProviderIds: string[]): Promise<{ ok: boolean; error?: string }> {
+  // ① D12 校验：失败则不写任何东西。
+  const validation = validateSavePayload(payload, modelConfigCache?.providers.map((provider) => provider.id) ?? []);
+  if (!validation.ok) return { ok: false, error: validation.error };
+
+  // ② 先写凭据库：legacy 供应商沿用 legacy ACCOUNT，其余用 provider:<id>；失败即中止且不写 JSON。
+  const steps = payload.providers
+    .filter((provider) => typeof provider.apiKey === "string" && provider.apiKey.length > 0)
+    .map((provider) => ({
+      account: provider.id === "legacy" ? ACCOUNT : "provider:" + provider.id,
+      value: provider.apiKey as string,
+    }));
+  const plan = await runSavePlan(steps, (account, value) => keytar.setPassword(SERVICE, account, value));
+  if (!plan.ok) return { ok: false, error: plan.error };
+
+  // ③ 剥离 apiKey 后写 JSON（密钥红线：磁盘 JSON 永不含 apiKey）。
+  const next: ModelConfig = {
+    version: 1,
+    providers: stripProviderSecrets(payload.providers),
+    roles: payload.roles,
+    autoArchive: payload.autoArchive,
+  };
+  try {
+    await ensureDir(path.dirname(modelConfigPath()));
+    await atomicWriteJson(modelConfigPath(), next);
+  } catch (error) {
+    return { ok: false, error: "写入配置失败：" + errorMessage(error, "未知错误") };
+  }
+
+  // ④ best-effort 删除本次移除的供应商密钥（legacy 跳过；失败仅记日志，绝不回显密钥值）。
+  for (const id of removalProviderIds) {
+    if (id === "legacy") continue;
+    try {
+      await keytar.deletePassword(SERVICE, "provider:" + id);
+    } catch (error) {
+      console.error("删除供应商密钥失败：", error);
+    }
+  }
+
+  // ⑤ best-effort GC：仅清理 provider: 前缀且不在新集合中的孤儿密钥，绝不触碰其它账户。
+  try {
+    const nextIds = new Set(next.providers.map((provider) => provider.id));
+    const credentials = await keytar.findCredentials(SERVICE);
+    for (const credential of credentials) {
+      const account = credential.account;
+      if (!account.startsWith("provider:")) continue;
+      if (account === "provider:legacy") continue;
+      if (nextIds.has(account.slice("provider:".length))) continue;
+      try {
+        await keytar.deletePassword(SERVICE, account);
+      } catch (error) {
+        console.error("清理孤儿供应商密钥失败：", error);
+      }
+    }
+  } catch (error) {
+    console.error("清理供应商密钥失败：", error);
+  }
+
+  modelConfigCache = next;
+  modelConfigWarning = undefined;
+  return { ok: true };
+}
+
+// 使缓存失效（供后续 IPC handler 在外部改动配置后调用）。
+function invalidateModelConfigCache(): void {
+  modelConfigCache = null;
+}
+
+// 只读访问当前配置缓存（未加载或读取失败时为 null）。
+function getModelConfigCache(): ModelConfig | null {
+  return modelConfigCache;
+}
+
+// 只读访问配置告警（正常时为 undefined）。
+function getConfigWarning(): string | undefined {
+  return modelConfigWarning;
 }
 
 async function updateChannelPref(): Promise<UpdateChannel> {
@@ -603,6 +780,8 @@ app.whenReady().then(async () => {
   await migrateLegacyUserData();
   await saveDirManager.activate(await saveDirManager.resolve());
   queueStore = createQueueStore(app.getPath("userData")); await queueStore.recover();
+  // C1 迁移：在窗口创建前加载/合成多供应商配置（缺失则写盘，损坏则幂等备份+恢复视图）。
+  await loadModelConfig();
   await modelDirManager.activate(await modelDirManager.resolve());
   protocol.handle("local-ai-model", async (request) => {
     const id = decodeURIComponent(new URL(request.url).hostname) as LocalAIModelId;
