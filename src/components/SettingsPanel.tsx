@@ -1,6 +1,30 @@
 import React, { useEffect, useRef, useState } from "react";
 import { callIpc } from "./ipc";
+import { useDialog } from "./Dialogs";
 import { useStudio } from "./StudioContext";
+import { formatDateTime } from "../lib/format";
+
+/** 供应商草稿：完整配置 + 可选的未保存密钥（仅存在于本次会话内存，保存时才提交）。 */
+type ProviderDraft = ProviderConfig & { apiKey?: string };
+
+// D10 刷新的渲染层轻量复刻：与 electron/model-config.ts 的 mergeFetchedModels 同语义
+// （渲染层不得 import electron/——tsconfig include 仅 src——故就地实现，保持 ≤20 行）。
+// 规则：保留既有顺序与 roles 标注；custom 永不 missing；fetch 来源缺失置 missing、重现清除；新 id 追加 roles:[]。
+function mergeModels(existing: ProviderModel[], fetched: string[]): ProviderModel[] {
+  const fetchedSet = new Set(fetched);
+  const existingIds = new Set(existing.map((model) => model.id));
+  const merged = existing.map((model) => {
+    if (model.source === "custom") return { ...model };
+    if (fetchedSet.has(model.id)) {
+      const next: ProviderModel = { ...model };
+      delete next.missing;
+      return next;
+    }
+    return { ...model, missing: true };
+  });
+  for (const id of fetched) if (!existingIds.has(id)) merged.push({ id, roles: [] });
+  return merged;
+}
 
 export function SettingsPanel({
   onSaveDirChanged,
@@ -9,12 +33,22 @@ export function SettingsPanel({
   onSaveDirChanged: () => Promise<void>;
   onOpenTutorial: () => void;
 }) {
-  const { setError, setNotice, configured, setConfigured, imageModel, setImageModel, chatModel, setChatModel, autoArchive, setAutoArchive } = useStudio();
+  const { providers, roles, refreshSettings, setError, setNotice, autoArchive } = useStudio();
+  const { requestConfirm } = useDialog();
 
-  const [apiKey, setApiKey] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
+  // —— 供应商/角色/归档草稿（保存的权威来源；providers 快照同步后重置）——
+  const [drafts, setDrafts] = useState<ProviderDraft[]>([]);
+  const [removedIds, setRemovedIds] = useState<string[]>([]);
+  const [rolesDraft, setRolesDraft] = useState<Record<ModelRole, RoleBinding | null>>({ image: null, reverse: null, enhance: null });
+  const [autoArchiveDraft, setAutoArchiveDraft] = useState(true);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [draftForm, setDraftForm] = useState<{ name: string; baseUrl: string; apiKey: string }>({ name: "", baseUrl: "", apiKey: "" });
+  const [adding, setAdding] = useState(false);
+  const [providerMessages, setProviderMessages] = useState<Record<string, string>>({});
+  const [providerMessageErrors, setProviderMessageErrors] = useState<Record<string, boolean>>({});
+  const [saving, setSaving] = useState(false);
+
   const [saveDir, setSaveDir] = useState("");
-  const [testMessage, setTestMessage] = useState("");
   const [updateChannel, setUpdateChannel] = useState<UpdateChannel>("stable");
   const [autoUpdate, setAutoUpdate] = useState(true);
   const [appVersion, setAppVersion] = useState("");
@@ -22,9 +56,19 @@ export function SettingsPanel({
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ phase: "idle", message: "尚未检查更新" });
   const [zoomFactor, setZoomFactor] = useState(1);
 
+  // 服务端已保存密钥的供应商 id 集合（drafts 只存 ProviderConfig + 内存 apiKey，不携带 hasKey）。
+  const serverHasKey = new Set(providers.filter((provider) => provider.hasKey).map((provider) => provider.id));
+
+  // providers/roles/autoArchive 快照 → 草稿同步；保存成功后 refreshSettings() 会触发本 effect 重新同步。
+  // removedIds 不在此重置（避免未保存的删除意图被快照刷新吞掉；保存成功后显式清空）。
+  useEffect(() => {
+    setDrafts(providers.map(({ hasKey, ...rest }) => ({ ...rest })));
+    setRolesDraft(roles);
+    setAutoArchiveDraft(autoArchive);
+  }, [providers, roles, autoArchive]);
+
   useEffect(() => {
     void callIpc(() => window.imageStudio.settings.get(), { fallbackError: "无法读取设置", onError: setError }).then((value) => {
-      setBaseUrl(value.baseUrl);
       setSaveDir(value.saveDir || "");
     }).catch(() => { /* callIpc 已上报 */ });
     void callIpc(() => window.imageStudio.updates.get(), { fallbackError: "无法读取更新状态", onError: setError }).then((value) => {
@@ -42,35 +86,124 @@ export function SettingsPanel({
     return window.imageStudio.onUpdateStatus((value) => setUpdateStatus(value));
   }, []);
 
-  const applyZoom = (next: number) => {
-    void window.imageStudio.windowControls.setZoom(next).then((r) => {
-      if (r.ok && typeof r.factor === "number") setZoomFactor(r.factor);
+  const setProviderMessage = (id: string, message: string, failed: boolean) => {
+    setProviderMessages((current) => ({ ...current, [id]: message }));
+    setProviderMessageErrors((current) => ({ ...current, [id]: failed }));
+  };
+
+  const beginEdit = (draft: ProviderDraft) => {
+    setAdding(false);
+    setExpandedId(draft.id);
+    // 密钥输入永不回显已存值：编辑表单的 apiKey 始终从空开始，留空=保留原密钥。
+    setDraftForm({ name: draft.name, baseUrl: draft.baseUrl, apiKey: "" });
+  };
+
+  const finishEdit = (id: string) => {
+    const name = draftForm.name.trim();
+    const baseUrl = draftForm.baseUrl.trim();
+    if (!name) { setError("请输入供应商名称"); return; }
+    if (!baseUrl) { setError("请输入 API Base URL"); return; }
+    setDrafts((current) => current.map((draft) => draft.id === id ? {
+      ...draft,
+      name,
+      baseUrl,
+      ...(draftForm.apiKey ? { apiKey: draftForm.apiKey } : {}),
+    } : draft));
+    setExpandedId(null);
+  };
+
+  const cancelEdit = () => setExpandedId(null);
+
+  const beginAdd = () => {
+    setExpandedId(null);
+    setDraftForm({ name: "", baseUrl: "", apiKey: "" });
+    setAdding(true);
+  };
+
+  const confirmAdd = () => {
+    const name = draftForm.name.trim();
+    const baseUrl = draftForm.baseUrl.trim();
+    if (!name) { setError("请输入供应商名称"); return; }
+    if (!baseUrl) { setError("请输入 API Base URL"); return; }
+    const id = crypto.randomUUID();
+    setDrafts((current) => [...current, { id, name, baseUrl, models: [], ...(draftForm.apiKey ? { apiKey: draftForm.apiKey } : {}) }]);
+    setAdding(false);
+  };
+
+  // 测试连接 / 刷新模型：同一 IPC 的两种用法（D7/D13）；transient 仅当次调用，绝不落库。
+  const runProviderCheck = async (draft: ProviderDraft, action: "test" | "refresh") => {
+    const apiKey = draft.apiKey?.trim() ?? "";
+    if (!apiKey && !serverHasKey.has(draft.id)) {
+      setProviderMessage(draft.id, "请先输入 API 密钥", true);
+      return;
+    }
+    setProviderMessage(draft.id, action === "test" ? "测试中…" : "刷新中…", false);
+    const input: SettingsTestInput = apiKey
+      ? { transient: { baseUrl: draft.baseUrl.trim(), apiKey } }
+      : { providerId: draft.id };
+    let result: SettingsTestResult | undefined;
+    try {
+      result = await callIpc(() => window.imageStudio.settings.test(input), {
+        fallbackError: action === "test" ? "测试连接失败" : "刷新模型失败",
+        onError: (message) => setProviderMessage(draft.id, message, true),
+      });
+    } catch {
+      return; // callIpc 已上报
+    }
+    if (!result.ok) {
+      // SettingsTestResult 的失败文案在 message 字段（非 error），这里以业务结果形式展示。
+      setProviderMessage(draft.id, result.message, true);
+      return;
+    }
+    if (action === "test") {
+      setProviderMessage(draft.id, result.message, false);
+      return;
+    }
+    const fetched = result.models ?? [];
+    setDrafts((current) => current.map((item) => item.id === draft.id
+      ? { ...item, models: mergeModels(item.models, fetched), modelsUpdatedAt: new Date().toISOString() }
+      : item));
+    setProviderMessage(draft.id, `已同步 ${fetched.length} 个模型`, false);
+  };
+
+  const removeProvider = async (draft: ProviderDraft) => {
+    const confirmed = await requestConfirm({
+      title: "删除供应商",
+      message: `删除「${draft.name}」？保存后其密钥将从凭据库移除。`,
+      confirmLabel: "删除",
+      danger: true,
     });
+    if (!confirmed) return;
+    setDrafts((current) => current.filter((item) => item.id !== draft.id));
+    setRemovedIds((current) => (current.includes(draft.id) ? current : [...current, draft.id]));
+    if (expandedId === draft.id) setExpandedId(null);
   };
 
   const saveSettings = async () => {
-    if (!baseUrl.trim()) {
-      setError("请输入 API Base URL");
-      return;
+    for (const draft of drafts) {
+      if (!draft.name.trim()) { setError("请输入供应商名称"); return; }
+      if (!draft.baseUrl.trim()) { setError("请输入 API Base URL"); return; }
     }
-    try { new URL(baseUrl.trim()); } catch { setError("API Base URL 格式无效"); return; }
-    if (!apiKey.trim() && !configured) {
-      setError("请输入 API 密钥");
-      return;
+    setSaving(true);
+    try {
+      const result = await callIpc(
+        () => window.imageStudio.settings.save({
+          providers: drafts,
+          removedProviderIds: removedIds,
+          roles: rolesDraft,
+          autoArchive: autoArchiveDraft,
+        }),
+        { fallbackError: "设置保存失败", onError: setError },
+      );
+      if (!result.ok) return; // 服务端裁决（如 "供应商有未完成任务"）已由 callIpc → setError 上报
+      await refreshSettings();
+      setRemovedIds([]);
+      setNotice("设置已保存，密钥不会显示在界面中");
+    } catch {
+      /* callIpc 已上报 */
+    } finally {
+      setSaving(false);
     }
-    if (!imageModel.trim()) {
-      setError("请输入图片模型名称");
-      return;
-    }
-    if (!chatModel.trim()) {
-      setError("请输入聊天模型名称");
-      return;
-    }
-    const result = await callIpc(() => window.imageStudio.settings.save({ apiKey, baseUrl, imageModel, chatModel, autoArchive }), { fallbackError: "设置保存失败", onError: setError });
-    if (!result.ok) return;
-    setConfigured(true);
-    setApiKey("");
-    setNotice("设置已保存，密钥不会显示在界面中");
   };
 
   const chooseSaveDirectory = async () => {
@@ -94,10 +227,10 @@ export function SettingsPanel({
     await callIpc(() => window.imageStudio.settings.openSaveDir(), { fallbackError: "无法打开保存位置", onError: setError });
   };
 
-  const testSettings = async () => {
-    setTestMessage("测试中…");
-    const result = await callIpc(() => window.imageStudio.settings.test(), { fallbackError: "测试连接失败", onError: setTestMessage });
-    setTestMessage(result.message);
+  const applyZoom = (next: number) => {
+    void window.imageStudio.windowControls.setZoom(next).then((r) => {
+      if (r.ok && typeof r.factor === "number") setZoomFactor(r.factor);
+    });
   };
 
   const setUpdateChannelPreference = async (channel: UpdateChannel) => {
@@ -162,23 +295,85 @@ export function SettingsPanel({
       <span className="eyebrow">CONNECTION & STORAGE</span>
       <h2>连接设置</h2>
       <p className="muted">
-        支持符合当前请求格式的 OpenAI 兼容接口。API 密钥仅保存到 Windows 凭据库，不会显示原文或写入项目文件。
+        支持添加多个符合当前请求格式的 OpenAI 兼容服务，并可为生图、图反推与提示词增强分别绑定模型。API 密钥仅保存到 Windows 凭据库，不会显示原文或写入项目文件。
       </p>
-      <label>API Base URL<input placeholder="例如：https://api.example.com/v1" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} /></label>
-      <label>API 密钥
-        <input
-          type="password"
-          placeholder={configured ? "已保存，输入新值可覆盖" : "粘贴当前平台提供的 API 密钥"}
-          value={apiKey}
-          onChange={(event) => setApiKey(event.target.value)}
-        />
-      </label>
-      <div className="settings-models">
-        <label>图片模型<input placeholder="平台提供的图片模型名称" value={imageModel} onChange={(event) => setImageModel(event.target.value)} /></label>
-        <label>聊天模型<input placeholder="用于提示词增强和图反推" value={chatModel} onChange={(event) => setChatModel(event.target.value)} /></label>
-      </div>
+      <section className="provider-block">
+        <div className="provider-block-head">
+          <div>
+            <span className="eyebrow">PROVIDERS</span>
+            <h3>供应商</h3>
+            <p className="muted">测试连接与刷新模型不会保存任何数据：未保存的新密钥只用于当次请求，不写入凭据库。</p>
+          </div>
+          <button type="button" className="secondary" onClick={beginAdd}>+ 添加供应商</button>
+        </div>
+        {adding && (
+          <div className="provider-card provider-card-new" data-provider-form="add">
+            <label>名称<input data-provider-field="name" placeholder="例如：主力平台" value={draftForm.name} onChange={(event) => setDraftForm((current) => ({ ...current, name: event.target.value }))} /></label>
+            <label>Base URL<input data-provider-field="baseUrl" placeholder="例如：https://api.example.com/v1" value={draftForm.baseUrl} onChange={(event) => setDraftForm((current) => ({ ...current, baseUrl: event.target.value }))} /></label>
+            <label>API 密钥
+              <input
+                data-provider-field="apiKey"
+                type="password"
+                placeholder="粘贴当前平台提供的 API 密钥"
+                value={draftForm.apiKey}
+                onChange={(event) => setDraftForm((current) => ({ ...current, apiKey: event.target.value }))}
+              />
+            </label>
+            <div className="provider-form-actions">
+              <button type="button" className="primary" onClick={confirmAdd}>添加</button>
+              <button type="button" className="secondary" onClick={() => setAdding(false)}>取消</button>
+            </div>
+          </div>
+        )}
+        {drafts.length === 0 && !adding && <p className="muted">尚未添加供应商。</p>}
+        {drafts.map((draft) => {
+          const hasKey = Boolean(draft.apiKey) || serverHasKey.has(draft.id);
+          return (
+            <article className="provider-card" data-provider-id={draft.id} key={draft.id}>
+              <div className="provider-card-head">
+                <div className="provider-card-title">
+                  <strong>{draft.name}</strong>
+                  {hasKey ? <span className="key-badge ok">已保存密钥</span> : <span className="key-badge missing">缺少密钥</span>}
+                </div>
+                <div className="provider-card-actions">
+                  <button type="button" className="secondary" onClick={() => beginEdit(draft)}>编辑</button>
+                  <button type="button" className="secondary" onClick={() => void runProviderCheck(draft, "test")}>测试连接</button>
+                  <button type="button" className="secondary" onClick={() => void runProviderCheck(draft, "refresh")}>刷新模型</button>
+                  <button type="button" className="secondary" onClick={() => void removeProvider(draft)}>删除</button>
+                </div>
+              </div>
+              <code>{draft.baseUrl}</code>
+              <p className="provider-meta">
+                {draft.models.length} 个模型{draft.modelsUpdatedAt ? ` · 更新于 ${formatDateTime(draft.modelsUpdatedAt)}` : ""}
+              </p>
+              {expandedId === draft.id && (
+                <div className="provider-form" data-provider-form="edit">
+                  <label>名称<input data-provider-field="name" value={draftForm.name} onChange={(event) => setDraftForm((current) => ({ ...current, name: event.target.value }))} /></label>
+                  <label>Base URL<input data-provider-field="baseUrl" value={draftForm.baseUrl} onChange={(event) => setDraftForm((current) => ({ ...current, baseUrl: event.target.value }))} /></label>
+                  <label>API 密钥
+                    <input
+                      data-provider-field="apiKey"
+                      type="password"
+                      placeholder="已保存，输入新值可覆盖"
+                      value={draftForm.apiKey}
+                      onChange={(event) => setDraftForm((current) => ({ ...current, apiKey: event.target.value }))}
+                    />
+                  </label>
+                  <div className="provider-form-actions">
+                    <button type="button" className="primary" onClick={() => finishEdit(draft.id)}>完成</button>
+                    <button type="button" className="secondary" onClick={cancelEdit}>取消</button>
+                  </div>
+                </div>
+              )}
+              {providerMessages[draft.id] && (
+                <p className={providerMessageErrors[draft.id] ? "provider-message error-text" : "provider-message"}>{providerMessages[draft.id]}</p>
+              )}
+            </article>
+          );
+        })}
+      </section>
       <label className="archive-toggle">
-        <input type="checkbox" checked={autoArchive} onChange={(event) => setAutoArchive(event.target.checked)} />
+        <input type="checkbox" checked={autoArchiveDraft} onChange={(event) => setAutoArchiveDraft(event.target.checked)} />
         自动归档生成图片到本地图库与收件箱
       </label>
       {saveDir && <div className="storage-path">
@@ -247,10 +442,8 @@ export function SettingsPanel({
         </div>
       </section>
       <div className="actions">
-        <button className="primary" onClick={() => void saveSettings()}>保存设置</button>
-        <button className="secondary" onClick={() => void testSettings()}>测试连接</button>
+        <button className="primary" onClick={() => void saveSettings()} disabled={saving}>{saving ? "保存中…" : "保存设置"}</button>
       </div>
-      {testMessage && <p className="hint">{testMessage}</p>}
     </section>
   );
 }
