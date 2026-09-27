@@ -366,10 +366,10 @@ async function saveModelConfig(payload: SettingsSavePayload, removalProviderIds:
 
   // ② 先写凭据库：legacy 供应商沿用 legacy ACCOUNT，其余用 provider:<id>；失败即中止且不写 JSON。
   const steps = payload.providers
-    .filter((provider) => typeof provider.apiKey === "string" && provider.apiKey.length > 0)
+    .filter((provider) => typeof provider.apiKey === "string" && provider.apiKey.trim().length > 0)
     .map((provider) => ({
       account: provider.id === "legacy" ? ACCOUNT : "provider:" + provider.id,
-      value: provider.apiKey as string,
+      value: (provider.apiKey as string).trim(),
     }));
   const plan = await runSavePlan(steps, (account, value) => keytar.setPassword(SERVICE, account, value));
   if (!plan.ok) return { ok: false, error: plan.error };
@@ -422,7 +422,7 @@ async function saveModelConfig(payload: SettingsSavePayload, removalProviderIds:
   return { ok: true };
 }
 
-// 使缓存失效（供后续 IPC handler 在外部改动配置后调用）。
+// 使缓存失效：预留钩子（外部改动 JSON 后强制重载）；当前保存流程由 saveModelConfig 内部刷新缓存，无需调用。
 function invalidateModelConfigCache(): void {
   modelConfigCache = null;
 }
@@ -808,7 +808,7 @@ async function reversePromptWithModel(image: BinaryInput) {
     if (!response.ok) {
       const body = await response.text();
       if (isVisionInputUnsupported(body)) {
-        throw new Error("当前聊天模型或接口不支持图片输入，原提示词未改变。");
+        throw new Error("当前图反推模型或接口不支持图片输入，原提示词未改变。");
       }
       throw new Error(`图反推接口返回 ${response.status}：${body.replace(/\s+/g, " ").slice(0, 300)}`);
     }
@@ -984,8 +984,16 @@ app.whenReady().then(async () => {
       } else {
         const binding = resolveRole("image");
         const provider = binding ? await resolveProvider(binding.providerId) : null;
-        if (!provider) return { ok: false, message: "尚未配置" };
-        baseUrl = provider.baseUrl; apiKey = provider.apiKey;
+        if (provider) {
+          baseUrl = provider.baseUrl; apiKey = provider.apiKey;
+        } else if (!(
+          typeof input?.transient?.baseUrl === "string" && input.transient.baseUrl.trim() &&
+          typeof input?.transient?.apiKey === "string" && input.transient.apiKey.trim()
+        )) {
+          // 无 providerId、当前 image 绑定不可解析、且 transient 不完整时才报未配置；
+          // 完整 transient（未保存的新供应商）直接由下方覆盖逻辑承接，不依赖绑定。
+          return { ok: false, message: "尚未配置" };
+        }
       }
       if (typeof input?.transient?.baseUrl === "string" && input.transient.baseUrl.trim()) baseUrl = input.transient.baseUrl.trim();
       if (typeof input?.transient?.apiKey === "string" && input.transient.apiKey.trim()) apiKey = input.transient.apiKey.trim();
