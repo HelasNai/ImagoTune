@@ -24,7 +24,7 @@ import { atomicWriteJson, ensureDir, nowISO } from "./fs-utils";
 import { buildLegacyModelConfig, deriveConfigured, findProvider, parseModelsResponse, resolveJobBinding, resolveRoleBinding, runSavePlan, stripProviderSecrets, validateSavePayload } from "./model-config";
 import { CANVAS_MAX_EDGE, CANVAS_MAX_PIXELS, CANVAS_MULTIPLE } from "./outpaint-limits";
 import { LOCAL_AI_MAX_EDGE, LOCAL_AI_MAX_PIXELS } from "./local-ai-limits";
-import type { ApiImage, BinaryPayload, ModelConfig, ModelRole, PromptTemplate, ProviderSummary, RoleBinding, SettingsSavePayload, SettingsSnapshot, SettingsTestInput, UpdateChannel, UpdateStatus } from "../shared/types";
+import type { ApiImage, BinaryPayload, ModelConfig, ModelRole, PromptTemplate, ProviderSummary, QueueRetryOptions, RoleBinding, SettingsSavePayload, SettingsSnapshot, SettingsTestInput, UpdateChannel, UpdateStatus } from "../shared/types";
 import {
   CLIPBOARD_COPY_IMAGE, CLIPBOARD_COPY_TEXT, CLIPBOARD_READ_IMAGE,
   GALLERY_BULK, GALLERY_DELETE, GALLERY_EXPORT_ZIP, GALLERY_LIST, GALLERY_LOAD_IMAGE,
@@ -1143,7 +1143,23 @@ app.whenReady().then(async () => {
   ipcMain.handle(PROMPT_REVERSE, async (_e, input: { image: BinaryInput }) => { try { return { ok: true, ...(await reversePromptWithModel(input.image)) }; } catch (error) { return { ok: false, error: errorMessage(error, "图反推失败，原提示词未改变") }; } });
   ipcMain.handle(QUEUE_LIST, async () => ({ ok: true, items: await queueSnapshot() }));
   ipcMain.handle(QUEUE_ENQUEUE, async (_e, input: { kind: "generate" | "edit"; payload: Record<string, unknown> }) => { try { const binding = resolveRole("image"); if (!binding) return { ok: false, error: "请先配置生图模型" }; const job = await queueStore.enqueue(input.kind, input.payload, binding); broadcast(QUEUE_UPDATE, await queueStore.read()); setImmediate(() => { void processQueue(); }); return { ok: true, job }; } catch (error) { return { ok: false, error: errorMessage(error, "无法创建任务") }; } });
-  ipcMain.handle(QUEUE_RETRY, async (_e, id: string) => { const items = await queueStore.read(); const job = items.find(value => value.id === id); if (!job || !["failed", "interrupted", "cancelled"].includes(job.status)) return { ok: false, error: "任务不可重试" }; const next = { ...job, status: "queued" as const, error: undefined, errorInfo: undefined, updatedAt: nowISO() }; await queueStore.save(next); broadcast(QUEUE_UPDATE, await queueStore.read()); setImmediate(() => { void processQueue(); }); return { ok: true, job: next }; });
+  ipcMain.handle(QUEUE_RETRY, async (_e, id: string, options?: QueueRetryOptions) => {
+    const items = await queueStore.read();
+    const job = items.find(value => value.id === id);
+    if (!job || !["failed", "interrupted", "cancelled"].includes(job.status)) return { ok: false, error: "任务不可重试" };
+    // 默认保留入队时的原快照（providerId/model 不动）；仅显式 useCurrentBinding 才切换到当前「生图」绑定。
+    let next = { ...job, status: "queued" as const, error: undefined, errorInfo: undefined, updatedAt: nowISO() };
+    if (options?.useCurrentBinding) {
+      // 纯配置解析（零 keytar 读）；未绑定明确拒绝，避免任务以空/陈旧绑定入队。
+      const binding = resolveRole("image");
+      if (!binding) return { ok: false, error: "当前未配置生图模型，无法切换" };
+      next = { ...next, providerId: binding.providerId, model: binding.model };
+    }
+    await queueStore.save(next);
+    broadcast(QUEUE_UPDATE, await queueStore.read());
+    setImmediate(() => { void processQueue(); });
+    return { ok: true, job: next };
+  });
   ipcMain.handle(QUEUE_CANCEL, async (_e, id: string) => { const items = await queueStore.read(); const job = items.find(value => value.id === id); if (!job || !["queued", "running"].includes(job.status)) return { ok: false, error: "任务不可取消" }; const errorInfo: GenerationErrorInfo = cancelledErrorInfo(); const next = { ...job, status: "cancelled" as const, error: errorInfoMessage(errorInfo), errorInfo, updatedAt: nowISO() }; await queueStore.save(next); if (job.status === "running") { cancelledRequests.add(job.requestId); controllers.get(job.requestId)?.abort(); } broadcast(QUEUE_UPDATE, await queueStore.read()); return { ok: true, job: next }; });
   ipcMain.handle(QUEUE_REMOVE, async (_e, id: string) => { const items = await queueStore.read(); const job = items.find(value => value.id === id); if (!job || job.status === "running") return { ok: false, error: "运行中的任务不可移除" }; await queueStore.remove(id); broadcast(QUEUE_UPDATE, await queueStore.read()); return { ok: true }; });
   ipcMain.handle(CLIPBOARD_COPY_TEXT, async (_e, value: string) => { clipboard.writeText(String(value || "")); return { ok: true }; });
