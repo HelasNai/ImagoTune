@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { callIpc } from "./ipc";
 import { useDialog } from "./Dialogs";
 import { useStudio } from "./StudioContext";
+import { Combobox } from "./Combobox";
+import type { ComboboxOption } from "./Combobox";
 import { formatDateTime } from "../lib/format";
 
 /** 供应商草稿：完整配置 + 可选的未保存密钥（仅存在于本次会话内存，保存时才提交）。 */
@@ -244,13 +246,70 @@ export function SettingsPanel({
     if (!confirmed) return;
     setDrafts((current) => current.filter((item) => item.id !== draft.id));
     setRemovedIds((current) => (current.includes(draft.id) ? current : [...current, draft.id]));
+    // 同批改绑（D9 注记）：被删供应商若仍被角色绑定引用，payload.roles 会指向不存在的
+    // providerId 而被 D12 整单拒绝（"角色绑定的供应商不存在"）——UI 此刻已知引用必然失效，
+    // 就地清空对应绑定，使删除与改绑在同一批保存中提交。
+    setRolesDraft((current) => {
+      const next = { ...current };
+      let changed = false;
+      for (const role of MODEL_ROLES) {
+        if (next[role]?.providerId === draft.id) { next[role] = null; changed = true; }
+      }
+      return changed ? next : current;
+    });
     if (expandedId === draft.id) setExpandedId(null);
   };
+
+  // —— 三角色分配（D12/SC-D4：模型下拉严格只列该供应商「已标注本角色」的模型）——
+  // Combobox 的显示值 = options.find(...)?.label ?? ""：选项外/value 无匹配只显示 placeholder，
+  // 因此失效的绑定值必须注入 options 才能被看见（供应商已删除、模型未标注两种失效态）。
+
+  // 供应商：全部草稿；当前绑定指向已不存在的供应商 → 置顶注入 ⚠ 失效项。
+  const roleProviderOptions = (role: ModelRole): ComboboxOption[] => {
+    const options = drafts.map((draft) => ({ value: draft.id, label: draft.name }));
+    const binding = rolesDraft[role];
+    if (binding && !drafts.some((draft) => draft.id === binding.providerId)) {
+      options.unshift({ value: binding.providerId, label: "⚠ 已删除的供应商" });
+    }
+    return options;
+  };
+
+  // 模型：仅该供应商「已标注本角色」的模型；当前绑定未标注 → 置顶 ⚠ 可见项；供应商失效 → 只显示绑定模型 ⚠。
+  const roleModelOptions = (role: ModelRole): ComboboxOption[] => {
+    const binding = rolesDraft[role];
+    if (!binding) return [];
+    const provider = drafts.find((draft) => draft.id === binding.providerId);
+    if (!provider) return [{ value: binding.model, label: binding.model + " ⚠ 未标注" }];
+    const annotated = provider.models.filter((model) => model.roles.includes(role));
+    const options = annotated.map((model) => ({ value: model.id, label: model.id }));
+    if (!annotated.some((model) => model.id === binding.model)) {
+      options.unshift({ value: binding.model, label: binding.model + " ⚠ 未标注" });
+    }
+    return options;
+  };
+
+  const setRoleProvider = (role: ModelRole, providerId: string) => {
+    if (!providerId) { setRolesDraft((current) => ({ ...current, [role]: null })); return; }
+    const provider = drafts.find((draft) => draft.id === providerId);
+    const firstAnnotated = provider?.models.find((model) => model.roles.includes(role));
+    setRolesDraft((current) => ({ ...current, [role]: { providerId, model: firstAnnotated?.id ?? "" } }));
+  };
+
+  const setRoleModel = (role: ModelRole, model: string) => {
+    setRolesDraft((current) => (current[role] ? { ...current, [role]: { ...current[role]!, model } } : current));
+  };
+
+  const clearRole = (role: ModelRole) => setRolesDraft((current) => ({ ...current, [role]: null }));
 
   const saveSettings = async () => {
     for (const draft of drafts) {
       if (!draft.name.trim()) { setError("请输入供应商名称"); return; }
       if (!draft.baseUrl.trim()) { setError("请输入 API Base URL"); return; }
+    }
+    // 本地先行校验（服务端 D12 同样强制）：已绑定但模型为空 → 友好提示，避免整单远端拒绝。
+    for (const role of MODEL_ROLES) {
+      const binding = rolesDraft[role];
+      if (binding && !binding.model.trim()) { setError("请为「生图/图反推/提示词增强」选择模型"); return; }
     }
     setSaving(true);
     try {
@@ -484,6 +543,36 @@ export function SettingsPanel({
             </article>
           );
         })}
+      </section>
+      <section className="role-binding-block">
+        <div>
+          <span className="eyebrow">MODEL ASSIGNMENT</span>
+          <h3>模型分配</h3>
+          <p className="muted">为生图、图反推、提示词增强分别选择供应商与模型；只显示已标注该角色的模型。</p>
+        </div>
+        {MODEL_ROLES.map((role) => (
+          <div className="role-binding-row" key={role}>
+            <span className="role-label">{MODEL_ROLE_LABELS[role]}</span>
+            <Combobox
+              ariaLabel={`${MODEL_ROLE_LABELS[role]}供应商`}
+              className="role-provider"
+              placeholder="未分配"
+              options={roleProviderOptions(role)}
+              value={rolesDraft[role]?.providerId ?? ""}
+              onChange={(value) => setRoleProvider(role, value)}
+            />
+            <Combobox
+              ariaLabel={`${MODEL_ROLE_LABELS[role]}模型`}
+              className="role-model"
+              placeholder={rolesDraft[role] ? "选择模型" : "未分配"}
+              options={roleModelOptions(role)}
+              value={rolesDraft[role]?.model ?? ""}
+              disabled={!rolesDraft[role]}
+              onChange={(value) => setRoleModel(role, value)}
+            />
+            {rolesDraft[role] && <button type="button" className="role-clear" onClick={() => clearRole(role)}>清除</button>}
+          </div>
+        ))}
       </section>
       <label className="archive-toggle">
         <input type="checkbox" checked={autoArchiveDraft} onChange={(event) => setAutoArchiveDraft(event.target.checked)} />
