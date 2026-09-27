@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { formatDateTime } from "../lib/format";
 import { recipeFromQueueInput, recipeModeLabel } from "./queue-utils";
 import { NavIcon } from "./icons";
@@ -6,14 +6,28 @@ import { useIpcAction } from "./ipc";
 import { useStudio } from "./StudioContext";
 
 export function QueuePanel({ queueItems, onRefresh }: { queueItems: QueueJob[]; onRefresh: () => Promise<void> }) {
-  const { setError } = useStudio();
+  const { setError, roles, providers } = useStudio();
   const { pending, run } = useIpcAction(setError);
+  const currentImageBinding = roles.image;
+  const [retryChoice, setRetryChoice] = useState<string | null>(null);
+
+  // 快照供应商已删除时给出可读名称，避免选择行显示裸 id。
+  const providerLabel = (id?: string) => id ? (providers.find((p) => p.id === id)?.name ?? "已删除的供应商") : "—";
 
   // 队列操作失败必须显式反馈并刷新列表（原先静默失败）；绝不自动重试任务。
   // 成功路径保持原样：只依赖队列推送更新，不额外刷新。
   const mutate = async (factory: () => Promise<{ ok: boolean; error?: string }>, fallbackError: string) => {
     const result = await run(factory, { fallbackError });
     if (!result) await onRefresh();
+  };
+
+  // D3 对齐：无快照旧任务（执行期回退当前绑定）或快照与当前 image 绑定一致 → 直接重试，不打扰用户。
+  const handleRetryClick = async (job: QueueJob) => {
+    if (!job.providerId || (currentImageBinding && job.providerId === currentImageBinding.providerId)) {
+      await mutate(() => window.imageStudio.queue.retry(job.id), "重试失败");
+      return;
+    }
+    setRetryChoice((current) => (current === job.id ? null : job.id)); // toggle open
   };
 
   return (
@@ -40,7 +54,7 @@ export function QueuePanel({ queueItems, onRefresh }: { queueItems: QueueJob[]; 
               </div>
               <div className="queue-actions">
                 {["failed", "interrupted", "cancelled"].includes(job.status) && (
-                  <button disabled={pending} onClick={() => void mutate(() => window.imageStudio.queue.retry(job.id), "重试失败")}>重试</button>
+                  <button disabled={pending} onClick={() => void handleRetryClick(job)}>重试</button>
                 )}
                 {["queued", "running"].includes(job.status) && (
                   <button disabled={pending} onClick={() => void mutate(() => window.imageStudio.queue.cancel(job.id), "取消失败")}>取消</button>
@@ -49,6 +63,20 @@ export function QueuePanel({ queueItems, onRefresh }: { queueItems: QueueJob[]; 
                   <button disabled={pending} onClick={() => void mutate(() => window.imageStudio.queue.remove(job.id), "移除失败")}>移除</button>
                 )}
               </div>
+              {retryChoice === job.id && (
+                <div className="retry-choice">
+                  <small>重试使用哪个配置？原任务保存的是「{providerLabel(job.providerId)}」。</small>
+                  <button disabled={pending} onClick={() => { setRetryChoice(null); void mutate(() => window.imageStudio.queue.retry(job.id), "重试失败"); }}>
+                    原供应商（{providerLabel(job.providerId)}）
+                  </button>
+                  {currentImageBinding && (
+                    <button disabled={pending} onClick={() => { setRetryChoice(null); void mutate(() => window.imageStudio.queue.retry(job.id, { useCurrentBinding: true }), "重试失败"); }}>
+                      当前配置（{providerLabel(currentImageBinding.providerId)}）
+                    </button>
+                  )}
+                  <button className="secondary" onClick={() => setRetryChoice(null)}>取消</button>
+                </div>
+              )}
             </article>
           ))}
         </div>
