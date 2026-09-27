@@ -26,6 +26,10 @@ function mergeModels(existing: ProviderModel[], fetched: string[]): ProviderMode
   return merged;
 }
 
+// 角色列表与显示名（顺序 = 复选框/批量按钮渲染顺序）。
+const MODEL_ROLES: ModelRole[] = ["image", "reverse", "enhance"];
+const MODEL_ROLE_LABELS: Record<ModelRole, string> = { image: "生图", reverse: "图反推", enhance: "提示词增强" };
+
 export function SettingsPanel({
   onSaveDirChanged,
   onOpenTutorial,
@@ -34,7 +38,7 @@ export function SettingsPanel({
   onOpenTutorial: () => void;
 }) {
   const { providers, roles, refreshSettings, setError, setNotice, autoArchive } = useStudio();
-  const { requestConfirm } = useDialog();
+  const { requestConfirm, requestText } = useDialog();
 
   // —— 供应商/角色/归档草稿（保存的权威来源；providers 快照同步后重置）——
   const [drafts, setDrafts] = useState<ProviderDraft[]>([]);
@@ -42,6 +46,8 @@ export function SettingsPanel({
   const [rolesDraft, setRolesDraft] = useState<Record<ModelRole, RoleBinding | null>>({ image: null, reverse: null, enhance: null });
   const [autoArchiveDraft, setAutoArchiveDraft] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedModelsId, setExpandedModelsId] = useState<string | null>(null); // 模型角色面板（与编辑表单独立展开）
+  const [modelSearch, setModelSearch] = useState<Record<string, string>>({}); // 每供应商的模型搜索文本
   const [draftForm, setDraftForm] = useState<{ name: string; baseUrl: string; apiKey: string }>({ name: "", baseUrl: "", apiKey: "" });
   const [adding, setAdding] = useState(false);
   const [providerMessages, setProviderMessages] = useState<Record<string, string>>({});
@@ -165,6 +171,68 @@ export function SettingsPanel({
       : item));
     setProviderMessage(draft.id, `已同步 ${fetched.length} 个模型`, false);
   };
+
+  // —— 模型角色标注（仅内存草稿，随 providers 在「保存设置」时提交）——
+  const toggleModelRole = (providerId: string, modelId: string, role: ModelRole) => {
+    setDrafts((current) => current.map((draft) => draft.id === providerId ? {
+      ...draft,
+      models: draft.models.map((model) => model.id === modelId ? {
+        ...model,
+        // 去重：已有则移除，没有则追加。
+        roles: model.roles.includes(role) ? model.roles.filter((item) => item !== role) : [...model.roles, role],
+      } : model),
+    } : draft));
+  };
+
+  const addCustomModel = async (draft: ProviderDraft) => {
+    const raw = await requestText({
+      title: "自定义模型",
+      message: "输入模型名称；自定义模型在刷新后不会消失",
+      placeholder: "例如：my-model-v1",
+    });
+    const id = raw?.trim() ?? "";
+    if (!id) return;
+    if (draft.models.some((model) => model.id === id)) {
+      setError("模型已存在");
+      return;
+    }
+    const model: ProviderModel = { id, roles: [], source: "custom" };
+    setDrafts((current) => current.map((item) => item.id === draft.id ? { ...item, models: [...item.models, model] } : item));
+  };
+
+  const removeCustomModel = async (providerId: string, modelId: string) => {
+    const confirmed = await requestConfirm({
+      title: "删除自定义模型",
+      message: `删除「${modelId}」？（不会影响已保存的绑定，失效绑定会在分配区标出）`,
+      confirmLabel: "删除",
+      danger: true,
+    });
+    if (!confirmed) return;
+    setDrafts((current) => current.map((draft) => draft.id === providerId
+      ? { ...draft, models: draft.models.filter((model) => model.id !== modelId) }
+      : draft));
+  };
+
+  // D11：批量只作用于「当前搜索结果集」（每个供应商各自的搜索文本）。
+  const bulkApplyRole = (providerId: string, role: ModelRole, mode: "set" | "clear") => {
+    const draft = drafts.find((item) => item.id === providerId);
+    if (!draft) return;
+    const query = (modelSearch[providerId] ?? "").trim().toLowerCase();
+    const targets = new Set(
+      draft.models.filter((model) => !query || model.id.toLowerCase().includes(query)).map((model) => model.id),
+    );
+    setDrafts((current) => current.map((item) => item.id === providerId ? {
+      ...item,
+      models: item.models.map((model) => {
+        if (!targets.has(model.id)) return model;
+        if (mode === "set") return model.roles.includes(role) ? model : { ...model, roles: [...model.roles, role] };
+        return model.roles.includes(role) ? { ...model, roles: model.roles.filter((item) => item !== role) } : model;
+      }),
+    } : item));
+  };
+
+  const bulkSetRole = (providerId: string, role: ModelRole) => bulkApplyRole(providerId, role, "set");
+  const bulkClearRole = (providerId: string, role: ModelRole) => bulkApplyRole(providerId, role, "clear");
 
   const removeProvider = async (draft: ProviderDraft) => {
     const confirmed = await requestConfirm({
@@ -328,6 +396,9 @@ export function SettingsPanel({
         {drafts.length === 0 && !adding && <p className="muted">尚未添加供应商。</p>}
         {drafts.map((draft) => {
           const hasKey = Boolean(draft.apiKey) || serverHasKey.has(draft.id);
+          // 模型面板过滤：大小写不敏感、空搜索 = 全部（同一结果集供批量按钮使用，D11）。
+          const query = (modelSearch[draft.id] ?? "").trim().toLowerCase();
+          const filteredModels = query ? draft.models.filter((model) => model.id.toLowerCase().includes(query)) : draft.models;
           return (
             <article className="provider-card" data-provider-id={draft.id} key={draft.id}>
               <div className="provider-card-head">
@@ -339,6 +410,7 @@ export function SettingsPanel({
                   <button type="button" className="secondary" onClick={() => beginEdit(draft)}>编辑</button>
                   <button type="button" className="secondary" onClick={() => void runProviderCheck(draft, "test")}>测试连接</button>
                   <button type="button" className="secondary" onClick={() => void runProviderCheck(draft, "refresh")}>刷新模型</button>
+                  <button type="button" className="secondary" onClick={() => setExpandedModelsId((current) => (current === draft.id ? null : draft.id))}>模型</button>
                   <button type="button" className="secondary" onClick={() => void removeProvider(draft)}>删除</button>
                 </div>
               </div>
@@ -346,6 +418,47 @@ export function SettingsPanel({
               <p className="provider-meta">
                 {draft.models.length} 个模型{draft.modelsUpdatedAt ? ` · 更新于 ${formatDateTime(draft.modelsUpdatedAt)}` : ""}
               </p>
+              {expandedModelsId === draft.id && (
+                <div className="model-role-block">
+                  <div className="model-role-head">
+                    <input
+                      className="model-search"
+                      placeholder="搜索模型"
+                      value={modelSearch[draft.id] ?? ""}
+                      onChange={(event) => setModelSearch((current) => ({ ...current, [draft.id]: event.target.value }))}
+                    />
+                    <button type="button" onClick={() => void runProviderCheck(draft, "refresh")}>刷新模型</button>
+                    <button type="button" onClick={() => void addCustomModel(draft)}>+ 自定义模型</button>
+                  </div>
+                  <div className="model-bulk">
+                    批量（作用于搜索结果）：
+                    {MODEL_ROLES.map((role) => (
+                      <span key={role} className="model-bulk-group">
+                        <button type="button" onClick={() => bulkSetRole(draft.id, role)}>设为 {MODEL_ROLE_LABELS[role]}</button>
+                        <button type="button" onClick={() => bulkClearRole(draft.id, role)}>清除 {MODEL_ROLE_LABELS[role]}</button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="model-list">
+                    {filteredModels.length === 0 && <p className="model-empty">无匹配模型</p>}
+                    {filteredModels.map((model) => (
+                      <div className={"model-row" + (model.missing ? " missing" : "")} key={model.id}>
+                        <span className="model-id">{model.id}</span>
+                        {model.source === "custom" && <span className="model-custom">自定义</span>}
+                        {model.missing && <span className="model-missing">已下线</span>}
+                        {MODEL_ROLES.map((role) => (
+                          <label key={role} className="model-role-check">
+                            <input type="checkbox" checked={model.roles.includes(role)} onChange={() => toggleModelRole(draft.id, model.id, role)} /> {MODEL_ROLE_LABELS[role]}
+                          </label>
+                        ))}
+                        {model.source === "custom" && (
+                          <button type="button" className="model-remove" onClick={() => void removeCustomModel(draft.id, model.id)}>删除</button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {expandedId === draft.id && (
                 <div className="provider-form" data-provider-form="edit">
                   <label>名称<input data-provider-field="name" value={draftForm.name} onChange={(event) => setDraftForm((current) => ({ ...current, name: event.target.value }))} /></label>
