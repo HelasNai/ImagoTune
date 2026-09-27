@@ -22,14 +22,10 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@types/archiver": "^8.0.0",
     "archiver": "^8.0.0",
     "archiver-utils": "^5.0.2",
     "electron-updater": "6.8.9",
-    "keytar": "^7.9.0",
-    "onnxruntime-web": "^1.29.0",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "keytar": "^7.9.0"
   },
   "build": {
     "appId": "com.zztnbnb.pinaic.imagestudio",
@@ -47,10 +43,9 @@
       }
     ],
     "files": [
-      "**/*",
-      "!chat-tool{,/**/*}",
-      "!保存图片{,/**/*}",
-      "!*.log"
+      "dist-electron/**/*",
+      "dist-renderer/**/*",
+      "ImagoTune.ico"
     ],
     "win": {
       "target": [
@@ -75,6 +70,7 @@
   },
   "devDependencies": {
     "@electron/asar": "^4.3.0",
+    "@types/archiver": "^8.0.0",
     "@types/node": "^22.20.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
@@ -82,7 +78,10 @@
     "concurrently": "^10.0.5",
     "electron": "^44.0.0",
     "electron-builder": "^26.15.3",
+    "onnxruntime-web": "^1.29.0",
     "rcedit": "^5.0.2",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "typescript": "^5.9.3",
     "vite": "^8.2.2",
     "vitest": "^4.1.11",
