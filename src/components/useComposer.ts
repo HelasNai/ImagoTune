@@ -157,6 +157,7 @@ export function useComposer({
   tagsText,
   imageModel,
   chatModel,
+  imageBinding,
   configured,
   requestText,
   requestConfirm,
@@ -173,6 +174,7 @@ export function useComposer({
   tagsText: string;
   imageModel: string;
   chatModel: string;
+  imageBinding: RoleBinding | null;
   configured: boolean;
   requestText: (options: TextDialogOptions) => Promise<string | null>;
   requestConfirm: (options: ConfirmDialogOptions) => Promise<boolean>;
@@ -401,8 +403,8 @@ export function useComposer({
     const activeN = override.n ?? n;
     const activeProject = override.projectId || projectId;
     const activeTags = override.tags || parseTags(tagsText);
-    if (!imageModel.trim()) {
-      setError("请先在设置中填写图片模型名称");
+    if (!imageBinding) {
+      setError("请先配置生图模型");
       return;
     }
     const sourceImage = override.image === undefined ? image : override.image;

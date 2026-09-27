@@ -19,10 +19,16 @@ type StudioContextValue = {
   setProjectId: React.Dispatch<React.SetStateAction<string>>;
   tagsText: string;
   setTagsText: React.Dispatch<React.SetStateAction<string>>;
+  /** 供应商全量快照（含 hasKey）；由 refreshSettings 填充。 */
+  providers: ProviderSummary[];
+  /** 三角色绑定快照；由 refreshSettings 填充。 */
+  roles: Record<ModelRole, RoleBinding | null>;
+  /** 重新拉取设置并刷新 providers/roles/configured/autoArchive；返回快照（失败返回 null）。 */
+  refreshSettings: () => Promise<SettingsSnapshot | null>;
+  /** 派生值：当前生图模型名（未绑定时回退默认）——无 setter。 */
   imageModel: string;
-  setImageModel: React.Dispatch<React.SetStateAction<string>>;
+  /** 派生值：当前提示词增强模型名（未绑定时回退默认）——无 setter。 */
   chatModel: string;
-  setChatModel: React.Dispatch<React.SetStateAction<string>>;
   configured: boolean;
   setConfigured: React.Dispatch<React.SetStateAction<boolean>>;
   autoArchive: boolean;

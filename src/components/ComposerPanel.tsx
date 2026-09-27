@@ -48,7 +48,7 @@ export function ComposerPanel({
   composerState: ComposerState;
   composerActions: ComposerActions;
 }) {
-  const { projectId, setProjectId, tagsText, setTagsText, chatModel, autoArchive, notify } = useStudio();
+  const { projectId, setProjectId, tagsText, setTagsText, chatModel, roles, autoArchive, notify } = useStudio();
   const copyText = useCopyText(notify);
   const {
     prompt,
@@ -194,7 +194,7 @@ export function ComposerPanel({
       </div>
 
       <details className="reverse-prompt">
-        <summary>图反推提示词 · {chatModel}</summary>
+        <summary>图反推提示词 · {roles.reverse?.model ?? "未配置"}</summary>
         <div className="reverse-upload-row">
           <ImageDropInput accept="image/*" onFiles={(files) => { setReverseImage(files[0] ?? null); setReverseResult(null); }}>
             {({ inputId, dropProps }) => (

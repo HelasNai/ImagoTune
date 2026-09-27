@@ -45,8 +45,8 @@ function App() {
   const [preview, setPreview] = useState<Output | null>(null);
   const [previewContextMenu, setPreviewContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [configured, setConfigured] = useState(false);
-  const [imageModel, setImageModel] = useState(DEFAULT_IMAGE_MODEL);
-  const [chatModel, setChatModel] = useState(DEFAULT_CHAT_MODEL);
+  const [providers, setProviders] = useState<ProviderSummary[]>([]);
+  const [roles, setRoles] = useState<Record<ModelRole, RoleBinding | null>>({ image: null, reverse: null, enhance: null });
   const [autoArchive, setAutoArchive] = useState(true);
   const [appVersion, setAppVersion] = useState("");
   const [projects, setProjects] = useState<GalleryProject[]>([]);
@@ -56,6 +56,9 @@ function App() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [errorInfo, setErrorInfo] = useState<GenerationErrorInfo | null>(null);
+  // 派生：侧栏/配方显示的当前模型名（未绑定时回退默认）。
+  const imageModel = roles.image?.model ?? DEFAULT_IMAGE_MODEL;
+  const chatModel = roles.enhance?.model ?? DEFAULT_CHAT_MODEL;
   const notify = useCallback<StudioNotify>((message, isError = false) => {
     if (!message) return;
     // 成功/失败互斥：同一时刻只保留一种状态，避免旧错误遮挡新的成功提示。
@@ -97,6 +100,19 @@ function App() {
     } catch { /* callIpc 已上报 */ }
   }, []);
 
+  const refreshSettings = useCallback(async (): Promise<SettingsSnapshot | null> => {
+    try {
+      const value = await callIpc(() => window.imageStudio.settings.get(), { fallbackError: "无法读取设置", onError: setError });
+      if (!value || !Array.isArray(value.providers)) return null;
+      setProviders(value.providers);
+      setRoles(value.roles);
+      setConfigured(value.configured);
+      setAutoArchive(value.autoArchive);
+      if (value.warning) notify(value.warning, true);
+      return value;
+    } catch { /* callIpc 已上报 */ return null; }
+  }, [notify]);
+
   const { requestText, requestConfirm } = useDialog();
 
   const studioComposer = useComposer({
@@ -112,6 +128,7 @@ function App() {
     tagsText,
     imageModel,
     chatModel,
+    imageBinding: roles.image,
     configured,
     requestText,
     requestConfirm,
@@ -125,13 +142,13 @@ function App() {
   useEffect(() => {
     const bootstrap = async () => {
       const [settingsValue, workspaceValue, queueValue] = await Promise.all([
-        callIpc(() => window.imageStudio.settings.get(), { fallbackError: "无法读取设置", onError: setError }),
+        refreshSettings(),
         callIpc(() => window.imageStudio.gallery.workspace(), { fallbackError: "本地图库读取失败", onError: setError }),
         callIpc(() => window.imageStudio.queue.list(), { fallbackError: "队列读取失败", onError: setError }),
       ]);
       const hasTutorialState = window.localStorage.getItem(TUTORIAL_STORAGE_KEY) !== null;
       if (!hasTutorialState && shouldInitializeAsExistingUser({
-        configured: settingsValue.hasSavedApiKey,
+        configured: settingsValue?.hasSavedApiKey ?? false,
         galleryCount: workspaceValue.items?.length || 0,
         queueCount: queueValue.items?.length || 0,
         localDataSince: performance.timeOrigin,
@@ -140,11 +157,6 @@ function App() {
         updateTutorialState(existingState);
         setTutorialView("none");
       }
-      const value = settingsValue;
-      setConfigured(value.configured);
-      setImageModel(value.imageModel);
-      setChatModel(value.chatModel);
-      setAutoArchive(value.autoArchive);
       setQueueItems(queueValue.items || []);
     };
     void bootstrap().catch(() => { /* Individual panels show their own recoverable errors. */ });
@@ -152,7 +164,7 @@ function App() {
       setAppVersion(value.appVersion);
     }).catch(() => { /* callIpc 已上报 */ });
     void refreshWorkspace();
-  }, [initialTutorial, refreshWorkspace, updateTutorialState]);
+  }, [initialTutorial, refreshSettings, refreshWorkspace, updateTutorialState]);
 
   // v2.7：通知不再随模式切换清空——toast 有自己的生命周期（见下方自动关闭计时），
   // 切换侧栏仅重置滚动位置与右键菜单。
@@ -347,8 +359,8 @@ function App() {
         notify,
         projectId, setProjectId,
         tagsText, setTagsText,
-        imageModel, setImageModel,
-        chatModel, setChatModel,
+        providers, roles, refreshSettings,
+        imageModel, chatModel,
         configured, setConfigured,
         autoArchive, setAutoArchive,
       }}
