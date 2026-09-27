@@ -195,6 +195,71 @@ export interface StoredAttachment {
   path: string;
 }
 
+export type ModelRole = "image" | "reverse" | "enhance";
+
+export interface RoleBinding {
+  providerId: string;
+  model: string;
+}
+
+export interface ProviderModel {
+  id: string;
+  roles: ModelRole[];
+  source?: "custom";
+  missing?: boolean;
+}
+
+export interface ProviderConfig {
+  id: string;
+  name: string;
+  baseUrl: string;
+  models: ProviderModel[];
+  modelsUpdatedAt?: string;
+}
+
+export interface ProviderSummary extends ProviderConfig {
+  hasKey: boolean;
+}
+
+export interface ModelConfig {
+  version: 1;
+  providers: ProviderConfig[];
+  roles: Record<ModelRole, RoleBinding | null>;
+  autoArchive: boolean;
+}
+
+export interface SettingsSnapshot {
+  providers: ProviderSummary[];
+  roles: Record<ModelRole, RoleBinding | null>;
+  autoArchive: boolean;
+  saveDir: string;
+  configured: boolean;
+  hasSavedApiKey: boolean;
+  warning?: string;
+}
+
+export interface SettingsSavePayload {
+  providers: Array<ProviderConfig & { apiKey?: string }>;
+  removedProviderIds: string[];
+  roles: Record<ModelRole, RoleBinding | null>;
+  autoArchive: boolean;
+}
+
+export interface SettingsTestInput {
+  providerId?: string;
+  transient?: { baseUrl?: string; apiKey?: string };
+}
+
+export interface SettingsTestResult {
+  ok: boolean;
+  message: string;
+  models?: string[];
+}
+
+export interface QueueRetryOptions {
+  useCurrentBinding?: boolean;
+}
+
 export interface QueueJob {
   id: string;
   requestId: string;
@@ -209,6 +274,9 @@ export interface QueueJob {
   errorInfo?: GenerationErrorInfo;
   elapsedMs?: number;
   resultGalleryIds?: string[];
+  /** 入队时主进程快照的 image 角色绑定（D1）；旧任务可能缺失 */
+  providerId?: string;
+  model?: string;
 }
 
 export interface UpdateStatus {

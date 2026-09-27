@@ -129,4 +129,15 @@ declare global {
   type LocalAIModelManifest = Shared.LocalAIModelManifest;
   type ModelDownloadState = Shared.ModelDownloadState;
   type StoredAttachment = Shared.StoredAttachment;
+  type ModelRole = Shared.ModelRole;
+  type RoleBinding = Shared.RoleBinding;
+  type ProviderModel = Shared.ProviderModel;
+  type ProviderConfig = Shared.ProviderConfig;
+  type ProviderSummary = Shared.ProviderSummary;
+  type ModelConfig = Shared.ModelConfig;
+  type SettingsSnapshot = Shared.SettingsSnapshot;
+  type SettingsSavePayload = Shared.SettingsSavePayload;
+  type SettingsTestInput = Shared.SettingsTestInput;
+  type SettingsTestResult = Shared.SettingsTestResult;
+  type QueueRetryOptions = Shared.QueueRetryOptions;
 }
