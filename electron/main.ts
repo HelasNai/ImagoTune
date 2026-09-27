@@ -689,10 +689,14 @@ async function materializeImageResponse(image: ImageResponse, baseUrl: string, a
   return { ...image, b64_json: png.toString("base64") };
 }
 
-async function callImages(win: BrowserWindow, endpoint: "generations" | "edits", input: RequestInput | EditInput) {
-  const { apiKey, baseUrl } = await config();
-  if (!baseUrl) throw new GenerationError({ category: "authentication", title: "尚未配置基础地址", message: "客户端没有可用于请求图片服务的 API Base URL。", suggestion: "请先在设置中填写兼容平台提供的基础地址。", retryable: false });
-  if (!apiKey) throw new GenerationError({ category: "authentication", title: "尚未配置 API 密钥", message: "客户端没有可用于请求图片服务的密钥。", suggestion: "请先在设置中保存兼容平台提供的 API 密钥。", retryable: false });
+async function callImages(win: BrowserWindow, endpoint: "generations" | "edits", input: RequestInput | EditInput, binding?: RoleBinding) {
+  // D2：binding 缺省 → 当前「生图」角色绑定（纯配置解析，零 keytar 读）；
+  // 随后 resolveProvider 单次读取凭据（每请求恰 1 次 keytar 读）。recipe 仍作为归档配方元数据，模型名不写回。
+  const effectiveBinding = binding ?? resolveRole("image");
+  if (!effectiveBinding) throw new GenerationError({ category: "authentication", title: "尚未配置生图模型", message: "当前没有为「生图」角色绑定任何供应商与模型。", suggestion: "请在设置中为「生图」选择供应商与模型后重试。", retryable: false });
+  const provider = await resolveProvider(effectiveBinding.providerId);
+  if (!provider) throw new GenerationError({ category: "authentication", title: "生图服务不可用", message: "所选供应商不存在，或尚未在凭据库中保存 API 密钥。", suggestion: "请在设置中检查「生图」绑定的供应商配置与密钥。", retryable: false });
+  const { baseUrl, apiKey } = provider;
   const recipe = normalizeRecipe(input, endpoint === "edits" ? "edit" : "generate");
   const effectivePrompt = composeImagePrompt(recipe);
   const controller = new AbortController(); controllers.set(input.requestId, controller);
@@ -708,13 +712,13 @@ async function callImages(win: BrowserWindow, endpoint: "generations" | "edits",
     emit(win, input.requestId, "已提交", 5, "请求已发送，正在等待图片服务响应");
     let response: Response;
     if (endpoint === "generations") {
-      const body: Record<string, unknown> = { model: recipe.model, prompt: effectivePrompt, size: recipe.size, n: recipe.n, response_format: "b64_json", stream: true };
+      const body: Record<string, unknown> = { model: effectiveBinding.model, prompt: effectivePrompt, size: recipe.size, n: recipe.n, response_format: "b64_json", stream: true };
       if (recipe.quality && recipe.quality !== "auto") body.quality = recipe.quality;
       response = await fetch(joinBase(baseUrl, "/images/generations"), { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
     } else {
       const edit = input as EditInput;
       const form = new FormData();
-      form.append("model", recipe.model); form.append("prompt", effectivePrompt); form.append("size", recipe.size); form.append("n", String(recipe.n)); form.append("response_format", "b64_json"); form.append("stream", "true");
+      form.append("model", effectiveBinding.model); form.append("prompt", effectivePrompt); form.append("size", recipe.size); form.append("n", String(recipe.n)); form.append("response_format", "b64_json"); form.append("stream", "true");
       if (recipe.quality && recipe.quality !== "auto") form.append("quality", recipe.quality);
       form.append("image", new Blob([Buffer.from(edit.image.data)], { type: edit.image.type || "application/octet-stream" }), edit.image.name);
       if (edit.mask) form.append("mask", new Blob([Buffer.from(edit.mask.data)], { type: edit.mask.type || "application/octet-stream" }), edit.mask.name);
@@ -733,11 +737,12 @@ async function callImages(win: BrowserWindow, endpoint: "generations" | "edits",
     }
     if (!images.length) throw new Error("接口未返回图片数据");
     emit(win, input.requestId, "完成", 100, `生成完成，用时 ${((Date.now() - startedAt) / 1000).toFixed(1)} 秒`);
-    const settings = await config();
+    // autoArchive 直接读配置缓存，避免热路径再触发 5 次 keytar 读。
+    const autoArchive = getModelConfigCache()?.autoArchive ?? true;
     const normalizedInput = { ...input, recipe } as RequestInput | EditInput;
     let gallery: Awaited<ReturnType<typeof archiveImages>> = [];
     let archiveWarning: string | undefined;
-    if (settings.autoArchive) {
+    if (autoArchive) {
       try {
         gallery = await archiveImages(images, normalizedInput, true);
       } catch (error) {
@@ -769,17 +774,26 @@ async function callImages(win: BrowserWindow, endpoint: "generations" | "edits",
 }
 
 async function enhancePromptWithModel(prompt: string, mode: "generate" | "edit") {
-  const { apiKey, baseUrl, chatModel } = await config(); if (!baseUrl || !apiKey) throw new Error("请先保存基础地址和 API 密钥");
+  // 提示词增强走「增强」角色绑定：resolveRole 零 keytar 读，resolveProvider 单次读凭据。
+  const binding = resolveRole("enhance");
+  if (!binding) throw new Error("尚未配置提示词增强模型，请在设置中绑定");
+  const provider = await resolveProvider(binding.providerId);
+  if (!provider) throw new Error("提示词增强的供应商不可用，请在设置中检查配置与密钥");
+  const { baseUrl, apiKey } = provider;
   const timeout = withTimeout(60_000);
   try {
-    const response = await fetch(joinBase(baseUrl, "/chat/completions"), { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: chatModel, temperature: 0.7, max_tokens: 1200, messages: [{ role: "system", content: "你是图片提示词优化助手。保留用户意图，不增加不相关主体；输出一段可以直接用于图片生成的中文提示词，不要解释，不要加引号。" }, { role: "user", content: `模式：${mode === "edit" ? "图片编辑，保持主体不变" : "文生图"}\n原始提示词：${prompt}` }] }), signal: timeout.signal });
+    const response = await fetch(joinBase(baseUrl, "/chat/completions"), { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: binding.model, temperature: 0.7, max_tokens: 1200, messages: [{ role: "system", content: "你是图片提示词优化助手。保留用户意图，不增加不相关主体；输出一段可以直接用于图片生成的中文提示词，不要解释，不要加引号。" }, { role: "user", content: `模式：${mode === "edit" ? "图片编辑，保持主体不变" : "文生图"}\n原始提示词：${prompt}` }] }), signal: timeout.signal });
     if (!response.ok) throw new Error(`提示词增强接口返回 ${response.status}`); const json = await response.json() as { choices?: Array<{ message?: { content?: string } }> }; const content = json.choices?.[0]?.message?.content?.trim(); if (!content) throw new Error("提示词增强没有返回内容"); return content;
   } catch (error) { if ((error as Error).name === "AbortError") throw new Error("提示词增强超时，请保留原提示词重试"); throw error; } finally { timeout.clear(); }
 }
 
 async function reversePromptWithModel(image: BinaryInput) {
-  const { apiKey, baseUrl, chatModel } = await config();
-  if (!baseUrl || !apiKey) throw new Error("请先保存基础地址和 API 密钥");
+  // 图反推走「反推」角色绑定：resolveRole 零 keytar 读，resolveProvider 单次读凭据。
+  const binding = resolveRole("reverse");
+  if (!binding) throw new Error("尚未配置图反推模型，请在设置中绑定");
+  const provider = await resolveProvider(binding.providerId);
+  if (!provider) throw new Error("图反推的供应商不可用，请在设置中检查配置与密钥");
+  const { baseUrl, apiKey } = provider;
   if (!image.data?.length) throw new Error("请选择需要分析的图片");
   const timeout = withTimeout(90_000);
   try {
@@ -789,7 +803,7 @@ async function reversePromptWithModel(image: BinaryInput) {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: chatModel,
+        model: binding.model,
         temperature: 0.35,
         max_tokens: 1600,
         messages: [
