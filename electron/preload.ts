@@ -3,12 +3,24 @@ import { contextBridge, ipcRenderer } from "electron";
 contextBridge.exposeInMainWorld("imageStudio", {
   settings: {
     get: () => ipcRenderer.invoke("settings:get"),
-    save: (input: { apiKey: string; baseUrl: string; imageModel: string; chatModel: string; autoArchive?: boolean }) => ipcRenderer.invoke("settings:save", input),
+    save: (input: {
+      providers: Array<{
+        id: string;
+        name: string;
+        baseUrl: string;
+        models: Array<{ id: string; roles: string[]; source?: "custom"; missing?: boolean }>;
+        modelsUpdatedAt?: string;
+        apiKey?: string;
+      }>;
+      removedProviderIds: string[];
+      roles: Record<"image" | "reverse" | "enhance", { providerId: string; model: string } | null>;
+      autoArchive: boolean;
+    }) => ipcRenderer.invoke("settings:save", input),
     chooseSaveDir: () => ipcRenderer.invoke("settings:chooseSaveDir"),
     resetSaveDir: () => ipcRenderer.invoke("settings:resetSaveDir"),
     openSaveDir: () => ipcRenderer.invoke("settings:openSaveDir"),
     clear: () => ipcRenderer.invoke("settings:clear"),
-    test: () => ipcRenderer.invoke("settings:test")
+    test: (input?: { providerId?: string; transient?: { baseUrl?: string; apiKey?: string } }) => ipcRenderer.invoke("settings:test", input)
   },
   updates: {
     get: () => ipcRenderer.invoke("updates:get"),
@@ -44,7 +56,7 @@ contextBridge.exposeInMainWorld("imageStudio", {
   queue: {
     list: () => ipcRenderer.invoke("queue:list"),
     enqueue: (input: { kind: "generate" | "edit"; payload: unknown }) => ipcRenderer.invoke("queue:enqueue", input),
-    retry: (id: string) => ipcRenderer.invoke("queue:retry", id),
+    retry: (id: string, options?: { useCurrentBinding?: boolean }) => ipcRenderer.invoke("queue:retry", id, options),
     cancel: (id: string) => ipcRenderer.invoke("queue:cancel", id),
     remove: (id: string) => ipcRenderer.invoke("queue:remove", id)
   },

@@ -6,13 +6,13 @@ declare global {
   interface Window {
     imageStudio: {
       settings: {
-        get: () => Promise<{ configured: boolean; hasSavedApiKey: boolean; baseUrl: string; imageModel: string; chatModel: string; autoArchive: boolean; saveDir: string }>;
-        save: (input: { apiKey: string; baseUrl: string; imageModel: string; chatModel: string; autoArchive?: boolean }) => Promise<{ ok: boolean }>;
+        get: () => Promise<SettingsSnapshot>;
+        save: (input: SettingsSavePayload) => Promise<{ ok: boolean; error?: string }>;
         chooseSaveDir: () => Promise<{ ok: boolean; canceled?: boolean; saveDir?: string; error?: string }>;
         resetSaveDir: () => Promise<{ ok: boolean; saveDir?: string; error?: string }>;
         openSaveDir: () => Promise<{ ok: boolean; error?: string }>;
         clear: () => Promise<{ ok: boolean }>;
-        test: () => Promise<{ ok: boolean; message: string }>;
+        test: (input?: SettingsTestInput) => Promise<SettingsTestResult>;
       };
       updates: {
         get: () => Promise<{ ok: boolean; appVersion: string; channel: UpdateChannel; autoUpdate: boolean; supported: boolean; status: UpdateStatus; alphaUnlocked: boolean }>;
@@ -48,7 +48,7 @@ declare global {
       queue: {
         list: () => Promise<{ ok: boolean; items: QueueJob[] }>;
         enqueue: (input: { kind: "generate" | "edit"; payload: unknown }) => Promise<{ ok: boolean; job?: QueueJob; error?: string }>;
-        retry: (id: string) => Promise<{ ok: boolean; job?: QueueJob; error?: string }>;
+        retry: (id: string, options?: QueueRetryOptions) => Promise<{ ok: boolean; job?: QueueJob; error?: string }>;
         cancel: (id: string) => Promise<{ ok: boolean; job?: QueueJob; error?: string }>;
         remove: (id: string) => Promise<{ ok: boolean; error?: string }>;
       };
