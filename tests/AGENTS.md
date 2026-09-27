@@ -1,12 +1,13 @@
 # tests — 纯逻辑单元测试
 
 ## OVERVIEW
-项目唯一测试层：18 个 `*.test.ts` / 106 个 it（扁平结构），Vitest 4.x 纯 Node 环境，无 DOM。
+项目唯一测试层：19 个 `*.test.ts` / 152 个 it（扁平结构），Vitest 4.x 纯 Node 环境，无 DOM。
 
 ## COVERAGE BOUNDARY
 可测（仅纯逻辑，文件名 kebab-case 与模块一一对应）：
-- `electron/`：queue-store、gallery-store、png-metadata、image-recipe、generation-error（同测于 `recipe-error.test`）、reverse-prompt、local-ai-model-manager、fs-utils、data-url、constants
+- `electron/`：queue-store、gallery-store、png-metadata、image-recipe、generation-error（同测于 `recipe-error.test`）、reverse-prompt、local-ai-model-manager、fs-utils、data-url、constants、model-config
 - `src/lib/`：creative、local-ai、outpaint、tutorial、format、media
+- `model-config.test`（46 it）覆盖多供应商配置纯逻辑：`/models` 三变体解析/去重/排序/500 截断、刷新合并（保留标注/custom 不消失/missing 标记）、legacy 迁移合成（含同 id 合并去重）、保存载荷校验、`resolveRoleBinding`/`resolveJobBinding` 三分支（含 fail-closed）、`configured` 四条件、`runSavePlan` 成功与中途失败、`stripProviderSecrets` 密钥剥离
 - 跨层一致性测试（同时导入 electron 纯模块与 `src/lib` 同名常量/行为）：`constants.test`（默认模型 / inbox）、`outpaint-limits.test`（画布常量）、`local-ai-limits.test`（本地 AI 上限）、`data-url.test`（去前缀正则，含 `image/svg+xml` 与大写 MIME 用例）
 - 源码文本一致性测试：`preload-channels.test`（导入 `../electron/channels` 并读取 `../electron/preload.ts` 源码，双向锁定 71 个通道字符串；因沙箱化 preload 无法 `import` 本地模块，用源码文本守卫替代运行时单源化）
 
@@ -30,4 +31,4 @@ npm test    # vitest run
 本目录不在 tsconfig 中，不参与 `npm run typecheck`。无 vitest.config，vite.config 无 `test` 块，纯默认配置。
 
 ## ADDING A TEST
-新逻辑若可测试，应落在 `electron/`（stores / 元数据 / 模型管理 / 无副作用纯模块）或 `src/lib/`（纯函数）。新模块 → 同目录加 `*.test.ts`，遵循上方 conventions。UI / 主进程 / worker 逻辑不写运行时测试；`electron/preload.ts` 无运行时测试，仅可写源码文本一致性检查（如 `preload-channels.test` 对 preload↔channels 通道的双向锁定）。声称与两端共享的常量/正则，须由跨层一致性测试锁定（同时 import `../electron/*` 与 `../src/lib/*`）。
+新逻辑若可测试，应落在 `electron/`（stores / 元数据 / 模型管理 / 无副作用纯模块）或 `src/lib/`（纯函数）。新模块 → 同目录加 `*.test.ts`，遵循上方 conventions。UI / 主进程 / worker 逻辑不写运行时测试；`electron/preload.ts` 无运行时测试，仅可写源码文本一致性检查（如 `preload-channels.test` 对 preload↔channels 通道的双向锁定）。声称与两端共享的常量/正则，须由跨层一致性测试锁定（同时 import `../electron/*` 与 `../src/lib/*`）。主进程纯模块如 `model-config`（配置解析/合并/校验/写序编排）应直接 import `../electron/model-config` 单测，勿依赖 IPC 或 keytar。

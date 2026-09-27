@@ -46,8 +46,8 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: "connection",
     title: "连接你的图片服务",
-    description: "在设置中填写兼容平台提供的 API Base URL、API 密钥和图片模型名称。密钥保存到 Windows 凭据库，界面不会回显原文。",
-    hint: "填写后先保存设置，再按需测试连接。教程不会替你提交任何信息。",
+    description: "在设置中可以添加多个兼容平台，分别填写 API Base URL 与密钥，再为生图、图反推、提示词增强绑定各自的供应商与模型。密钥只保存到 Windows 凭据库，界面不会回显原文。",
+    hint: "每个供应商都能单独测试连接、刷新模型；教程不会替你提交任何信息。",
     mode: "settings",
     target: "connection-settings",
   },
@@ -104,9 +104,9 @@ export const TUTORIAL_TOPICS: TutorialTopic[] = [
     id: "connection",
     icon: "settings",
     title: "连接与模型配置",
-    purpose: "连接任意符合当前请求格式的 OpenAI 兼容图片平台。",
-    steps: ["填写 API Base URL", "保存 API 密钥", "填写平台提供的图片模型名称", "保存后按需测试连接"],
-    commonIssue: "如果提示 401 或 403，请确认密钥有效、基础地址包含正确的 /v1 路径，并检查图片模型权限。",
+    purpose: "添加并管理一个或多个符合当前请求格式的 OpenAI 兼容图片平台。",
+    steps: ["添加供应商并填写 API Base URL 与 API 密钥", "刷新平台模型列表或手动添加自定义模型", "为生图、图反推、提示词增强分别标注并绑定模型", "保存后按需测试连接"],
+    commonIssue: "如果提示 401 或 403，请确认密钥有效、基础地址包含正确的 /v1 路径，并检查模型权限；如果提示某个角色尚未配置，请回到「模型分配」为它选择供应商与模型。",
     mode: "settings",
   },
   {
