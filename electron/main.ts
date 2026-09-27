@@ -18,13 +18,13 @@ import { stripDataUrlPrefix } from "./data-url";
 import { LocalAIModelManager } from "./local-ai-model-manager";
 import { LocalAIModelId, localAIModelById } from "./local-ai-models";
 import { createDirectoryManager } from "./directory-manager";
-import { DEFAULT_CHAT_MODEL, DEFAULT_IMAGE_MODEL, INBOX_PROJECT_ID } from "./constants";
+import { INBOX_PROJECT_ID } from "./constants";
 import { errorMessage, joinBase, withTimeout } from "./net-utils";
 import { atomicWriteJson, ensureDir, nowISO } from "./fs-utils";
-import { buildLegacyModelConfig, findProvider, resolveRoleBinding, runSavePlan, stripProviderSecrets, validateSavePayload } from "./model-config";
+import { buildLegacyModelConfig, deriveConfigured, findProvider, parseModelsResponse, resolveRoleBinding, runSavePlan, stripProviderSecrets, validateSavePayload } from "./model-config";
 import { CANVAS_MAX_EDGE, CANVAS_MAX_PIXELS, CANVAS_MULTIPLE } from "./outpaint-limits";
 import { LOCAL_AI_MAX_EDGE, LOCAL_AI_MAX_PIXELS } from "./local-ai-limits";
-import type { ApiImage, BinaryPayload, ModelConfig, ModelRole, PromptTemplate, RoleBinding, SettingsSavePayload, UpdateChannel, UpdateStatus } from "../shared/types";
+import type { ApiImage, BinaryPayload, ModelConfig, ModelRole, PromptTemplate, ProviderSummary, RoleBinding, SettingsSavePayload, SettingsSnapshot, SettingsTestInput, UpdateChannel, UpdateStatus } from "../shared/types";
 import {
   CLIPBOARD_COPY_IMAGE, CLIPBOARD_COPY_TEXT, CLIPBOARD_READ_IMAGE,
   GALLERY_BULK, GALLERY_DELETE, GALLERY_EXPORT_ZIP, GALLERY_LIST, GALLERY_LOAD_IMAGE,
@@ -263,17 +263,6 @@ async function storedCredential(account: string) {
     }
   }
   return null;
-}
-
-async function config() {
-  const archiveSetting = await storedCredential(`${ACCOUNT}:autoArchive`);
-  return {
-    apiKey: await storedCredential(ACCOUNT),
-    baseUrl: (await storedCredential(`${ACCOUNT}:baseUrl`)) || DEFAULT_BASE_URL,
-    imageModel: (await storedCredential(`${ACCOUNT}:imageModel`)) || DEFAULT_IMAGE_MODEL,
-    chatModel: (await storedCredential(`${ACCOUNT}:chatModel`)) || DEFAULT_CHAT_MODEL,
-    autoArchive: archiveSetting !== "false",
-  };
 }
 
 // 多供应商元数据文件路径（userData/model-config.json；密钥永不落此文件）。
@@ -858,8 +847,46 @@ app.whenReady().then(async () => {
   });
   // 无边框窗口由渲染层自绘标题栏，移除原生应用菜单（菜单项功能迁移至设置页 / 窗口快捷键）。
   Menu.setApplicationMenu(null);
-  ipcMain.handle(SETTINGS_GET, async () => { const c = await config(); return { configured: Boolean(c.apiKey && c.baseUrl), hasSavedApiKey: Boolean(c.apiKey), baseUrl: c.baseUrl, imageModel: c.imageModel, chatModel: c.chatModel, autoArchive: c.autoArchive, saveDir }; });
-  ipcMain.handle(SETTINGS_SAVE, async (_e, value: { apiKey: string; baseUrl: string; imageModel: string; chatModel: string; autoArchive?: boolean }) => { if (value.apiKey.trim()) await keytar.setPassword(SERVICE, ACCOUNT, value.apiKey.trim()); await keytar.setPassword(SERVICE, `${ACCOUNT}:baseUrl`, value.baseUrl.trim()); await keytar.setPassword(SERVICE, `${ACCOUNT}:imageModel`, value.imageModel.trim() || DEFAULT_IMAGE_MODEL); await keytar.setPassword(SERVICE, `${ACCOUNT}:chatModel`, value.chatModel.trim() || DEFAULT_CHAT_MODEL); await keytar.setPassword(SERVICE, `${ACCOUNT}:autoArchive`, value.autoArchive === false ? "false" : "true"); return { ok: true }; });
+  // D12/D13：返回 SettingsSnapshot（providers 带 hasKey 布尔），凭据读取失败也永不 reject。
+  ipcMain.handle(SETTINGS_GET, async (): Promise<SettingsSnapshot> => {
+    try {
+      const current = getModelConfigCache() ?? { version: 1 as const, providers: [], roles: { image: null, reverse: null, enhance: null }, autoArchive: true };
+      const hasKeyMap = new Map<string, boolean>();
+      for (const provider of current.providers) hasKeyMap.set(provider.id, await providerHasKey(provider.id));
+      const providers: ProviderSummary[] = current.providers.map((provider) => ({ ...provider, hasKey: hasKeyMap.get(provider.id) === true }));
+      return {
+        providers,
+        roles: current.roles,
+        autoArchive: current.autoArchive,
+        saveDir,
+        configured: deriveConfigured(current, (id) => hasKeyMap.get(id) === true),
+        hasSavedApiKey: providers.some((provider) => provider.hasKey),
+        warning: getConfigWarning(),
+      };
+    } catch (error) {
+      return { providers: [], roles: { image: null, reverse: null, enhance: null }, autoArchive: true, saveDir, configured: false, hasSavedApiKey: false, warning: errorMessage(error, "读取设置失败") };
+    }
+  });
+  // D9 并集删除保护 + D5 五步保存序：removal=(当前 JSON 差集)∪removedProviderIds；被 active job 引用则整单拒绝。
+  ipcMain.handle(SETTINGS_SAVE, async (_e, payload: SettingsSavePayload) => {
+    try {
+      if (!payload || !Array.isArray(payload.providers) || !Array.isArray(payload.removedProviderIds) || !payload.roles) {
+        return { ok: false, error: "保存参数无效" };
+      }
+      const current = getModelConfigCache();
+      const currentIds = current?.providers.map((provider) => provider.id) ?? [];
+      const payloadIds = new Set(payload.providers.map((provider) => provider.id));
+      const removal = new Set<string>();
+      for (const id of currentIds) if (!payloadIds.has(id)) removal.add(id);
+      for (const id of payload.removedProviderIds) if (typeof id === "string" && id) removal.add(id);
+      const jobs = await queueStore.read();
+      const activeProviderIds = new Set(jobs.filter((job) => job.status === "queued" || job.status === "running").map((job) => job.providerId).filter((value): value is string => typeof value === "string" && value.length > 0));
+      for (const id of removal) if (activeProviderIds.has(id)) return { ok: false, error: "供应商有未完成任务" };
+      return await saveModelConfig(payload, Array.from(removal));
+    } catch (error) {
+      return { ok: false, error: errorMessage(error, "保存失败") };
+    }
+  });
   ipcMain.handle(SETTINGS_CHOOSE_SAVE_DIR, () => saveDirManager.choose());
   ipcMain.handle(WINDOW_MINIMIZE, async (event) => {
     try {
@@ -925,7 +952,38 @@ app.whenReady().then(async () => {
   ipcMain.handle(SETTINGS_RESET_SAVE_DIR, () => saveDirManager.reset());
   ipcMain.handle(SETTINGS_OPEN_SAVE_DIR, () => saveDirManager.open());
   ipcMain.handle(SETTINGS_CLEAR, async () => { await Promise.all([keytar.deletePassword(SERVICE, ACCOUNT), ...LEGACY_SERVICES.map((service) => keytar.deletePassword(service, ACCOUNT))]); return { ok: true }; });
-  ipcMain.handle(SETTINGS_TEST, async () => { const c = await config(); if (!c.baseUrl) return { ok: false, message: "尚未配置 API Base URL" }; if (!c.apiKey) return { ok: false, message: "尚未配置 API 密钥" }; try { new URL(c.baseUrl); const r = await fetch(joinBase(c.baseUrl, "/models"), { headers: { Authorization: `Bearer ${c.apiKey}` }, signal: AbortSignal.timeout(20_000) }); return r.ok ? { ok: true, message: "连接成功" } : { ok: false, message: `接口返回 ${r.status}` }; } catch (e) { return { ok: false, message: (e as Error).message }; } });
+  // D13：优先 providerId → 当前 image 绑定；transient 仅存在于本次调用内存，永不落库/日志/错误串。
+  ipcMain.handle(SETTINGS_TEST, async (_e, input?: SettingsTestInput) => {
+    try {
+      let baseUrl = ""; let apiKey: string | null = null;
+      const providerId = typeof input?.providerId === "string" && input.providerId.length > 0 ? input.providerId : null;
+      if (providerId) {
+        const current = getModelConfigCache();
+        const provider = current ? findProvider(current, providerId) : undefined;
+        if (!provider) return { ok: false, message: "供应商不存在" };
+        baseUrl = provider.baseUrl;
+        apiKey = await providerCredential(providerId);
+      } else {
+        const binding = resolveRole("image");
+        const provider = binding ? await resolveProvider(binding.providerId) : null;
+        if (!provider) return { ok: false, message: "尚未配置" };
+        baseUrl = provider.baseUrl; apiKey = provider.apiKey;
+      }
+      if (typeof input?.transient?.baseUrl === "string" && input.transient.baseUrl.trim()) baseUrl = input.transient.baseUrl.trim();
+      if (typeof input?.transient?.apiKey === "string" && input.transient.apiKey.trim()) apiKey = input.transient.apiKey.trim();
+      if (!apiKey) return { ok: false, message: "尚未配置 API 密钥" };
+      let parsed: URL;
+      try { parsed = new URL(baseUrl); } catch { return { ok: false, message: "API Base URL 格式无效" }; }
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return { ok: false, message: "API Base URL 仅支持 http/https" };
+      const response = await fetch(joinBase(baseUrl, "/models"), { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(20_000) });
+      if (!response.ok) return { ok: false, message: `接口返回 ${response.status}` };
+      let models: string[] = [];
+      try { models = parseModelsResponse(await response.json()); } catch { models = []; }
+      return { ok: true, message: "连接成功", models };
+    } catch (error) {
+      return { ok: false, message: errorMessage(error, "连接失败") };
+    }
+  });
   ipcMain.handle(LOCAL_AI_CAPABILITIES, async () => ({
     ok: true,
     webgpu: !app.commandLine.hasSwitch("disable-gpu"),
