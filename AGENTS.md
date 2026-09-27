@@ -3,7 +3,7 @@
 **Generated:** 2026-08-30
 **Commit:** 15bd76d
 **Branch:** alpha
-**同步日期:** 2026-09-26（preload 白屏修复：沙箱化 preload 不能 `require` 本地模块，`preload.ts` 回退为内联通道字符串——T8 的 `import "./channels"` 曾致 `window.imageStudio` 不暴露、窗口白屏；新增 `tests/preload-channels.test.ts` 锁定两端一致。测试 18 文件 / 106 it。前次同步：redundancy-refactor 去重改造：跨层类型单源化 `shared/types.d.ts`、主进程/渲染层共享 helper 提取、需反馈的 IPC 结果统一走 `components/ipc.ts`；main.tsx 487 行）
+**同步日期:** 2026-09-27（安装包瘦身：`build.files` 改白名单模式、构建时依赖移出 `dependencies`——安装包 185.4 MB → 112.2 MB，asar 238.6 MB → 39.7 MB；verify + 冒烟启动通过。前次同步：preload 白屏修复：沙箱化 preload 不能 `require` 本地模块，`preload.ts` 回退为内联通道字符串——T8 的 `import "./channels"` 曾致 `window.imageStudio` 不暴露、窗口白屏；新增 `tests/preload-channels.test.ts` 锁定两端一致。测试 18 文件 / 106 it。更前：redundancy-refactor 去重改造：跨层类型单源化 `shared/types.d.ts`、主进程/渲染层共享 helper 提取、需反馈的 IPC 结果统一走 `components/ipc.ts`；main.tsx 487 行）
 
 ## OVERVIEW
 Windows 桌面端 AI 图片创作工作台（Electron + React + TypeScript）：连接 OpenAI 兼容 API 出图，并提供完全本地的高清放大 / 抠图 / 人脸优化工具箱（WebGPU/WASM）。
@@ -51,6 +51,8 @@ image-studio/
 - 无 ESLint / Prettier / .editorconfig——风格靠自觉：双引号、相对导入（无 `@/` 别名）、分号结尾
 - 双 tsconfig 分离：`tsconfig.json`（渲染，ESNext/Bundler/noEmit）+ `tsconfig.electron.json`（主进程，CommonJS→dist-electron）
 - 构建产物三分：`dist-renderer`（vite）/ `dist-electron`（tsc）/ `dist`（electron-builder）——勿合并（v1.3.2 空白窗修复）
+- `build.files` 为**白名单模式**（仅 `dist-electron/**`、`dist-renderer/**`、`ImagoTune.ico`；`package.json` 与生产依赖由 electron-builder 自动包含）——新增任何运行时读取的包内资源必须显式加入白名单，否则不会进包；`.omo`/`.sisyphus`/`.codegraph` 等工作区目录由此天然排除，勿改回 `**/*` 兜底（agent 工作目录曾把 24 MB 证据截图打进 asar，安装包膨胀 22 MB）
+- 依赖分类即打包体积契约：只有主进程运行时会 `require` 的包可留在 `dependencies`（现为 archiver / archiver-utils / electron-updater / keytar）；vite 打包型前端依赖（react / react-dom / onnxruntime-web）与纯类型包（@types/*）必须放 `devDependencies`——electron-builder 只收集 dependencies 生产树，误放会把约 130 MB 构建时依赖塞进安装包
 - 安全基线：`contextIsolation(true)`/`nodeIntegration(false)`；API 密钥仅经 `keytar` 存 Windows 凭据库，绝不落盘源码/渲染层
 - IPC 全部返回 `{ ok: boolean; error?: string }`
 - 窗口为系统原生 WCO 模型（`titleBarStyle:'hidden'` + 全透明 `titleBarOverlay` 对象）：Windows 原生绘制最小化/最大化/关闭按钮并叠加在页面上、页面渐变透出（支持 Win11 Snap Layouts）；原生应用菜单已移除（`Menu.setApplicationMenu(null)`），其「使用说明 / 开源许可证 / 新手教程 / 界面缩放」入口迁至设置页；拖拽区按元素「布局矩形」收集且不受 `overflow:hidden` 裁剪——header 内伪元素/子元素的布局矩形必须落在 header 盒内，越界会把 header 下方页面区域误判为拖拽/标题栏区（v2.5 修复 `header::before` 光晕圆盒溢出）
@@ -89,5 +91,5 @@ npm run package:win  # build && electron-builder NSIS x64 && package:verify
 - 安装器/卸载器自定义行为（`tools/installer.nsh`，经 `build.nsis.include` 接入；改动前先读该文件头注释）：①卸载欢迎页询问「是否删除用户数据」（默认保留；用户数据 = `%APPDATA%\imagotune`）；②真卸载保留安装根空目录并把路径记入 `HKCU\Software\ImagoTune\LastInstallDir`，重装时回填并**写回 InstallLocation 键**（`HKCU/HKLM\Software\{APP_GUID}`——安装模式页 leave 会执行 `setInstallModePerUser/AllUsers` 重读该键并重置 `$INSTDIR`，不写回则回填被覆盖）；升级（`--updated`）与静默卸载（`/S`）绝不触发删除。NSIS 警告被 electron-builder 视为错误：自定义脚本须在两轮编译（安装器/卸载器）均零警告——函数体必须放在宏内延迟到 MUI2 就绪后展开，仅卸载器使用的变量用 `!ifdef BUILD_UNINSTALLER` 保护
 - `npmRebuild: false`：原生模块 keytar 依赖预编译二进制，改 Electron/Node 版本需手动验证
 - `electron/main.ts` 存在硬编码 `LEGACY_SAVE_DIR = "D:\\codexproject\\生图\\保存图片"`（行 58），仅靠 try/catch 降级
-- 工作区有 `Open-Opencode.exe`（gitignore 不提交）与 `500行源码)`（未跟踪的目录统计文本，非目录）
+- 工作区的 scratch 文件（`Open-Opencode.exe` 等）不进 git 也不进安装包（files 白名单兜底，见 CONVENTIONS）
 - 请求超时：生成 300s / 提示词增强 60s / 图反推 90s（AbortController）
