@@ -6,6 +6,7 @@ import { Combobox } from "./Combobox";
 import type { ComboboxOption } from "./Combobox";
 import { formatDateTime } from "../lib/format";
 import { isSettingsDirty } from "../lib/settings-dirty";
+import { presetToProviderDraft } from "../lib/provider-preset";
 
 /** 供应商草稿：完整配置 + 可选的未保存密钥（仅存在于本次会话内存，保存时才提交）。 */
 type ProviderDraft = ProviderConfig & { apiKey?: string };
@@ -53,6 +54,11 @@ export function SettingsPanel({
   const [modelSearch, setModelSearch] = useState<Record<string, string>>({}); // 每供应商的模型搜索文本
   const [draftForm, setDraftForm] = useState<{ name: string; baseUrl: string; apiKey: string }>({ name: "", baseUrl: "", apiKey: "" });
   const [adding, setAdding] = useState(false);
+  // —— 添加卡片双态（预设平台 / 自定义，K8）：两态草稿独立存在，切换模式互不清空 ——
+  const [presets, setPresets] = useState<ProviderPreset[]>([]);
+  const [addMode, setAddMode] = useState<"preset" | "custom">("preset");
+  const [presetId, setPresetId] = useState("");
+  const [presetApiKey, setPresetApiKey] = useState("");
   const [providerMessages, setProviderMessages] = useState<Record<string, string>>({});
   const [providerMessageErrors, setProviderMessageErrors] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
@@ -79,6 +85,10 @@ export function SettingsPanel({
   useEffect(() => {
     void callIpc(() => window.imageStudio.settings.get(), { fallbackError: "无法读取设置", onError: setError }).then((value) => {
       setSaveDir(value.saveDir || "");
+      // 预设平台随同一份快照到达（K8，不新增 IPC）；默认选中第一个，`current ||` 只防重复 set 覆盖用户选择。
+      const snapshotPresets = value.presets ?? [];
+      setPresets(snapshotPresets);
+      setPresetId((current) => current || snapshotPresets[0]?.id || "");
     }).catch(() => { /* callIpc 已上报 */ });
     void callIpc(() => window.imageStudio.updates.get(), { fallbackError: "无法读取更新状态", onError: setError }).then((value) => {
       setUpdateChannel(value.channel);
@@ -126,6 +136,7 @@ export function SettingsPanel({
   const beginAdd = () => {
     setExpandedId(null);
     setDraftForm({ name: "", baseUrl: "", apiKey: "" });
+    setPresetApiKey("");
     setAdding(true);
   };
 
@@ -138,6 +149,20 @@ export function SettingsPanel({
     setDrafts((current) => [...current, { id, name, baseUrl, models: [], ...(draftForm.apiKey ? { apiKey: draftForm.apiKey } : {}) }]);
     setAdding(false);
   };
+
+  // 预设态添加：平台参数（名称/baseUrl/api/预置模型）全部来自快照预设，只需密钥（可留空）。
+  const confirmAddPreset = () => {
+    const preset = presets.find((item) => item.id === presetId);
+    if (!preset) { setError("请选择预设平台"); return; }
+    const id = crypto.randomUUID();
+    setDrafts((current) => [...current, presetToProviderDraft(preset, id, presetApiKey)]);
+    setPresetApiKey("");
+    setAdding(false);
+  };
+
+  // 快照无预设（或选中项缺失）时降级为自定义表单，绝不渲染空 Combobox。
+  const selectedPreset = presets.find((preset) => preset.id === presetId) ?? null;
+  const effectiveAddMode: "preset" | "custom" = addMode === "preset" && selectedPreset ? "preset" : "custom";
 
   // 测试连接 / 刷新模型：同一 IPC 的两种用法（D7/D13）；transient 仅当次调用，绝不落库。
   const runProviderCheck = async (draft: ProviderDraft, action: "test" | "refresh") => {
@@ -442,21 +467,58 @@ export function SettingsPanel({
         </div>
         {adding && (
           <div className="provider-card provider-card-new" data-provider-form="add">
-            <label>名称<input data-provider-field="name" placeholder="例如：主力平台" value={draftForm.name} onChange={(event) => setDraftForm((current) => ({ ...current, name: event.target.value }))} /></label>
-            <label>Base URL<input data-provider-field="baseUrl" placeholder="例如：https://api.example.com/v1" value={draftForm.baseUrl} onChange={(event) => setDraftForm((current) => ({ ...current, baseUrl: event.target.value }))} /></label>
-            <label>API 密钥
-              <input
-                data-provider-field="apiKey"
-                type="password"
-                placeholder="粘贴当前平台提供的 API 密钥"
-                value={draftForm.apiKey}
-                onChange={(event) => setDraftForm((current) => ({ ...current, apiKey: event.target.value }))}
-              />
-            </label>
-            <div className="provider-form-actions">
-              <button type="button" className="primary" onClick={confirmAdd}>添加</button>
-              <button type="button" className="secondary" onClick={() => setAdding(false)}>取消</button>
-            </div>
+            {presets.length > 0 && (
+              // 双态切换：复用更新渠道分段控件的视觉（.update-channel-options）；只切模式，两态草稿互不清空。
+              <div className="update-channel-options" role="group" aria-label="添加方式">
+                <button type="button" className={effectiveAddMode === "preset" ? "active" : ""} onClick={() => setAddMode("preset")}>预设平台</button>
+                <button type="button" className={effectiveAddMode === "custom" ? "active" : ""} onClick={() => setAddMode("custom")}>自定义</button>
+              </div>
+            )}
+            {effectiveAddMode === "preset" && selectedPreset ? (
+              <>
+                <label>平台
+                  <Combobox
+                    ariaLabel="预设平台"
+                    placeholder="选择平台"
+                    options={presets.map((item) => ({ value: item.id, label: item.label }))}
+                    value={presetId}
+                    onChange={setPresetId}
+                  />
+                </label>
+                <label>API 密钥
+                  <input
+                    data-provider-field="presetApiKey"
+                    type="password"
+                    placeholder="粘贴 API 密钥（可留空，稍后填写）"
+                    value={presetApiKey}
+                    onChange={(event) => setPresetApiKey(event.target.value)}
+                  />
+                </label>
+                <p className="provider-meta">{selectedPreset.keyHelp}</p>
+                <div className="provider-form-actions">
+                  <button type="button" className="primary" onClick={confirmAddPreset}>添加</button>
+                  <button type="button" className="secondary" onClick={() => setAdding(false)}>取消</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <label>名称<input data-provider-field="name" placeholder="例如：主力平台" value={draftForm.name} onChange={(event) => setDraftForm((current) => ({ ...current, name: event.target.value }))} /></label>
+                <label>Base URL<input data-provider-field="baseUrl" placeholder="例如：https://api.example.com/v1" value={draftForm.baseUrl} onChange={(event) => setDraftForm((current) => ({ ...current, baseUrl: event.target.value }))} /></label>
+                <label>API 密钥
+                  <input
+                    data-provider-field="apiKey"
+                    type="password"
+                    placeholder="粘贴当前平台提供的 API 密钥"
+                    value={draftForm.apiKey}
+                    onChange={(event) => setDraftForm((current) => ({ ...current, apiKey: event.target.value }))}
+                  />
+                </label>
+                <div className="provider-form-actions">
+                  <button type="button" className="primary" onClick={confirmAdd}>添加</button>
+                  <button type="button" className="secondary" onClick={() => setAdding(false)}>取消</button>
+                </div>
+              </>
+            )}
           </div>
         )}
         {drafts.length === 0 && !adding && <p className="muted">尚未添加供应商。</p>}
