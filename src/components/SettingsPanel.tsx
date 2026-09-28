@@ -5,6 +5,7 @@ import { useStudio } from "./StudioContext";
 import { Combobox } from "./Combobox";
 import type { ComboboxOption } from "./Combobox";
 import { formatDateTime } from "../lib/format";
+import { isSettingsDirty } from "../lib/settings-dirty";
 
 /** 供应商草稿：完整配置 + 可选的未保存密钥（仅存在于本次会话内存，保存时才提交）。 */
 type ProviderDraft = ProviderConfig & { apiKey?: string };
@@ -417,6 +418,12 @@ export function SettingsPanel({
     setNotice("已退出内测渠道");
   };
 
+  // 保存底栏的脏状态：草稿（providers/roles/autoArchive）与快照存在差异时提示未保存。
+  const settingsDirty = isSettingsDirty(
+    { providers: drafts, removedProviderIds: removedIds, roles: rolesDraft, autoArchive: autoArchiveDraft },
+    { providers, roles, autoArchive },
+  );
+
   return (
     <section className="card settings" data-tutorial="connection-settings">
       <span className="eyebrow">CONNECTION & STORAGE</span>
@@ -643,8 +650,9 @@ export function SettingsPanel({
           <a href="https://github.com/zztnbnb/image-studio/blob/main/LICENSE" target="_blank" rel="noreferrer" className="secondary">查看许可证与源代码</a>
         </div>
       </section>
-      <div className="actions">
+      <div className="settings-dock">
         <button className="primary" onClick={() => void saveSettings()} disabled={saving}>{saving ? "保存中…" : "保存设置"}</button>
+        <span className="save-note">{saving ? "正在保存…" : settingsDirty ? "有未保存的更改" : "所有更改已保存"}</span>
       </div>
     </section>
   );

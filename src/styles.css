@@ -4814,3 +4814,66 @@ header [role="button"] {
     max-height: 220px;
   }
 }
+
+/* v2.9 设置页保存底栏：与设置卡片（max-width:630px、在 .page-transition 内靠左）同宽同轴。
+   设置卡片中心 ≠ 创作页 .composer 卡片（后者占满 .page-transition 宽），
+   故 left 需按「pt 左缘 − --dock-bleed」定位、宽 = min(630px, pt宽) + 2×--dock-bleed；
+   勿与 .run-row 的公式混用（后者中心 = 主区中点）。 */
+.settings-dock {
+  position: fixed;
+  z-index: 45;
+  bottom: 18px;
+  /* 卡片轨道宽 = .page-transition 宽，= min(主区内容盒宽, 布局上限 − 侧栏 − 2·pad)；
+     ≤900 时见下方媒体查询覆盖（.layout 变 block、aside 变整行横条、主区全宽）。 */
+  --settings-dock-track-w: min(
+    calc(100% - var(--scrollbar-w) - var(--aside-width) - 2 * var(--main-pad-x)),
+    calc(var(--layout-max-width) - var(--aside-width) - 2 * var(--main-pad-x))
+  );
+  left: calc(
+    50% - var(--scrollbar-w) / 2 + var(--aside-width) / 2 - var(--settings-dock-track-w) / 2 -
+      var(--dock-bleed)
+  );
+  width: calc(min(630px, var(--settings-dock-track-w)) + 2 * var(--dock-bleed));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid rgba(151, 180, 220, 0.3);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 14px 34px rgba(60, 82, 133, 0.2);
+  backdrop-filter: blur(16px);
+}
+.settings-dock .primary {
+  min-width: 158px;
+  padding: 13px 21px;
+  border-radius: 13px;
+  font-size: 15px;
+}
+/* 滚到底时卡片尾部（含 22px margin-bottom）停在底栏上方约 15px；80 = 18(bottom) + 底栏高(≈70)
+   + 12(间隙) − 22(margin)。底栏高度/位置变化时需同步复核。 */
+main:has(.card.settings) {
+  padding-bottom: 80px;
+}
+@media (max-width: 900px) {
+  .settings-dock {
+    /* ≤900：.layout 变 block、aside 是整行横条，主区全宽（不再减侧栏宽） */
+    --settings-dock-track-w: min(
+      calc(100% - var(--scrollbar-w) - 2 * var(--main-pad-x)),
+      calc(var(--layout-max-width) - var(--aside-width) - 2 * var(--main-pad-x))
+    );
+    left: calc(50% - var(--scrollbar-w) / 2 - var(--settings-dock-track-w) / 2 - var(--dock-bleed));
+  }
+}
+@media (max-width: 700px) {
+  .settings-dock {
+    bottom: 10px;
+    padding: 9px 10px;
+    gap: 7px;
+  }
+  .settings-dock .primary {
+    min-width: 0;
+    flex: 1;
+  }
+}
