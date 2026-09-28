@@ -35,6 +35,21 @@ function unknownError(message: string, details?: string): GenerationError {
   });
 }
 
+/** HTTP 200 错误体中「接口/模型不存在」的判定（实测混元返回 200 + ResourceUnavailable.InterfaceNotExist）。 */
+const MISSING_INTERFACE_PATTERN = /(does not exist|not exist|notexists?\b|not found|不存在)/i;
+
+function endpointError(details: string): GenerationError {
+  return new GenerationError({
+    category: "endpoint",
+    title: "模型或接口不存在",
+    message: "服务端未找到所请求的模型或接口。",
+    suggestion: "请检查供应商的接口类型、Base URL 与模型名是否正确。",
+    retryable: false,
+    status: 200,
+    details,
+  });
+}
+
 /** 校验 "WxH" 尺寸：必须是整数、宽高 ∈ [256, 8192]、面积 ≤ 16777216；否则抛 parameters。 */
 function assertSize(size: string): void {
   const match = /^(\d+)x(\d+)$/i.exec(size.trim());
@@ -127,6 +142,11 @@ export const hunyuanImageAdapter: ProviderAdapter = {
     }
 
     if (payload && typeof payload === "object" && (payload as { error?: unknown }).error) {
+      // 200 错误体先在本适配器内识别「接口/模型不存在」，不改动 classifyHttpError 的通用语义
+      // （其 endpoint 分支要求 400/404，而混元实测以 200 返回 ResourceUnavailable.InterfaceNotExist）。
+      if (MISSING_INTERFACE_PATTERN.test(text)) {
+        throw endpointError(text.replace(/\s+/g, " ").trim().slice(0, 800));
+      }
       throw new GenerationError(classifyHttpError(200, text));
     }
 

@@ -102,7 +102,20 @@ describe("hunyuanImageAdapter generate", () => {
       JSON.stringify({ error: { code: "ResourceUnavailable.InterfaceNotExist" } }),
     );
 
-    await expect(hunyuanImageAdapter.generate(makeCtx(), fetcher)).rejects.toBeInstanceOf(GenerationError);
+    const error = await hunyuanImageAdapter.generate(makeCtx(), fetcher).catch((e) => e);
+    expect(error).toBeInstanceOf(GenerationError);
+    // 真实观测形态（200 + InterfaceNotExist）必须归类为 endpoint，而非 unknown
+    expect((error as GenerationError).info.category).toBe("endpoint");
+    expect((error as GenerationError).info.retryable).toBe(false);
+  });
+
+  it("HTTP 200 + error 字段但非接口不存在 → 仍抛 GenerationError（unknown），绝不当作成功", async () => {
+    const { fetcher, calls } = makeFetcher(200, JSON.stringify({ error: { code: "SomeOtherError" } }));
+
+    const error = await hunyuanImageAdapter.generate(makeCtx(), fetcher).catch((e) => e);
+    expect(error).toBeInstanceOf(GenerationError);
+    expect((error as GenerationError).info.category).toBe("unknown");
+    expect(calls).toHaveLength(1);
   });
 
   it("非 2xx（400 含 400004）抛 GenerationError 且 info.status === 400", async () => {

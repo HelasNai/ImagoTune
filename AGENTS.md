@@ -3,7 +3,7 @@
 **Generated:** 2026-08-30
 **Commit:** 15bd76d
 **Branch:** alpha
-**同步日期:** 2026-09-28（多供应商平台适配器与预设：新增 `electron/providers/`（`types.ts` 适配器接口 / `presets.ts` 预设表与注册表 / `hunyuan-image.ts` 混元生图适配器，纯逻辑无副作用）与 `src/lib/provider-preset.ts`；`ProviderConfig.api?`（`ProviderApiStyle`）、`ProviderPreset`、`GenerationErrorCategory` 增 `endpoint`；设置页「添加供应商」双态卡片（预设平台只填密钥，预设经 `settings:get` 快照下发、渲染层不 import electron/）；`callImages` 按 api 分派，未命中注册表走 openai 默认路径（零回归）；混元走专用端点 + messages 协议（单张限制、size 哨兵）；测试 23 文件 / 201 it。前次同步：设置页保存底栏：保存区改悬浮固定底栏（照创作页 .run-row 视觉，白底圆角浮条 + 左渐变按钮 + 右动态状态文字：有未保存的更改 / 正在保存… / 所有更改已保存）；新增渲染层纯逻辑 `src/lib/settings-dirty.ts`（`isSettingsDirty` 草稿 vs 快照脏检测，含 23 个测试用例）；`styles.css` v2.9 分区（与左对齐的设置卡片同轴）；测试 20 文件 / 175 it。更前：多供应商模型配置：单供应商 4 字段升级为「供应商字典 + 生图/图反推/提示词增强三角色绑定」；新增 `electron/model-config.ts` 纯逻辑模块与 `src/components/Combobox.tsx` 可搜索下拉；密钥仍只存 keytar——账户 `provider:<id>`，legacy 沿用旧 `default`，GC 仅限 `provider:` 前缀；元数据落 `userData/model-config.json` 且永不含 `apiKey`；旧配置首次启动无损迁移为 legacy「默认服务」并补齐角色标注；队列入队快照 + 执行 fail-closed、不自动重试；测试 19 文件 / 152 it。更前：2026-09-27 安装包瘦身：`build.files` 改白名单模式、构建时依赖移出 `dependencies`——安装包 185.4 MB → 112.2 MB，asar 238.6 MB → 39.7 MB；verify + 冒烟启动通过。更前：preload 白屏修复：沙箱化 preload 不能 `require` 本地模块，`preload.ts` 回退为内联通道字符串——T8 的 `import "./channels"` 曾致 `window.imageStudio` 不暴露、窗口白屏；新增 `tests/preload-channels.test.ts` 锁定两端一致。更前：redundancy-refactor 去重改造：跨层类型单源化 `shared/types.d.ts`、主进程/渲染层共享 helper 提取、需反馈的 IPC 结果统一走 `components/ipc.ts`）
+**同步日期:** 2026-09-28（多供应商平台适配器与预设：新增 `electron/providers/`（`types.ts` 适配器接口 / `presets.ts` 预设表与注册表 / `hunyuan-image.ts` 混元生图适配器，纯逻辑无副作用）与 `src/lib/provider-preset.ts`；`ProviderConfig.api?`（`ProviderApiStyle`）、`ProviderPreset`、`GenerationErrorCategory` 增 `endpoint`；设置页「添加供应商」双态卡片（预设平台只填密钥，预设经 `settings:get` 快照下发、渲染层不 import electron/）；`callImages` 按 api 分派，未命中注册表走 openai 默认路径（零回归）；混元走专用端点 + messages 协议（单张限制、size 哨兵、200 错误体接口不存在归类 endpoint）；测试 23 文件 / 202 it。前次同步：设置页保存底栏：保存区改悬浮固定底栏（照创作页 .run-row 视觉，白底圆角浮条 + 左渐变按钮 + 右动态状态文字：有未保存的更改 / 正在保存… / 所有更改已保存）；新增渲染层纯逻辑 `src/lib/settings-dirty.ts`（`isSettingsDirty` 草稿 vs 快照脏检测，含 23 个测试用例）；`styles.css` v2.9 分区（与左对齐的设置卡片同轴）；测试 20 文件 / 175 it。更前：多供应商模型配置：单供应商 4 字段升级为「供应商字典 + 生图/图反推/提示词增强三角色绑定」；新增 `electron/model-config.ts` 纯逻辑模块与 `src/components/Combobox.tsx` 可搜索下拉；密钥仍只存 keytar——账户 `provider:<id>`，legacy 沿用旧 `default`，GC 仅限 `provider:` 前缀；元数据落 `userData/model-config.json` 且永不含 `apiKey`；旧配置首次启动无损迁移为 legacy「默认服务」并补齐角色标注；队列入队快照 + 执行 fail-closed、不自动重试；测试 19 文件 / 152 it。更前：2026-09-27 安装包瘦身：`build.files` 改白名单模式、构建时依赖移出 `dependencies`——安装包 185.4 MB → 112.2 MB，asar 238.6 MB → 39.7 MB；verify + 冒烟启动通过。更前：preload 白屏修复：沙箱化 preload 不能 `require` 本地模块，`preload.ts` 回退为内联通道字符串——T8 的 `import "./channels"` 曾致 `window.imageStudio` 不暴露、窗口白屏；新增 `tests/preload-channels.test.ts` 锁定两端一致。更前：redundancy-refactor 去重改造：跨层类型单源化 `shared/types.d.ts`、主进程/渲染层共享 helper 提取、需反馈的 IPC 结果统一走 `components/ipc.ts`）
 
 ## OVERVIEW
 Windows 桌面端 AI 图片创作工作台（Electron + React + TypeScript）：连接 OpenAI 兼容 API 出图，并提供完全本地的高清放大 / 抠图 / 人脸优化工具箱（WebGPU/WASM）。
@@ -35,7 +35,7 @@ image-studio/
 | IPC 调用助手 | `src/components/ipc.ts` | `callIpc` / `useIpcAction` 统一 `{ok:false}`/reject 上报；渲染层需反馈的调用均经此路由 |
 | WebGPU 推理 | `src/workers/local-ai.worker.ts` | Worker 内 WebGPU→WASM 回退 |
 | 纯函数逻辑 | `src/lib/*.ts` | creative / outpaint / local-ai / tutorial / format / media / constants / settings-dirty / provider-preset |
-| 纯逻辑测试 | `tests/*.test.ts` | 23 文件 / 201 it，与 electron/、src/lib 一一对应（含跨层一致性测试）；`model-config.test.ts` 锁定配置纯逻辑、`settings-dirty.test.ts` 锁定设置脏检测、`provider-presets`/`providers-hunyuan`/`provider-preset.test.ts` 锁定适配器/预设/草稿纯逻辑 |
+| 纯逻辑测试 | `tests/*.test.ts` | 23 文件 / 202 it，与 electron/、src/lib 一一对应（含跨层一致性测试）；`model-config.test.ts` 锁定配置纯逻辑、`settings-dirty.test.ts` 锁定设置脏检测、`provider-presets`/`providers-hunyuan`/`provider-preset.test.ts` 锁定适配器/预设/草稿纯逻辑 |
 
 ## CODE MAP
 | Symbol | Type | Location | Role |
@@ -69,7 +69,7 @@ image-studio/
 - 需测试的纯逻辑优先移入 `src/lib/*.ts`；主进程可测纯模块（`electron/constants`/`channels`/`model-config`/`*-limits`/`data-url`）不得含 IPC/副作用，供 vitest 直接导入
 - 多供应商配置三条契约：①保存事务固定五步（校验 → 写变更密钥 keytar → 剥离 `apiKey` 后写 JSON → best-effort 删 `provider:<id>`（跳过 legacy）→ 仅清理 `provider:` 前缀的孤儿密钥，绝不触碰 `default*` 与更新偏好账户）；②删除保护服务端强制——`removal=(当前 JSON 差集) ∪ removedProviderIds`，被 active 队列 job 引用的供应商整单拒绝（`{ok:false,error:"供应商有未完成任务"}`）；③队列执行按入队快照解析，原供应商/模型缺失时 fail-closed、绝不自动改换或重试
 - 平台适配器契约：`ProviderAdapter` 只强制 `generate(ctx, fetcher?)`；`getAdapter(api)` 未命中注册表 → 走 openai 默认路径（零回归）；预设与自定义共用 `ProviderConfig`（仅多一个可选 `api`）；预设数据只经 `settings:get` 快照到达渲染层，渲染层绝不 import `electron/`；混元单次只出一张（`n>1` 拒绝）、`size` 直传前哨兵校验（宽高 [256,8192]、面积 ≤ 16777216、越界抛 `parameters`）
-- 测试是纯逻辑，无 DOM/UI/electron 运行时测试；React 组件与 main.ts 无测试，preload.ts 仅由 `tests/preload-channels.test.ts` 做源码文本一致性检查（非运行时）（现 23 文件 / 201 it）
+- 测试是纯逻辑，无 DOM/UI/electron 运行时测试；React 组件与 main.ts 无测试，preload.ts 仅由 `tests/preload-channels.test.ts` 做源码文本一致性检查（非运行时）（现 23 文件 / 202 it）
 
 ## ANTI-PATTERNS（行为边界，源自代码而非注释）
 - 队列任务失败绝不允许代码自动重试（避免重复计费），只能用户手动触发 `queue:retry`
