@@ -84,6 +84,7 @@ image-studio/
 - 需用户反馈的 IPC 失败提示禁止逐字复制 `if (!result.ok) …` 模式，必须经 `src/components/ipc.ts` 的 `callIpc`/`useIpcAction`（best-effort 白名单见该文件头注释）
 - 媒体读取 / 对象 URL / 画布助手单点在 `src/lib/media.ts`（`components/media-utils.ts` 仅为 re-export 兼容层）；`new FileReader` 全仓仅 `src/lib/media.ts` 一处
 - 平台适配器绝不允许自动重试或循环多张（防重复计费）；渲染层禁止硬编码预设平台数据——预设只能经 `settings:get` 快照获得，不得 import `electron/`
+- commit message 禁止附加任何 AI 工具/代理署名 trailer（如 `Ultraworked with [Sisyphus](https://github.com/code-yeongyu/oh-my-openagent)`、`Co-authored-by: Sisyphus <clio-agent@sisyphuslabs.ai>`）：公开仓库的作者归属必须保持真实提交者；2026-09-28 已改写 alpha/main 历史清除 27 处此类尾注（回滚备份：`refs/backup/pre-rewrite/*` + 本地 bundle）
 
 ## COMMANDS
 ```bash
