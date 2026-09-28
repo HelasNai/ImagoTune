@@ -219,4 +219,22 @@ describe("isSettingsDirty", () => {
       false,
     );
   });
+
+  it("供应商 api 不同时返回 true", () => {
+    const draft = makeDraft({ providers: [makeProviderDraft({ api: "hunyuan-image" })] });
+    const snapshot = makeSnapshot({ providers: [makeProviderSummary({ api: "openai" })] });
+    expect(isSettingsDirty(draft, snapshot)).toBe(true);
+  });
+
+  it("草稿 api 缺省与快照 openai 归一化后视为相同", () => {
+    const draft = makeDraft({ providers: [makeProviderDraft({ api: undefined })] });
+    const snapshot = makeSnapshot({ providers: [makeProviderSummary({ api: "openai" })] });
+    expect(isSettingsDirty(draft, snapshot)).toBe(false);
+  });
+
+  it("草稿 hunyuan-image 与快照 api 缺省视为不同", () => {
+    const draft = makeDraft({ providers: [makeProviderDraft({ api: "hunyuan-image" })] });
+    const snapshot = makeSnapshot({ providers: [makeProviderSummary({ api: undefined })] });
+    expect(isSettingsDirty(draft, snapshot)).toBe(true);
+  });
 });

@@ -24,7 +24,9 @@ import { atomicWriteJson, ensureDir, nowISO } from "./fs-utils";
 import { buildLegacyModelConfig, deriveConfigured, findProvider, parseModelsResponse, resolveJobBinding, resolveRoleBinding, runSavePlan, stripProviderSecrets, validateSavePayload } from "./model-config";
 import { CANVAS_MAX_EDGE, CANVAS_MAX_PIXELS, CANVAS_MULTIPLE } from "./outpaint-limits";
 import { LOCAL_AI_MAX_EDGE, LOCAL_AI_MAX_PIXELS } from "./local-ai-limits";
-import type { ApiImage, BinaryPayload, ModelConfig, ModelRole, PromptTemplate, ProviderSummary, QueueRetryOptions, RoleBinding, SettingsSavePayload, SettingsSnapshot, SettingsTestInput, UpdateChannel, UpdateStatus } from "../shared/types";
+import { getAdapter, PROVIDER_PRESETS } from "./providers/presets";
+import type { GenerateContext } from "./providers/types";
+import type { ApiImage, BinaryPayload, ModelConfig, ModelRole, PromptTemplate, ProviderApiStyle, ProviderSummary, QueueRetryOptions, RoleBinding, SettingsSavePayload, SettingsSnapshot, SettingsTestInput, UpdateChannel, UpdateStatus } from "../shared/types";
 import {
   CLIPBOARD_COPY_IMAGE, CLIPBOARD_COPY_TEXT, CLIPBOARD_READ_IMAGE,
   GALLERY_BULK, GALLERY_DELETE, GALLERY_EXPORT_ZIP, GALLERY_LIST, GALLERY_LOAD_IMAGE,
@@ -457,7 +459,8 @@ async function providerCredential(id: string): Promise<string | null> {
 }
 
 // 解析供应商可用凭据（唯一凭据读取点）：provider 不存在 / 密钥缺失 / keytar 失败 → null。
-async function resolveProvider(id: string): Promise<{ baseUrl: string; apiKey: string } | null> {
+// api 为接口风格，缺省 openai（旧配置无该字段，运行时归一，不写盘回填）。
+async function resolveProvider(id: string): Promise<{ baseUrl: string; apiKey: string; api: ProviderApiStyle } | null> {
   try {
     const config = getModelConfigCache();
     if (!config) return null;
@@ -465,10 +468,17 @@ async function resolveProvider(id: string): Promise<{ baseUrl: string; apiKey: s
     if (!provider) return null;
     const apiKey = await providerCredential(id);
     if (typeof apiKey !== "string" || apiKey.length === 0) return null;
-    return { baseUrl: provider.baseUrl, apiKey };
+    return { baseUrl: provider.baseUrl, apiKey, api: provider.api ?? "openai" };
   } catch {
     return null;
   }
+}
+
+// SETTINGS_TEST 的模型清单端点：当前所有接口风格都走平台级 /models。
+// 混元（K2）刻意不实现 listModels，其实测 /v1/models 返回 200，继续沿用平台级端点；
+// 读取 api 以便未来平台（专用清单端点）在此扩展，本函数即“api → 路径”的单一映射点。
+function modelListPath(_api: ProviderApiStyle): string {
+  return "/models";
 }
 
 // 纯配置解析（D2：零 keytar 读）：返回角色绑定的 {providerId, model} 或 null。
@@ -686,6 +696,7 @@ async function callImages(win: BrowserWindow, endpoint: "generations" | "edits",
   const provider = await resolveProvider(effectiveBinding.providerId);
   if (!provider) throw new ProviderUnavailableError();
   const { baseUrl, apiKey } = provider;
+  const adapter = getAdapter(provider.api ?? "openai");
   const recipe = normalizeRecipe(input, endpoint === "edits" ? "edit" : "generate");
   const effectivePrompt = composeImagePrompt(recipe);
   const controller = new AbortController(); controllers.set(input.requestId, controller);
@@ -699,23 +710,44 @@ async function callImages(win: BrowserWindow, endpoint: "generations" | "edits",
   }, 5_000);
   try {
     emit(win, input.requestId, "已提交", 5, "请求已发送，正在等待图片服务响应");
-    let response: Response;
-    if (endpoint === "generations") {
-      const body: Record<string, unknown> = { model: effectiveBinding.model, prompt: effectivePrompt, size: recipe.size, n: recipe.n, response_format: "b64_json", stream: true };
-      if (recipe.quality && recipe.quality !== "auto") body.quality = recipe.quality;
-      response = await fetch(joinBase(baseUrl, "/images/generations"), { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
+    // K3：命中适配器 → adapter.generate() 产出 ApiImage[]；未命中（openai / 未知 api）→ 走既有 fetch + parseResponse。
+    let parsedImages: ImageResponse[];
+    if (adapter) {
+      // 仅 edits 有参考图；混元 messages 协议无 mask 概念（K4 只映射参考图到 image_url）。
+      const reference = endpoint === "edits"
+        ? `data:${(input as EditInput).image.type || "image/png"};base64,${Buffer.from((input as EditInput).image.data).toString("base64")}`
+        : undefined;
+      const ctx: GenerateContext = {
+        baseUrl,
+        apiKey,
+        model: effectiveBinding.model,
+        prompt: effectivePrompt,
+        size: recipe.size,
+        n: recipe.n,
+        quality: recipe.quality,
+        reference: reference === undefined ? undefined : [reference],
+        signal: controller.signal,
+      };
+      parsedImages = await adapter.generate(ctx);
     } else {
-      const edit = input as EditInput;
-      const form = new FormData();
-      form.append("model", effectiveBinding.model); form.append("prompt", effectivePrompt); form.append("size", recipe.size); form.append("n", String(recipe.n)); form.append("response_format", "b64_json"); form.append("stream", "true");
-      if (recipe.quality && recipe.quality !== "auto") form.append("quality", recipe.quality);
-      form.append("image", new Blob([Buffer.from(edit.image.data)], { type: edit.image.type || "application/octet-stream" }), edit.image.name);
-      if (edit.mask) form.append("mask", new Blob([Buffer.from(edit.mask.data)], { type: edit.mask.type || "application/octet-stream" }), edit.mask.name);
-      response = await fetch(joinBase(baseUrl, "/images/edits"), { method: "POST", headers: { Authorization: `Bearer ${apiKey}` }, body: form, signal: controller.signal });
+      let response: Response;
+      if (endpoint === "generations") {
+        const body: Record<string, unknown> = { model: effectiveBinding.model, prompt: effectivePrompt, size: recipe.size, n: recipe.n, response_format: "b64_json", stream: true };
+        if (recipe.quality && recipe.quality !== "auto") body.quality = recipe.quality;
+        response = await fetch(joinBase(baseUrl, "/images/generations"), { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
+      } else {
+        const edit = input as EditInput;
+        const form = new FormData();
+        form.append("model", effectiveBinding.model); form.append("prompt", effectivePrompt); form.append("size", recipe.size); form.append("n", String(recipe.n)); form.append("response_format", "b64_json"); form.append("stream", "true");
+        if (recipe.quality && recipe.quality !== "auto") form.append("quality", recipe.quality);
+        form.append("image", new Blob([Buffer.from(edit.image.data)], { type: edit.image.type || "application/octet-stream" }), edit.image.name);
+        if (edit.mask) form.append("mask", new Blob([Buffer.from(edit.mask.data)], { type: edit.mask.type || "application/octet-stream" }), edit.mask.name);
+        response = await fetch(joinBase(baseUrl, "/images/edits"), { method: "POST", headers: { Authorization: `Bearer ${apiKey}` }, body: form, signal: controller.signal });
+      }
+      if (!response.ok) { const text = await response.text(); throw formatHttpError(response.status, text); }
+      emit(win, input.requestId, "正在接收图片", 92, "图片服务已响应，正在读取结果");
+      parsedImages = await parseResponse(response, win, input.requestId);
     }
-    if (!response.ok) { const text = await response.text(); throw formatHttpError(response.status, text); }
-    emit(win, input.requestId, "正在接收图片", 92, "图片服务已响应，正在读取结果");
-    const parsedImages = await parseResponse(response, win, input.requestId);
     const selectedImages = prioritizeImageResponses(parsedImages, recipe.n);
     if (selectedImages.some((image) => !image.b64_json && image.url)) {
       emit(win, input.requestId, "正在保存图片", 96, "接口返回了图片链接，正在转存为本地 PNG");
@@ -880,9 +912,10 @@ app.whenReady().then(async () => {
         configured: deriveConfigured(current, (id) => hasKeyMap.get(id) === true),
         hasSavedApiKey: providers.some((provider) => provider.hasKey),
         warning: getConfigWarning(),
+        presets: PROVIDER_PRESETS,
       };
     } catch (error) {
-      return { providers: [], roles: { image: null, reverse: null, enhance: null }, autoArchive: true, saveDir, configured: false, hasSavedApiKey: false, warning: errorMessage(error, "读取设置失败") };
+      return { providers: [], roles: { image: null, reverse: null, enhance: null }, autoArchive: true, saveDir, configured: false, hasSavedApiKey: false, warning: errorMessage(error, "读取设置失败"), presets: PROVIDER_PRESETS };
     }
   });
   // D9 并集删除保护 + D5 五步保存序：removal=(当前 JSON 差集)∪removedProviderIds；被 active job 引用则整单拒绝。
@@ -973,19 +1006,21 @@ app.whenReady().then(async () => {
   // D13：优先 providerId → 当前 image 绑定；transient 仅存在于本次调用内存，永不落库/日志/错误串。
   ipcMain.handle(SETTINGS_TEST, async (_e, input?: SettingsTestInput) => {
     try {
-      let baseUrl = ""; let apiKey: string | null = null;
+      let baseUrl = ""; let apiKey: string | null = null; let api: ProviderApiStyle = "openai";
       const providerId = typeof input?.providerId === "string" && input.providerId.length > 0 ? input.providerId : null;
       if (providerId) {
         const current = getModelConfigCache();
         const provider = current ? findProvider(current, providerId) : undefined;
         if (!provider) return { ok: false, message: "供应商不存在" };
         baseUrl = provider.baseUrl;
+        // 混元（K2）不实现 listModels，这里仍读取 api 并由 modelListPath 统一映射到平台级 /models。
+        api = provider.api ?? "openai";
         apiKey = await providerCredential(providerId);
       } else {
         const binding = resolveRole("image");
         const provider = binding ? await resolveProvider(binding.providerId) : null;
         if (provider) {
-          baseUrl = provider.baseUrl; apiKey = provider.apiKey;
+          baseUrl = provider.baseUrl; apiKey = provider.apiKey; api = provider.api;
         } else if (!(
           typeof input?.transient?.baseUrl === "string" && input.transient.baseUrl.trim() &&
           typeof input?.transient?.apiKey === "string" && input.transient.apiKey.trim()
@@ -1001,7 +1036,7 @@ app.whenReady().then(async () => {
       let parsed: URL;
       try { parsed = new URL(baseUrl); } catch { return { ok: false, message: "API Base URL 格式无效" }; }
       if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return { ok: false, message: "API Base URL 仅支持 http/https" };
-      const response = await fetch(joinBase(baseUrl, "/models"), { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(20_000) });
+      const response = await fetch(joinBase(baseUrl, modelListPath(api)), { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(20_000) });
       if (!response.ok) return { ok: false, message: `接口返回 ${response.status}` };
       let models: string[] = [];
       try { models = parseModelsResponse(await response.json()); } catch { models = []; }

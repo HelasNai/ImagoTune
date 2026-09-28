@@ -122,6 +122,10 @@ export function validateSavePayload(
     if (ids.has(provider.id)) return { ok: false, error: "供应商 id 重复" };
     ids.add(provider.id);
     if (provider.name.trim().length === 0) return { ok: false, error: "供应商名称不能为空" };
+    // api 缺省（undefined）合法（旧配置运行时归一为 openai）；一旦提供必须是已知枚举。
+    if (provider.api !== undefined && provider.api !== "openai" && provider.api !== "hunyuan-image") {
+      return { ok: false, error: "供应商接口风格无效" };
+    }
     if (!existing.has(provider.id)) {
       if (RESERVED_PROVIDER_IDS.has(provider.id)) return { ok: false, error: "保留 id 不可作为新供应商 id" };
       if (!UUID_PATTERN.test(provider.id)) return { ok: false, error: "新增供应商 id 必须是 UUID 格式" };

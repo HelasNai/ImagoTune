@@ -45,6 +45,7 @@ export function isSettingsDirty(
     const saved = savedById.get(provider.id);
     if (!saved) return true;
     if (provider.name !== saved.name || provider.baseUrl !== saved.baseUrl) return true;
+    if ((provider.api ?? "openai") !== (saved.api ?? "openai")) return true;
     if ((provider.modelsUpdatedAt ?? "") !== (saved.modelsUpdatedAt ?? "")) return true;
     if (!providerModelsEqual(provider.models, saved.models)) return true;
   }

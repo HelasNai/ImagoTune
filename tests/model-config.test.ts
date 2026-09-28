@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ModelConfig, ProviderConfig, ProviderModel, SettingsSavePayload } from "../shared/types";
+import type { ModelConfig, ProviderApiStyle, ProviderConfig, ProviderModel, SettingsSavePayload } from "../shared/types";
 import {
   buildLegacyModelConfig,
   deriveConfigured,
@@ -232,6 +232,29 @@ describe("validateSavePayload", () => {
     const result = validateSavePayload(payload, []);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toBe("供应商 id 不能为空");
+  });
+
+  it("api 为 hunyuan-image 时通过校验", () => {
+    const payload = makePayload({ providers: [{ ...makeProvider(UUID_A), api: "hunyuan-image", apiKey: "sk-secret" }] });
+    expect(validateSavePayload(payload, [])).toEqual({ ok: true });
+  });
+
+  it("api 为 openai 时通过校验", () => {
+    const payload = makePayload({ providers: [{ ...makeProvider(UUID_A), api: "openai", apiKey: "sk-secret" }] });
+    expect(validateSavePayload(payload, [])).toEqual({ ok: true });
+  });
+
+  it("api 缺省（undefined）时通过校验", () => {
+    const payload = makePayload({ providers: [makeProvider(UUID_A)] });
+    expect(payload.providers[0].api).toBeUndefined();
+    expect(validateSavePayload(payload, [])).toEqual({ ok: true });
+  });
+
+  it("api 为未知值时返回接口风格无效", () => {
+    const payload = makePayload({ providers: [{ ...makeProvider(UUID_A), api: "foo" as ProviderApiStyle }] });
+    const result = validateSavePayload(payload, []);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe("供应商接口风格无效");
   });
 });
 
