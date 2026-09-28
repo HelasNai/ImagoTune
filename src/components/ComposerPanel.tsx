@@ -1,5 +1,6 @@
 import React from "react";
 import { MaskPainter } from "./MaskPainter";
+import { QuickModelSwitcher } from "./QuickModelSwitcher";
 import { NavIcon } from "./icons";
 import { ImageDropInput } from "./ImageDropInput";
 import { qualities } from "./useComposer";
@@ -39,6 +40,7 @@ export function ComposerPanel({
   progress,
   composerState,
   composerActions,
+  onOpenSettings,
 }: {
   mode: Mode;
   projects: GalleryProject[];
@@ -47,6 +49,7 @@ export function ComposerPanel({
   progress: AppProgress | null;
   composerState: ComposerState;
   composerActions: ComposerActions;
+  onOpenSettings: () => void;
 }) {
   const { projectId, setProjectId, tagsText, setTagsText, chatModel, roles, autoArchive, notify } = useStudio();
   const copyText = useCopyText(notify);
@@ -346,8 +349,9 @@ export function ComposerPanel({
         </button>
         {activeJobId && <button className="secondary" onClick={() => void cancelActive()}>取消任务</button>}
         <span className="save-note">
-          自动归档：{autoArchive ? "已开启" : "已关闭"} · 队列按顺序执行
+          自动归档：{autoArchive ? "已开启" : "已关闭"}
         </span>
+        <QuickModelSwitcher variant="dock" onOpenSettings={onOpenSettings} />
       </div>
       {progress && activeJobId && (
         <div className="progress">

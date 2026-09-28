@@ -13,6 +13,8 @@ type ComboboxProps = {
   disabled?: boolean;
   ariaLabel?: string;
   className?: string;
+  /** 下拉列表的 z-index；面板/浮层内使用时传入高于容器的值，避免列表被容器盖住。省略时沿用 CSS 默认（30）。 */
+  menuZIndex?: number;
 };
 
 type MenuPosition = { left: number; top: number; width: number };
@@ -33,6 +35,7 @@ export function Combobox({
   disabled = false,
   ariaLabel,
   className,
+  menuZIndex,
 }: ComboboxProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -189,7 +192,7 @@ export function Combobox({
           className="combobox-list"
           role="listbox"
           aria-label={ariaLabel}
-          style={{ position: "fixed", left: menuPos.left, top: menuPos.top, width: menuPos.width }}
+          style={{ position: "fixed", left: menuPos.left, top: menuPos.top, width: menuPos.width, ...(menuZIndex === undefined ? {} : { zIndex: menuZIndex }) }}
         >
           {filtered.length === 0 && <li className="combobox-empty">{emptyText}</li>}
           {filtered.map((option, index) => (

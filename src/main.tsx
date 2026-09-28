@@ -8,6 +8,7 @@ import { LocalAIAction, LocalAISource, LocalAIToolbox } from "./components/Local
 import { initialTutorialView, TutorialExperience, TutorialView } from "./components/TutorialExperience";
 import { NavIcon } from "./components/icons";
 import { QueuePanel } from "./components/QueuePanel";
+import { QuickModelSwitcher } from "./components/QuickModelSwitcher";
 import { ResultPanel } from "./components/ResultPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { StudioProvider, type StudioNotify } from "./components/StudioContext";
@@ -405,10 +406,7 @@ function App() {
             <button className={mode === "queue" ? "nav active" : "nav"} onClick={() => setMode("queue")}><NavIcon name="list-todo" />任务队列</button>
             <button className={mode === "settings" ? "nav active" : "nav"} onClick={() => setMode("settings")}><NavIcon name="settings" />设置</button>
             <button className="nav tutorial-nav" onClick={() => setTutorialView("center")}><NavIcon name="graduation-cap" />新手教程</button>
-            <div className="aside-tip">
-              <span>当前模型</span><strong>{imageModel}</strong>
-              <p>提示词增强：{chatModel}<br />图片、项目与队列均保存在本机。</p>
-            </div>
+            <QuickModelSwitcher onOpenSettings={() => setMode("settings")} />
           </aside>
           <main>
             <div className="page-transition" key={mode}>
@@ -434,7 +432,7 @@ function App() {
                 }, ...current])}
                 onNotice={notify}
               />
-            ) : mode === "queue" ? <QueuePanel queueItems={queueItems} onRefresh={refreshQueue} /> : <><ComposerPanel mode={mode} projects={projects} activeJobId={studioComposer.activeJobId} isEnqueueing={studioComposer.isEnqueueing} progress={studioComposer.progress} composerState={studioComposer.state} composerActions={studioComposer.actions} /><ResultPanel outputs={outputs} onRegenerate={regenerate} onContinueEdit={continueEdit} onStartOutpaint={startOutpaint} onOpenLocalAI={openLocalAI} onCreateVariation={createVariation} onOpenPreview={setPreview} /></>}
+            ) : mode === "queue" ? <QueuePanel queueItems={queueItems} onRefresh={refreshQueue} /> : <><ComposerPanel mode={mode} projects={projects} activeJobId={studioComposer.activeJobId} isEnqueueing={studioComposer.isEnqueueing} progress={studioComposer.progress} composerState={studioComposer.state} composerActions={studioComposer.actions} onOpenSettings={() => setMode("settings")} /><ResultPanel outputs={outputs} onRegenerate={regenerate} onContinueEdit={continueEdit} onStartOutpaint={startOutpaint} onOpenLocalAI={openLocalAI} onCreateVariation={createVariation} onOpenPreview={setPreview} /></>}
             </div>
           </main>
         </div>

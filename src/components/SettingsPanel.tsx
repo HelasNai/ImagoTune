@@ -3,10 +3,16 @@ import { callIpc } from "./ipc";
 import { useDialog } from "./Dialogs";
 import { useStudio } from "./StudioContext";
 import { Combobox } from "./Combobox";
-import type { ComboboxOption } from "./Combobox";
 import { formatDateTime } from "../lib/format";
 import { isSettingsDirty } from "../lib/settings-dirty";
 import { presetToProviderDraft } from "../lib/provider-preset";
+import {
+  MODEL_ROLES,
+  MODEL_ROLE_LABELS,
+  firstAnnotatedModel,
+  roleModelOptions,
+  roleProviderOptions,
+} from "../lib/role-options";
 
 /** 供应商草稿：完整配置 + 可选的未保存密钥（仅存在于本次会话内存，保存时才提交）。 */
 type ProviderDraft = ProviderConfig & { apiKey?: string };
@@ -30,9 +36,7 @@ function mergeModels(existing: ProviderModel[], fetched: string[]): ProviderMode
   return merged;
 }
 
-// 角色列表与显示名（顺序 = 复选框/批量按钮渲染顺序）。
-const MODEL_ROLES: ModelRole[] = ["image", "reverse", "enhance"];
-const MODEL_ROLE_LABELS: Record<ModelRole, string> = { image: "生图", reverse: "图反推", enhance: "提示词增强" };
+// 角色列表与显示名、下拉选项构造见 src/lib/role-options.ts（与侧栏快捷切换器共用）。
 
 export function SettingsPanel({
   onSaveDirChanged,
@@ -287,38 +291,11 @@ export function SettingsPanel({
   };
 
   // —— 三角色分配（D12/SC-D4：模型下拉严格只列该供应商「已标注本角色」的模型）——
-  // Combobox 的显示值 = options.find(...)?.label ?? ""：选项外/value 无匹配只显示 placeholder，
-  // 因此失效的绑定值必须注入 options 才能被看见（供应商已删除、模型未标注两种失效态）。
-
-  // 供应商：全部草稿；当前绑定指向已不存在的供应商 → 置顶注入 ⚠ 失效项。
-  const roleProviderOptions = (role: ModelRole): ComboboxOption[] => {
-    const options = drafts.map((draft) => ({ value: draft.id, label: draft.name }));
-    const binding = rolesDraft[role];
-    if (binding && !drafts.some((draft) => draft.id === binding.providerId)) {
-      options.unshift({ value: binding.providerId, label: "⚠ 已删除的供应商" });
-    }
-    return options;
-  };
-
-  // 模型：仅该供应商「已标注本角色」的模型；当前绑定未标注 → 置顶 ⚠ 可见项；供应商失效 → 只显示绑定模型 ⚠。
-  const roleModelOptions = (role: ModelRole): ComboboxOption[] => {
-    const binding = rolesDraft[role];
-    if (!binding) return [];
-    const provider = drafts.find((draft) => draft.id === binding.providerId);
-    if (!provider) return [{ value: binding.model, label: binding.model + " ⚠ 未标注" }];
-    const annotated = provider.models.filter((model) => model.roles.includes(role));
-    const options = annotated.map((model) => ({ value: model.id, label: model.id }));
-    if (!annotated.some((model) => model.id === binding.model)) {
-      options.unshift({ value: binding.model, label: binding.model + " ⚠ 未标注" });
-    }
-    return options;
-  };
+  // 选项构造与失效项注入（供应商已删除 / 模型未标注）统一在 src/lib/role-options.ts，此处只消费。
 
   const setRoleProvider = (role: ModelRole, providerId: string) => {
     if (!providerId) { setRolesDraft((current) => ({ ...current, [role]: null })); return; }
-    const provider = drafts.find((draft) => draft.id === providerId);
-    const firstAnnotated = provider?.models.find((model) => model.roles.includes(role));
-    setRolesDraft((current) => ({ ...current, [role]: { providerId, model: firstAnnotated?.id ?? "" } }));
+    setRolesDraft((current) => ({ ...current, [role]: { providerId, model: firstAnnotatedModel(drafts, providerId, role) ?? "" } }));
   };
 
   const setRoleModel = (role: ModelRole, model: string) => {
@@ -626,7 +603,7 @@ export function SettingsPanel({
               ariaLabel={`${MODEL_ROLE_LABELS[role]}供应商`}
               className="role-provider"
               placeholder="未分配"
-              options={roleProviderOptions(role)}
+              options={roleProviderOptions(drafts, rolesDraft[role])}
               value={rolesDraft[role]?.providerId ?? ""}
               onChange={(value) => setRoleProvider(role, value)}
             />
@@ -634,7 +611,7 @@ export function SettingsPanel({
               ariaLabel={`${MODEL_ROLE_LABELS[role]}模型`}
               className="role-model"
               placeholder={rolesDraft[role] ? "选择模型" : "未分配"}
-              options={roleModelOptions(role)}
+              options={roleModelOptions(drafts, rolesDraft[role], role)}
               value={rolesDraft[role]?.model ?? ""}
               disabled={!rolesDraft[role]}
               onChange={(value) => setRoleModel(role, value)}

@@ -2819,6 +2819,7 @@ select:focus-visible {
   .tutorial-center-modal,
   .empty span,
   .combobox-list,
+  .quick-switch,
   .progress-track div:not([style*="width: 0"]) {
     animation: none !important;
   }
@@ -4875,5 +4876,245 @@ main:has(.card.settings) {
   .settings-dock .primary {
     min-width: 0;
     flex: 1;
+  }
+}
+
+/* ============================================================================
+   v3.0 侧栏模型快捷切换
+   - .aside-tip-trigger：把原静态「当前模型」提示卡升级为可点击按钮（卡片视觉沿用文件前部的
+     .aside-tip 基础规则与侧栏贴底规则），展示三角色（生图/图反推/提示词增强）绑定摘要。
+   - .quick-switch：点击后经 portal 挂到 .app 的浮动面板；left/top 由组件内联 JS 提供，本分区只管外观。
+     层级梯：Combobox 列表 30 < header 40 < 固定底栏 45 < 本面板 50 < 面板内下拉 55（组件经
+     menuZIndex 内联传入）< 通知 toast 90 < 教程弹层 130/140。面板内下拉必须高于面板（本仓首次出现
+     「浮层内嵌 Combobox」），否则列表会被面板盖住。
+   - 行内输入控件复用全局 .role-provider / .role-model / .role-clear / .role-label（设置页同款外观），
+     但 .combobox-input 的紧凑内边距在设置页是挂在 .role-binding-row 下的后代规则，此处需重新声明。
+   ============================================================================ */
+
+.aside-tip-trigger {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  /* 覆盖 .aside-tip 的 padding/margin，收紧卡片（侧栏 238px 内容宽仅约 150px）。 */
+  margin: 24px 6px 0;
+  padding: 14px 12px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease,
+    border-color 0.16s ease;
+}
+.aside-tip-trigger:hover {
+  transform: translateY(-1px);
+  border-color: rgba(144, 183, 223, 0.36);
+  box-shadow: 0 20px 40px rgba(102, 126, 171, 0.18);
+}
+.aside-tip-trigger:active {
+  transform: translateY(0);
+}
+.aside-tip-trigger:focus-visible {
+  outline: 2px solid rgba(120, 160, 224, 0.6);
+  outline-offset: 2px;
+}
+.aside-tip-eyebrow {
+  color: #8a91a0;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: 0.2px;
+}
+.aside-tip-role {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+  line-height: 1.5;
+}
+.aside-tip-role i {
+  flex: none;
+  color: #8a91a0;
+  font-size: 11px;
+  font-style: normal;
+}
+.aside-tip-role strong {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: #232a3a;
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.aside-tip-note {
+  margin-top: 2px;
+  color: #8a91a0;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.quick-switch {
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(560px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  padding: 16px 18px;
+  border: 1px solid rgba(151, 180, 220, 0.32);
+  border-radius: 18px;
+  background: linear-gradient(145deg, #fff, #fafdff);
+  box-shadow: 0 24px 68px rgba(17, 32, 69, 0.3);
+  animation: modal-pop var(--motion-base) var(--ease-out) both;
+}
+/* 面板由组件 programmatic focus（tabIndex=-1）：仅键盘场景保留可见焦点环，鼠标打开不显示。 */
+.quick-switch:focus {
+  outline: none;
+}
+.quick-switch:focus-visible {
+  outline: 2px solid rgba(120, 160, 224, 0.5);
+  outline-offset: 3px;
+}
+.quick-switch-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.quick-switch-head h3 {
+  margin: 3px 0 0;
+  color: #273a5e;
+  font-size: 16px;
+}
+.quick-switch-close {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #eef5fb;
+  color: #6c7e9d;
+}
+.quick-switch-close:hover {
+  background: #e4f4ff;
+  color: #526caa;
+}
+.quick-switch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid rgba(155, 185, 220, 0.26);
+  border-radius: 12px;
+  background: rgba(249, 252, 255, 0.78);
+}
+.quick-switch-row .combobox-input {
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.quick-switch-hint {
+  margin: 0;
+  padding: 8px 11px;
+  border: 1px solid #f8e5bf;
+  border-radius: 10px;
+  color: #9b613e;
+  background: #fff7ea;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.quick-switch-note {
+  margin: 0;
+  color: #8a91a0;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.quick-switch-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+.quick-switch-empty p {
+  margin: 0;
+  color: #5b6e90;
+  font-size: 13px;
+}
+@media (max-width: 700px) {
+  .quick-switch {
+    padding: 13px;
+  }
+}
+/* 窗口高度不足时进一步压缩侧栏卡片：隐藏说明文字、收紧间距（宽度不足的隐藏见上方 ≤900/≤700 规则）。 */
+@media (max-height: 780px) {
+  .aside-tip-trigger {
+    margin-top: 16px;
+    padding: 12px;
+  }
+  .aside-tip-note {
+    display: none;
+  }
+}
+
+/* —— dock 副本（创作页底栏 .run-row 内）：紧凑「生图」模型入口，面板向上弹出（见 QuickModelSwitcher variant="dock"）—— */
+.dock-model-trigger {
+  flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 340px;
+  padding: 8px 12px;
+  border: 1px solid rgba(151, 180, 220, 0.3);
+  border-radius: 999px;
+  background: rgba(249, 252, 255, 0.9);
+  color: #52688c;
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+  /* 右侧一组（状态文字 + chip）由 .save-note 的 auto margin 整体推向底栏右缘；
+     chip 不得携带 auto margin，否则状态文字会被留在左侧按钮旁。 */
+}
+.dock-model-trigger:hover {
+  transform: translateY(-1px);
+  border-color: rgba(144, 183, 223, 0.42);
+  box-shadow: 0 8px 18px rgba(91, 108, 170, 0.14);
+}
+.dock-model-trigger:focus-visible {
+  outline: 2px solid rgba(120, 160, 224, 0.6);
+  outline-offset: 2px;
+}
+.dock-model-trigger i {
+  flex: none;
+  color: #8a91a0;
+  font-size: 11px;
+  font-style: normal;
+}
+.dock-model-trigger strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #232a3a;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.dock-model-trigger svg {
+  flex: none;
+  color: #8a91a0;
+}
+/* run-row 右侧一组：状态文字居左、chip 贴右缘，由文字自带的 auto margin 吸收剩余空间
+   （全局 .save-note 规则在 run-row 内恢复生效，设置页 .settings-dock 不受影响）。
+   ≤900px 时 .save-note 被既有共享媒体规则隐藏，只能改由 chip 自行吸收最右侧空间——
+   影响 701-900px；≤700px 时 .run-row .generate { flex: 1 } 已填满整行，此处 auto 为无害 no-op。 */
+@media (max-width: 900px) {
+  .run-row .dock-model-trigger {
+    margin-left: auto;
   }
 }
