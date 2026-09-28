@@ -1,0 +1,1014 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ImagoTune — 处理进度反馈 UI 方案（静态 Mockup）</title>
+<style>
+/* ================================================================
+   ImagoTune 处理进度反馈 — 设计规格 Mockup（单文件、纯 CSS）
+   所有尺寸/色值取自 src/styles.css 实测值（2026-09-28）
+   ================================================================ */
+
+/* ---------- 1. 基础与页面底色 ---------- */
+:root{
+  --page-bg:
+    radial-gradient(circle at 9% 21%, rgba(131,211,255,.22), transparent 28%),
+    radial-gradient(circle at 91% 30%, rgba(255,169,205,.2), transparent 31%),
+    linear-gradient(135deg,#f3fbff 0%,#fbf8ff 49%,#fff5f9 100%);
+  --header-bg:
+    radial-gradient(circle at 78% 23%, rgba(133,208,255,.44), transparent 18%),
+    radial-gradient(circle at 91% 78%, rgba(255,175,211,.48), transparent 24%),
+    linear-gradient(116deg,#f8fdff 0%,#f8f4ff 53%,#fff5f8 100%);
+  --aside-width:238px;
+  --dock-bleed:10px;
+  --track:#ececf4;
+  --progress-text:#716bba;
+  --ink:#17202a;
+  --line:rgba(143,157,210,.21);
+  --card-bg:linear-gradient(145deg, rgba(255,255,255,.98), rgba(253,252,255,.94));
+  --card-shadow:0 20px 48px rgba(86,109,168,.12);
+  --grad-primary:linear-gradient(135deg,#78c8f2,#ee9fc2);
+  --grad-progress:linear-gradient(90deg,#79c9ef,#e7a6ca,#8fd3c5);
+}
+*{box-sizing:border-box}
+html{background-image:var(--page-bg);background-attachment:fixed}
+body{
+  margin:0;
+  font-family:system-ui,"Segoe UI","Microsoft YaHei","Noto Sans SC",sans-serif;
+  font-size:14px;
+  line-height:1.55;
+  color:var(--ink);
+  -webkit-font-smoothing:antialiased;
+}
+button{font:inherit;border:0;background:none;cursor:pointer}
+i{font-style:normal}
+
+/* ---------- 2. 文档容器 / 页头 ---------- */
+.page{max-width:1480px;margin:0 auto;padding:44px 26px 100px}
+.doc-eyebrow{
+  display:inline-block;
+  font-size:11px;font-weight:700;letter-spacing:2px;
+  color:#8174d8;
+  padding:5px 12px;
+  border:1px solid rgba(129,116,216,.28);
+  border-radius:999px;
+  background:rgba(255,255,255,.72);
+}
+.doc-head h1{
+  margin:14px 0 8px;
+  font-size:28px;
+  letter-spacing:-.5px;
+  color:#1d2a3d;
+}
+.doc-sub{margin:0 0 20px;font-size:13px;color:#5d6f8b}
+.palette{display:flex;flex-wrap:wrap;gap:12px}
+.swatch{
+  display:flex;align-items:center;gap:10px;
+  padding:9px 13px;
+  background:rgba(255,255,255,.8);
+  border:1px solid rgba(143,157,210,.22);
+  border-radius:14px;
+  box-shadow:0 10px 26px rgba(86,109,168,.08);
+}
+.swatch i{display:block;width:58px;height:22px;border-radius:8px;border:1px solid rgba(120,140,180,.18)}
+.swatch b{display:block;font-size:12px;color:#33415c;font-weight:700}
+.swatch span{display:block;font-size:10.5px;color:#7c88a0}
+.sw-grad{background:var(--grad-progress)}
+.sw-track{background:#ececf4}
+.sw-text{background:#716bba}
+.sw-primary{background:var(--grad-primary)}
+
+/* ---------- 3. 章节 / 设备框 / 规格列表 ---------- */
+.doc-section{margin-top:42px}
+.sec-h{
+  margin:0 0 6px;
+  font-size:20px;
+  letter-spacing:-.2px;
+  color:#20304b;
+}
+.sec-h .num{
+  display:inline-block;
+  min-width:26px;
+  margin-right:8px;
+  padding:1px 8px;
+  border-radius:8px;
+  background:linear-gradient(135deg,rgba(120,200,242,.18),rgba(238,159,194,.18));
+  border:1px solid rgba(129,142,210,.25);
+  font-size:13px;
+  color:#5d5f9e;
+  text-align:center;
+}
+.where{margin:0 0 16px;font-size:13px;color:#5d6f8b}
+code{
+  font-family:ui-monospace,Consolas,"Courier New",monospace;
+  font-size:11.5px;
+  color:#4d5f80;
+  background:rgba(240,243,250,.92);
+  border:1px solid rgba(150,170,210,.25);
+  border-radius:6px;
+  padding:1px 5px;
+}
+.device{
+  position:relative;
+  padding:28px 30px;
+  margin-bottom:26px;
+  background:var(--card-bg);
+  border:1px solid var(--line);
+  border-radius:24px;
+  box-shadow:var(--card-shadow);
+}
+.device-tag{
+  position:absolute;top:18px;right:24px;
+  font-size:10.5px;letter-spacing:.8px;color:#a3adc2;
+}
+.mock-note{margin:0 0 14px;font-size:11.5px;color:#8a94ab}
+.note-line{margin:16px 0 0;font-size:12px;color:#7c88a0}
+
+.spec-list{
+  list-style:none;
+  margin:18px 0 0;
+  padding:14px 0 0;
+  border-top:1px dashed rgba(150,170,210,.3);
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+  gap:6px 26px;
+}
+.spec-list li{
+  position:relative;
+  padding-left:16px;
+  font-size:12.5px;
+  line-height:1.7;
+  color:#4e5f7e;
+}
+.spec-list li::before{
+  content:"";
+  position:absolute;left:2px;top:.62em;
+  width:6px;height:6px;border-radius:50%;
+  background:var(--grad-primary);
+}
+.spec-list b{color:#2c3d5c}
+
+/* ---------- 4. 通用组件（与 styles.css 同规格） ---------- */
+
+/* 进度行：display:flex / gap:12px / 12px #716bba / margin-top:17px */
+.progress{
+  display:flex;align-items:center;gap:12px;
+  color:var(--progress-text);
+  font-size:12px;
+  margin-top:17px;
+}
+/* 轨道：6px / #ececf4 / 圆角 9px / overflow hidden */
+.progress-track{
+  height:6px;
+  background:var(--track);
+  border-radius:9px;
+  flex:1;
+  min-width:110px;
+  overflow:hidden;
+}
+/* 填充：蓝粉青渐变 + 180% 背景 + progress-glow 流动 */
+.progress-fill{
+  height:100%;
+  width:0;
+  border-radius:9px;
+  background:var(--grad-progress);
+  background-size:180% 100%;
+  animation:progress-glow 2.2s ease-in-out infinite;
+  transition:width .3s;
+}
+/* 不确定态：斜纹流动（与确定态明显不同，无百分比） */
+.progress-fill.indet{
+  width:100%;
+  background:repeating-linear-gradient(115deg,
+    #79c9ef 0 10px,
+    #a9d9f2 10px 20px,
+    #e7a6ca 20px 30px,
+    #f0c4da 30px 40px,
+    #8fd3c5 40px 50px,
+    #b6e4d9 50px 60px);
+  background-size:auto;
+  animation:indet-stripes 1.5s ease-in-out infinite alternate;
+}
+.progress span{min-width:0}
+
+/* 按钮 */
+.btn-primary{
+  background:var(--grad-primary);
+  color:#fff;
+  border-radius:10px;
+  padding:11px 17px;
+  font-weight:700;
+  box-shadow:0 10px 22px rgba(120,150,220,.22);
+}
+.btn-primary[disabled]{opacity:.55;cursor:wait;box-shadow:none}
+.btn-secondary{
+  background:#edf7ff;
+  color:#5d78a0;
+  border-radius:10px;
+  padding:11px 17px;
+  font-weight:700;
+}
+/* 生成按钮规格（.generate） */
+.btn-generate{min-width:158px;padding:13px 21px;border-radius:13px;font-size:15px}
+
+.pill{
+  display:inline-block;
+  padding:7px 11px;
+  border-radius:20px;
+  background:#f5f3ff;
+  color:#7368c9;
+  font-size:12px;
+  font-weight:600;
+}
+
+/* 阶段指示器（本方案新增元素） */
+.stages{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  font-size:12px;
+  color:var(--progress-text);
+}
+.stage{display:inline-flex;align-items:center;gap:6px}
+.tick{color:#39b883;font-size:12px;font-weight:700}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex:none}
+.dot.done{background:#39b883}
+.dot.current{background:#8b7fe8;position:relative}
+.dot.current::after{
+  content:"";position:absolute;inset:-3px;border-radius:50%;
+  border:2px solid rgba(139,127,232,.55);
+  animation:ring-pulse 1.6s ease-out infinite;
+}
+.dot.pending{background:#fff;border:1.5px solid #c9cede}
+.stage-link{width:26px;height:1px;background:#d9dce8;flex:none}
+.stage-caption{margin:10px 0 0;font-size:12px;color:var(--progress-text)}
+
+/* 设计交付标注（dashed callout） */
+.callout{
+  position:absolute;
+  z-index:9;
+  pointer-events:none;
+  white-space:nowrap;
+  font-size:10px;
+  line-height:1.5;
+  color:#b3566a;
+  background:rgba(255,255,255,.93);
+  border:1px dashed rgba(188,101,116,.55);
+  border-radius:6px;
+  padding:2px 7px;
+}
+/* 高亮虚线框（标注"组件出现位置"） */
+.hl{
+  position:relative;
+  margin-top:14px;
+  padding:2px 14px 4px;
+  border:1.5px dashed rgba(120,150,220,.72);
+  border-radius:14px;
+  background:rgba(244,250,255,.45);
+}
+.hl-tag{
+  position:absolute;top:-11px;left:12px;
+  padding:1px 9px;
+  font-size:10.5px;color:#4d6cae;
+  background:#eef6ff;
+  border:1px solid rgba(120,150,220,.5);
+  border-radius:999px;
+  white-space:nowrap;
+}
+.hl .progress{margin-top:14px}
+
+/* ---------- 5. 概览三卡（统一视觉语言） ---------- */
+.triple{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:18px;
+}
+.form-card{
+  padding:20px 20px 18px;
+  background:#fff;
+  border:1px solid rgba(143,157,210,.22);
+  border-radius:16px;
+  box-shadow:0 12px 30px rgba(86,109,168,.08);
+}
+.form-card h3{margin:0 0 4px;font-size:14px;color:#273a5e}
+.form-card .desc{margin:0 0 14px;font-size:11.5px;color:#8a94ab;line-height:1.6}
+.form-spec{margin:14px 0 0;font-size:10.5px;color:#8a94ab;letter-spacing:.2px}
+
+/* ---------- 6. 场景 1：完整窗口 Mock ---------- */
+.mock-stage{position:relative}
+.mock-window{
+  position:relative;
+  border:1px solid rgba(143,157,210,.3);
+  border-radius:18px;
+  overflow:hidden;
+  background:#fdfdff;
+  box-shadow:0 24px 60px rgba(86,109,168,.16);
+}
+/* header：88px / padding 12px 48px 10px / 主题渐变 */
+.mw-header{
+  height:88px;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 48px 10px;
+  background:var(--header-bg);
+  border-bottom:1px solid rgba(139,156,209,.22);
+}
+.mw-brand{font-size:16px;font-weight:700;letter-spacing:1.2px;color:#8174d8}
+.mw-sub{margin-top:3px;font-size:11px;color:#637895;font-weight:500;letter-spacing:.2px}
+.mw-navhead{display:flex;align-items:center;gap:20px;font-size:13.5px;font-weight:600;color:#687180}
+.mw-navhead .on{position:relative;color:#4b5a80}
+.mw-navhead .on::after{
+  content:"";position:absolute;left:0;right:0;bottom:-7px;height:2px;border-radius:2px;
+  background:linear-gradient(90deg,#79c9ef,#e7a6ca);
+}
+.mw-winbtns{display:inline-flex;align-items:center;gap:16px;margin-left:26px;color:#98a2b8;font-size:11px;font-weight:400}
+/* 窗口主体：侧栏 238px + 主区 */
+.mw-body{display:flex;height:812px}
+.mw-aside{
+  width:var(--aside-width);
+  flex:none;
+  padding:26px 18px;
+  background:linear-gradient(180deg,rgba(246,252,255,.88),rgba(252,247,255,.84));
+  border-right:1px solid rgba(147,161,210,.18);
+}
+.mw-modelcard{
+  margin-bottom:18px;
+  padding:12px;
+  border:1px solid rgba(151,180,220,.32);
+  border-radius:14px;
+  background:rgba(255,255,255,.75);
+  box-shadow:0 10px 24px rgba(92,126,170,.08);
+}
+.mw-modelcard h4{margin:0 0 8px;font-size:12px;color:#33415c}
+.mw-model-row{display:flex;justify-content:space-between;gap:8px;margin-top:5px;font-size:11px;color:#8a94ab}
+.mw-model-row b{font-weight:600;color:#4d5f80}
+.mw-navitem{
+  display:flex;align-items:center;gap:10px;
+  padding:9px 14px;margin:2px 0;
+  border:1px solid transparent;
+  border-radius:12px;
+  font-size:13.5px;font-weight:600;color:#687180;
+}
+.mw-navitem i{
+  width:14px;height:14px;flex:none;display:block;
+  border:1.6px solid rgba(120,135,180,.5);
+  border-radius:5px;
+}
+.mw-navitem.active{
+  border-color:rgba(153,182,234,.22);
+  background:linear-gradient(100deg,rgba(224,247,255,.96),rgba(255,237,247,.95));
+  box-shadow:0 10px 24px rgba(108,139,205,.13);
+  color:#4b5a80;
+}
+.mw-navitem.active i{border-color:rgba(129,116,216,.55)}
+.mw-navitem.dim{color:#9aa5ba}
+.mw-navitem.dim i{border-color:rgba(150,163,196,.35)}
+.mw-main{
+  flex:1;min-width:0;
+  position:relative;
+  padding:30px 40px 0;
+  background:linear-gradient(135deg,#f5fbff 0%,#fbf9ff 52%,#fff6fa 100%);
+}
+/* composer 卡片：圆角 24px / padding 28px 30px / 与 .card 同规格 */
+.mw-card{
+  position:relative;
+  padding:28px 30px;
+  border:1px solid var(--line);
+  border-radius:24px;
+  background:var(--card-bg);
+  box-shadow:var(--card-shadow);
+}
+.mw-cardhead{
+  display:flex;align-items:flex-start;justify-content:space-between;
+  padding-bottom:13px;
+  border-bottom:1px solid rgba(147,162,206,.14);
+}
+.mw-cardhead h3{margin:0;font-size:24px;letter-spacing:-.55px;color:var(--ink)}
+.mw-textarea{
+  margin-top:18px;
+  min-height:112px;
+  padding:12px 13px;
+  border:1px solid rgba(155,170,210,.27);
+  border-radius:11px;
+  background:rgba(255,255,255,.8);
+  box-shadow:inset 0 1px rgba(255,255,255,.9);
+  font-size:13.5px;line-height:1.65;color:#1d2532;
+}
+.mw-controls{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:13px;
+  margin-top:18px;
+  padding:15px;
+  border:1px solid rgba(181,204,231,.22);
+  border-radius:15px;
+  background:rgba(247,251,255,.74);
+}
+.mw-field{display:flex;flex-direction:column;gap:7px}
+.mw-field span{font-size:12px;font-weight:600;color:#616b7b}
+.mw-field div{
+  padding:10px 13px;
+  border:1px solid #e0e2ea;
+  border-radius:11px;
+  background:#fbfcfe;
+  font-size:13px;color:#1d2532;
+}
+.mw-note{margin:14px 0 0;font-size:12px;color:#858e9d}
+.mw-result{
+  display:flex;align-items:center;justify-content:center;
+  min-height:180px;
+  margin-top:22px;
+  padding:28px 30px;
+  border:1px dashed rgba(143,157,210,.38);
+  border-radius:24px;
+  background:rgba(255,255,255,.5);
+  color:#9aa6bd;font-size:13px;
+}
+/* 固定底栏：bottom 18px / 宽 = 卡片 + 两侧各 10px / padding 10px 14px */
+.mw-dock{
+  position:absolute;z-index:6;
+  left:calc(238px + 40px - 10px);   /* 侧栏 + 主区内边距 − 外扩 10px */
+  right:calc(40px - 10px);          /* 主区内边距 − 外扩 10px */
+  bottom:18px;
+  display:flex;align-items:center;gap:12px;
+  padding:10px 14px;
+  border:1px solid rgba(151,180,220,.3);
+  border-radius:15px;
+  background:rgba(255,255,255,.9);
+  box-shadow:0 14px 34px rgba(60,82,133,.2);
+  backdrop-filter:blur(16px);
+}
+.dock-note{margin-left:auto;font-size:11px;color:#8b93a1}
+.dock-chip{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:6px 10px;
+  border:1px solid rgba(151,180,220,.35);
+  border-radius:999px;
+  background:#f4f9ff;
+  color:#5d78a0;
+  font-size:11px;font-weight:700;
+  white-space:nowrap;
+}
+.dock-chip i{width:7px;height:7px;border-radius:50%;background:var(--grad-primary)}
+/* 底栏外扩引导线（dock 宽 = 卡片宽 + 2 × 10px） */
+.guide-v{
+  position:absolute;z-index:4;
+  bottom:94px;height:40px;
+  border-left:1px dotted rgba(120,140,190,.6);
+}
+
+/* ---------- 7. 场景 2：AI 增强 / 图反推 ---------- */
+.pt-panel{
+  padding:12px;
+  border:1px solid rgba(180,201,226,.24);
+  border-radius:14px;
+  background:rgba(249,252,255,.72);
+}
+.pt-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}
+.pt-variant h4{margin:4px 0 10px;font-size:12.5px;color:#33415c;font-weight:700}
+.pt-row{display:flex;align-items:flex-end;gap:10px}
+.pt-input{
+  flex:1;min-width:0;
+  padding:12px 13px;
+  border:1px solid rgba(155,170,210,.27);
+  border-radius:11px;
+  background:rgba(255,255,255,.8);
+  font-size:12.5px;color:#3d4a63;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.pt-row .btn-primary{flex:none}
+
+/* ---------- 8. 场景 3：本地 AI 工具箱四态 ---------- */
+.lai-state{
+  position:relative;
+  margin-top:18px;
+  padding:18px 20px 16px;
+  border:1px solid rgba(150,173,210,.22);
+  border-radius:16px;
+  background:linear-gradient(145deg,#fff,#fbfdff);
+}
+.lai-tag{
+  position:absolute;top:-10px;left:16px;
+  padding:2px 9px;
+  border:1px solid rgba(120,150,220,.4);
+  border-radius:999px;
+  background:#eef6ff;
+  color:#4d6cae;
+  font-size:10.5px;font-weight:700;
+}
+.lai-head{display:flex;align-items:center;justify-content:space-between;gap:14px}
+.lai-head h3{margin:0;font-size:15px;letter-spacing:-.2px;color:#213451}
+.device-chip{
+  flex:none;
+  padding:6px 11px;
+  border:1px solid #dbe4ef;
+  border-radius:999px;
+  background:#f7f9fc;
+  color:#6f7e92;
+  font-size:10.5px;font-weight:700;
+}
+.device-chip.webgpu{border-color:#c8eadf;background:#effbf6;color:#348269}
+.lai-tabs{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+  margin:14px 0 2px;
+}
+.lai-tab{
+  padding:10px 12px;
+  border:1px solid rgba(150,181,218,.25);
+  border-radius:14px;
+  background:rgba(255,255,255,.78);
+  font-size:12px;font-weight:600;color:#354d70;
+  text-align:center;
+}
+.lai-tab.active{
+  border-color:#9fc9e6;
+  background:#fff;
+  box-shadow:0 12px 24px rgba(81,115,164,.1);
+  transform:translateY(-1px);
+}
+.lai-run{display:flex;align-items:center;gap:10px;margin-top:16px}
+.lai-state .stages{margin-top:15px}
+
+/* ---------- 9. 场景 4：队列面板 ---------- */
+.qhead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+.qhead h3{margin:0;font-size:15px;color:#213451}
+.qlist{display:flex;flex-direction:column;gap:10px}
+.qitem{
+  display:flex;justify-content:space-between;gap:20px;
+  padding:15px;
+  border:1px solid rgba(150,173,210,.24);
+  border-radius:14px;
+  background:linear-gradient(120deg,#fbfdff,#fffafd);
+}
+.qblock{flex:1;min-width:0;max-width:560px}
+.qitem strong{display:block;font-size:13px;color:#465a7e;font-weight:700}
+.qitem small{display:block;margin-top:5px;font-size:11px;color:#91a0b4}
+.qitem em{display:block;margin-top:5px;font-size:11px;color:#bc6574;font-style:normal}
+.qitem .progress{margin-top:12px}
+.qstatus{font-weight:700}
+.qstatus.run{color:#4d7cc7}
+.qstatus.queue{color:#8a7fc7}
+.qstatus.done{color:#34876a}
+.qstatus.fail{color:#bc6574}
+.qactions{display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap}
+.qactions button{
+  padding:7px 9px;
+  border-radius:8px;
+  background:#edf7ff;
+  color:#5879a9;
+  font-size:11px;font-weight:700;
+}
+
+/* ---------- 10. 场景 5：图库导出 ZIP ---------- */
+.gtoolbar{
+  display:flex;align-items:center;gap:12px;
+  padding:12px 14px;
+  border:1px solid rgba(150,173,210,.22);
+  border-radius:14px;
+  background:rgba(255,255,255,.85);
+  box-shadow:0 10px 24px rgba(92,126,170,.07);
+}
+.gcount{
+  padding:7px 11px;
+  border-radius:20px;
+  background:#f5f3ff;
+  color:#7368c9;
+  font-size:12px;font-weight:600;
+}
+.ghint{font-size:12px;color:#8a94ab}
+.gtoolbar .btn-primary{margin-left:auto}
+.gexport-row{
+  position:relative;
+  margin-top:16px;
+  padding:12px 14px;
+  border:1.5px dashed rgba(120,150,220,.72);
+  border-radius:14px;
+  background:rgba(244,250,255,.45);
+}
+
+/* ---------- 11. 动画与可访问性 ---------- */
+@keyframes progress-glow{
+  0%,100%{background-position:0 0}
+  50%{background-position:100% 0}
+}
+@keyframes indet-stripes{
+  from{background-position:0 0}
+  to{background-position:44px 0}
+}
+@keyframes ring-pulse{
+  0%{transform:scale(.55);opacity:.95}
+  100%{transform:scale(1.5);opacity:0}
+}
+@media (prefers-reduced-motion: reduce){
+  .progress-fill,
+  .progress-fill.indet,
+  .dot.current::after{animation:none !important}
+}
+
+/* ---------- 12. 页脚 ---------- */
+.doc-foot{
+  margin-top:52px;
+  padding-top:18px;
+  border-top:1px dashed rgba(150,170,210,.35);
+  font-size:11.5px;
+  color:#8a94ab;
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ================= 页头 ================= -->
+  <header class="doc-head">
+    <span class="doc-eyebrow">IMAGOTUNE · DESIGN SPEC</span>
+    <h1>ImagoTune — 处理进度反馈 UI 方案（静态 Mockup）</h1>
+    <p class="doc-sub">尺寸基于 src/styles.css 实测值；色值 / 圆角与现有主题一致。</p>
+    <div class="palette">
+      <div class="swatch">
+        <i class="sw-grad"></i>
+        <div><b>进度填充渐变</b><span>#79c9ef → #e7a6ca → #8fd3c5</span></div>
+      </div>
+      <div class="swatch">
+        <i class="sw-track"></i>
+        <div><b>轨道</b><span>#ececf4 · 高 6px · 圆角 9px</span></div>
+      </div>
+      <div class="swatch">
+        <i class="sw-text"></i>
+        <div><b>进度文字</b><span>#716bba · 12px</span></div>
+      </div>
+      <div class="swatch">
+        <i class="sw-primary"></i>
+        <div><b>主按钮渐变</b><span>#78c8f2 → #ee9fc2</span></div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= 概览：统一视觉语言 ================= -->
+  <section class="doc-section">
+    <h2 class="sec-h">统一视觉语言（三种形态）</h2>
+    <p class="where">四原则：① 绝不出现冻结的进度条 —— 百分比不可知时改用不确定态斜纹 + 已用时长；② 等待态恒显示「已等待 / 已用时」；③ 多阶段任务显示阶段指示器；④ 一切等待态提供可用的取消入口。</p>
+    <div class="triple">
+      <article class="form-card">
+        <h3>A1 · 确定进度</h3>
+        <p class="desc">真实百分比可知（模型下载 / 分块 x-y / 张数 x-y）时使用。</p>
+        <div class="progress" style="margin-top:6px">
+          <div class="progress-track"><div class="progress-fill" style="width:62%"></div></div>
+          <span>模型生成中 · 已等待 42 秒</span>
+        </div>
+        <p class="form-spec">高度 6px · 圆角 9px · 字号 12px · 行内间距 12px</p>
+      </article>
+      <article class="form-card">
+        <h3>A2 · 不确定进度</h3>
+        <p class="desc">百分比不可知（AI 增强 / 图反推 / 长推理）→ 斜纹流动 + 已用时长。</p>
+        <div class="progress" style="margin-top:6px">
+          <div class="progress-track"><div class="progress-fill indet"></div></div>
+          <span>AI 增强中 · 已等待 12 秒</span>
+        </div>
+        <p class="form-spec">斜纹彩条 · 不显示百分比 · reduced-motion 时静止</p>
+      </article>
+      <article class="form-card">
+        <h3>A3 · 多阶段</h3>
+        <p class="desc">流水线任务（一键优化）显示阶段指示器 + 阶段内进度。</p>
+        <div class="stages">
+          <span class="stage">① 人脸优化 <span class="tick">✓</span></span>
+          <i class="stage-link"></i>
+          <span class="stage">② 高清放大 <i class="dot current"></i></span>
+          <i class="stage-link"></i>
+          <span class="stage">③ 智能抠图 <i class="dot pending"></i></span>
+        </div>
+        <p class="stage-caption">第 2/3 步 · 超分分块 3/8 · 已用时 45 秒</p>
+        <p class="form-spec">圆点 8px · 连接线 1px #d9dce8 · 字 12px</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- ================= 场景 1 ================= -->
+  <section class="doc-section">
+    <h2 class="sec-h"><span class="num">01</span>创作页 — 生图等待（完整窗口位置锚点）</h2>
+    <p class="where">位置：创作页（侧栏「创作」）主区 composer 卡片尾部 —— 进度条位于卡片最后一行，固定在悬浮底栏上方；底栏为全局 fixed，覆盖在卡片下方。</p>
+    <div class="device">
+      <span class="device-tag">场景 01 · 位置锚点</span>
+      <p class="mock-note">真实窗口 1440 × 900；本图按容器宽度等比绘制（垂直方向 1:1），侧栏保持 238px 字面值。</p>
+      <div class="mock-stage">
+        <div class="mock-window">
+          <!-- 窗口 header -->
+          <div class="mw-header">
+            <div>
+              <div class="mw-brand">ImagoTune</div>
+              <div class="mw-sub">AI 图片创作工作台</div>
+            </div>
+            <div class="mw-navhead">
+              <span class="on">创作</span>
+              <span>图库</span>
+              <span>队列</span>
+              <span>设置</span>
+              <span class="mw-winbtns"><i>─</i><i>□</i><i>✕</i></span>
+            </div>
+          </div>
+          <!-- 窗口主体 -->
+          <div class="mw-body">
+            <!-- 侧栏 238px -->
+            <aside class="mw-aside">
+              <div class="mw-modelcard">
+                <h4>当前模型</h4>
+                <div class="mw-model-row"><span>生图</span><b>即梦 4.0</b></div>
+                <div class="mw-model-row"><span>图反推</span><b>GPT-4o mini</b></div>
+                <div class="mw-model-row"><span>提示词增强</span><b>GPT-4o mini</b></div>
+              </div>
+              <div class="mw-navitem active"><i></i>创作</div>
+              <div class="mw-navitem dim"><i></i>结果</div>
+              <div class="mw-navitem dim"><i></i>队列</div>
+              <div class="mw-navitem dim"><i></i>设置</div>
+            </aside>
+            <!-- 主区 -->
+            <div class="mw-main">
+              <div class="mw-card">
+                <div class="mw-cardhead">
+                  <h3>创作</h3>
+                  <span class="pill">文生图</span>
+                </div>
+                <div class="mw-textarea">一只在窗边的猫，晨光洒在木地板上</div>
+                <div class="mw-controls">
+                  <div class="mw-field"><span>比例</span><div>16:9 横版</div></div>
+                  <div class="mw-field"><span>清晰度</span><div>2K</div></div>
+                </div>
+                <p class="mw-note">性能提示：2K 生成约需 30–60 秒；队列繁忙时请求会先排队再发送。</p>
+                <!-- 进度条显示位置（高亮框） -->
+                <div class="hl">
+                  <span class="hl-tag">进度条显示位置：卡片尾部，固定底栏上方</span>
+                  <div class="progress">
+                    <div class="progress-track"><div class="progress-fill" style="width:62%"></div></div>
+                    <span>模型生成中 · 已等待 42 秒 · 队列第 1/5 位</span>
+                  </div>
+                  <span class="callout" style="right:10px;bottom:-11px;">轨道 6px · 圆角 9px</span>
+                </div>
+              </div>
+              <div class="mw-result">生成结果将在这里出现</div>
+            </div>
+          </div>
+          <!-- 固定底栏（模拟 fixed 于窗口底部） -->
+          <div class="mw-dock">
+            <button class="btn-primary btn-generate">继续加入队列</button>
+            <button class="btn-secondary">取消任务</button>
+            <span class="dock-note">自动归档：已开启</span>
+            <span class="dock-chip"><i></i>生图 · 即梦 4.0</span>
+          </div>
+          <!-- 外扩引导线：dock 左右缘 = 卡片缘 − 10px -->
+          <i class="guide-v" style="left:268px;"></i>
+          <i class="guide-v" style="right:30px;"></i>
+          <!-- 尺寸标注 -->
+          <span class="callout" style="left:12px;top:98px;">窗口 1440 × 900</span>
+          <span class="callout" style="left:330px;top:32px;">header 88px</span>
+          <span class="callout" style="left:18px;bottom:16px;">侧栏 238px</span>
+          <span class="callout" style="left:272px;bottom:104px;">两侧外扩 10px</span>
+          <span class="callout" style="right:34px;bottom:104px;">两侧外扩 10px</span>
+          <span class="callout" style="left:50%;transform:translateX(-50%);bottom:96px;">底栏 bottom:18px · 宽 = 卡片宽 + 两侧各 10px · padding 10px 14px</span>
+        </div>
+      </div>
+      <ul class="spec-list">
+        <li><b>窗口</b>：1440 × 900（本图按容器宽度等比绘制）</li>
+        <li><b>header</b>：高 88px · padding 12px 48px 10px · 底部 1px 分隔线</li>
+        <li><b>侧栏</b>：238px（<code>--aside-width</code>）· padding 26px 18px</li>
+        <li><b>composer 卡片</b>：圆角 24px · padding 28px 30px · 边框 rgba(143,157,210,.21)</li>
+        <li><b>进度条</b>：轨道高 6px · 圆角 9px · 行内 gap 12px · 文字 12px #716bba</li>
+        <li><b>固定底栏</b>：bottom 18px · 两侧各外扩 10px · padding 10px 14px · 圆角 15px</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ================= 场景 2 ================= -->
+  <section class="doc-section">
+    <h2 class="sec-h"><span class="num">02</span>AI 增强 / 图反推 — 不确定态（组件特写）</h2>
+    <p class="where">位置：创作页提示词工具行（prompt-tools 区）——「AI 增强」按钮所在行下方；图反推使用同一位置与同一形态。</p>
+    <div class="device">
+      <span class="device-tag">场景 02 · 组件特写</span>
+      <div class="pt-panel">
+        <div class="pt-grid">
+          <div class="pt-variant">
+            <h4>变体 A · 提示词增强</h4>
+            <div class="pt-row">
+              <div class="pt-input">一只在窗边的猫，晨光洒在木地板上，温暖胶片感</div>
+              <button class="btn-primary" disabled>AI 增强中…</button>
+            </div>
+            <div class="progress">
+              <div class="progress-track"><div class="progress-fill indet"></div></div>
+              <span>AI 增强中 · 已等待 12 秒</span>
+            </div>
+          </div>
+          <div class="pt-variant">
+            <h4>变体 B · 图反推</h4>
+            <div class="pt-row">
+              <div class="pt-input">参考图 1.png（本地图片，读取中…）</div>
+              <button class="btn-primary" disabled>分析中…</button>
+            </div>
+            <div class="progress">
+              <div class="progress-track"><div class="progress-fill indet"></div></div>
+              <span>图反推中 · 已等待 8 秒</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="note-line">说明：图反推的本地图片预处理阶段也用同一形态（文案「正在准备图片…」）。</p>
+      <ul class="spec-list">
+        <li><b>按钮</b>：padding 11px 17px · 圆角 10px · 禁用不透明度 .55（cursor: wait）</li>
+        <li><b>进度条</b>：高 6px · 圆角 9px · 斜纹流动表示不确定态</li>
+        <li><b>文字</b>：12px · #716bba · 恒含「已等待 N 秒」</li>
+        <li><b>输入片段</b>：边框 1px rgba(155,170,210,.27) · 圆角 11px · 背景 rgba(255,255,255,.8)</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ================= 场景 3 ================= -->
+  <section class="doc-section">
+    <h2 class="sec-h"><span class="num">03</span>本地 AI 工具箱 — 四态（卡片特写）</h2>
+    <p class="where">位置：本地 AI 工具箱页 —— 来源卡片（local-ai-source）底部运行区；四态自上而下为同一区域的不同状态。</p>
+    <div class="device">
+      <span class="device-tag">场景 03 · 组件特写</span>
+
+      <article class="lai-state">
+        <span class="lai-tag">态 A · 准备模型</span>
+        <div class="lai-head">
+          <h3>本地 AI 工具箱</h3>
+          <span class="device-chip webgpu">WEBGPU</span>
+        </div>
+        <div class="lai-tabs">
+          <span class="lai-tab active">高清放大</span>
+          <span class="lai-tab">智能抠图</span>
+          <span class="lai-tab">人脸优化</span>
+          <span class="lai-tab">一键优化</span>
+        </div>
+        <div class="lai-run">
+          <button class="btn-primary btn-generate" disabled>正在本地处理…</button>
+          <button class="btn-secondary">取消</button>
+        </div>
+        <div class="progress">
+          <div class="progress-track"><div class="progress-fill" style="width:43%"></div></div>
+          <span>正在准备模型 1/3 · 下载中 43%（128 MB / 298 MB）</span>
+        </div>
+      </article>
+
+      <article class="lai-state">
+        <span class="lai-tag">态 B · 流水线</span>
+        <div class="lai-head">
+          <h3>本地 AI 工具箱</h3>
+          <span class="device-chip webgpu">WEBGPU</span>
+        </div>
+        <div class="lai-tabs">
+          <span class="lai-tab">高清放大</span>
+          <span class="lai-tab">智能抠图</span>
+          <span class="lai-tab">人脸优化</span>
+          <span class="lai-tab active">一键优化</span>
+        </div>
+        <div class="lai-run">
+          <button class="btn-primary btn-generate" disabled>正在本地处理…</button>
+          <button class="btn-secondary">取消</button>
+        </div>
+        <div class="stages">
+          <span class="stage">① 人脸优化 <span class="tick">✓</span></span>
+          <i class="stage-link"></i>
+          <span class="stage">② 高清放大 <i class="dot current"></i></span>
+          <i class="stage-link"></i>
+          <span class="stage">③ 智能抠图 <i class="dot pending"></i></span>
+        </div>
+        <div class="progress">
+          <div class="progress-track"><div class="progress-fill" style="width:55%"></div></div>
+          <span>第 2/3 步 · 超分分块 3/8 · WEBGPU · 已用时 45 秒</span>
+        </div>
+      </article>
+
+      <article class="lai-state">
+        <span class="lai-tag">态 C · 长推理（不确定态）</span>
+        <div class="lai-head">
+          <h3>本地 AI 工具箱</h3>
+          <span class="device-chip webgpu">WEBGPU</span>
+        </div>
+        <div class="lai-tabs">
+          <span class="lai-tab">高清放大</span>
+          <span class="lai-tab active">智能抠图</span>
+          <span class="lai-tab">人脸优化</span>
+          <span class="lai-tab">一键优化</span>
+        </div>
+        <div class="lai-run">
+          <button class="btn-primary btn-generate" disabled>正在本地处理…</button>
+          <button class="btn-secondary">取消</button>
+        </div>
+        <div class="progress">
+          <div class="progress-track"><div class="progress-fill indet"></div></div>
+          <span>正在执行 1024×1024 抠图推理 · 已耗时 21 秒</span>
+        </div>
+      </article>
+
+      <article class="lai-state">
+        <span class="lai-tag">态 D · 单任务完成（对照）</span>
+        <div class="lai-head">
+          <h3>本地 AI 工具箱</h3>
+          <span class="device-chip webgpu">WEBGPU</span>
+        </div>
+        <div class="lai-tabs">
+          <span class="lai-tab active">高清放大</span>
+          <span class="lai-tab">智能抠图</span>
+          <span class="lai-tab">人脸优化</span>
+          <span class="lai-tab">一键优化</span>
+        </div>
+        <div class="lai-run">
+          <button class="btn-primary btn-generate">开始处理</button>
+        </div>
+        <div class="progress">
+          <div class="progress-track"><div class="progress-fill" style="width:100%"></div></div>
+          <span>处理完成 · 用时 52 秒</span>
+        </div>
+      </article>
+
+      <ul class="spec-list">
+        <li><b>进度条</b>：与现有 <code>.progress</code> 同规格（6px / 12px 文字 / gap 12px）</li>
+        <li><b>阶段指示器</b>（新增元素）：字 12px · 圆点 8px · 连接线 1px #d9dce8</li>
+        <li><b>运行按钮</b>：生成按钮同规格（padding 13px 21px · 圆角 13px）；禁用不透明度 .55</li>
+        <li><b>工具分段行</b>：4 列 grid · gap 10px · 段片圆角 14px · 选中段上浮 + 浅蓝描边</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ================= 场景 4 ================= -->
+  <section class="doc-section">
+    <h2 class="sec-h"><span class="num">04</span>队列面板 — 状态词与行内进度</h2>
+    <p class="where">位置：队列面板 —— 生成队列列表的每个任务行内；运行中任务显示实时进度 + 已等待时长。</p>
+    <div class="device">
+      <span class="device-tag">场景 04 · 组件特写</span>
+      <div class="qhead">
+        <h3>生成队列</h3>
+        <span class="pill">1 运行中 · 3 其他</span>
+      </div>
+      <div class="qlist">
+        <article class="qitem">
+          <div class="qblock">
+            <strong>文生图 <span class="qstatus run">· 运行中</span></strong>
+            <div class="progress">
+              <div class="progress-track"><div class="progress-fill" style="width:62%"></div></div>
+              <span>模型生成中 · 已等待 42 秒</span>
+            </div>
+          </div>
+          <div class="qactions"><button>取消</button></div>
+        </article>
+        <article class="qitem">
+          <div class="qblock">
+            <strong>文生图 <span class="qstatus queue">· 排队中</span></strong>
+            <small>前面还有 3 个任务</small>
+          </div>
+          <div class="qactions"><button>取消</button></div>
+        </article>
+        <article class="qitem">
+          <div class="qblock">
+            <strong>图生图 <span class="qstatus done">· 已完成</span></strong>
+            <small>用时 38 秒</small>
+          </div>
+          <div class="qactions"><button>移除</button></div>
+        </article>
+        <article class="qitem">
+          <div class="qblock">
+            <strong>文生图 <span class="qstatus fail">· 失败</span></strong>
+            <em>请求超过 300 秒仍未完成</em>
+          </div>
+          <div class="qactions"><button>重试</button><button>移除</button></div>
+        </article>
+      </div>
+      <ul class="spec-list">
+        <li><b>列表行</b>：文本块 + 右侧操作 · padding 15px · 圆角 14px · 行间距 10px</li>
+        <li><b>标题</b>：13px #465a7e · 副文字 11px #91a0b4 · 错误行 11px #bc6574</li>
+        <li><b>操作按钮</b>：padding 7px 9px · 圆角 8px · #edf7ff / #5879a9 · 11px</li>
+        <li><b>进度条</b>：尺寸同上（6px 轨道 / 12px 文字）；状态词全部中文化（运行中 / 排队中 / 已完成 / 失败）</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ================= 场景 5 ================= -->
+  <section class="doc-section">
+    <h2 class="sec-h"><span class="num">05</span>图库导出 ZIP — 工具栏内联进度</h2>
+    <p class="where">位置：图库页 —— 图库工具栏下方；随导出进行显示、结束后收起。</p>
+    <div class="device">
+      <span class="device-tag">场景 05 · 组件特写</span>
+      <div class="gtoolbar">
+        <span class="gcount">已选 24 张</span>
+        <span class="ghint">图库 · 批量操作</span>
+        <button class="btn-primary">导出 ZIP</button>
+      </div>
+      <div class="gexport-row">
+        <span class="callout" style="right:12px;top:-11px;">随导出进行显示 / 收起</span>
+        <div class="progress" style="margin-top:0">
+          <div class="progress-track"><div class="progress-fill" style="width:58%"></div></div>
+          <span>正在导出 ZIP · 14/24 张</span>
+        </div>
+      </div>
+      <ul class="spec-list">
+        <li><b>工具栏</b>：padding 12px 14px · 圆角 14px · 计数胶囊与主按钮同排</li>
+        <li><b>进度行</b>：轨道 6px · 文字 12px #716bba · 恒含张数进度（x/y）</li>
+        <li><b>出现位置</b>：图库工具栏下方 · 随导出进行显示 / 收起</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer class="doc-foot">
+    静态设计规格 · 数值取自 src/styles.css 实测（2026-09-28）· 动效为示意；实现时以设计令牌（渐变 / 轨道 / 文字 / 按钮）为准。
+  </footer>
+</div>
+</body>
+</html>
