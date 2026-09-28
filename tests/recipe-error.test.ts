@@ -28,4 +28,18 @@ describe("recipe and error classification", () => {
     expect(classifyRuntimeError(new Error("图片链接下载失败（403）")).title).toBe("图片结果转存失败");
     expect(classifyHttpError(400, "quality is not supported").title).toBe("清晰度参数不兼容");
   });
+
+  it("classifies missing model/interface as endpoint", () => {
+    const missingModel = classifyHttpError(400, '{"error":{"message":"The model does not exist"}}');
+    expect(missingModel.category).toBe("endpoint");
+    expect(missingModel.category).not.toBe("parameters");
+    expect(classifyHttpError(404, "Not Found").category).toBe("endpoint");
+    expect(classifyHttpError(400, '{"error":"model not found"}').category).toBe("endpoint");
+    expect(classifyHttpError(400, '{"error":"接口不存在"}').category).toBe("endpoint");
+  });
+
+  it("keeps generic 400 on the parameters fallback", () => {
+    expect(classifyHttpError(400, "invalid size parameter").category).toBe("parameters");
+    expect(classifyHttpError(400, "quality is not supported").title).toBe("清晰度参数不兼容");
+  });
 });

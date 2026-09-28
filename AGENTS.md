@@ -3,7 +3,7 @@
 **Generated:** 2026-08-30
 **Commit:** 15bd76d
 **Branch:** alpha
-**同步日期:** 2026-09-28（设置页保存底栏：保存区改悬浮固定底栏（照创作页 .run-row 视觉，白底圆角浮条 + 左渐变按钮 + 右动态状态文字：有未保存的更改 / 正在保存… / 所有更改已保存）；新增渲染层纯逻辑 `src/lib/settings-dirty.ts`（`isSettingsDirty` 草稿 vs 快照脏检测，含 23 个测试用例）；`styles.css` v2.9 分区（与左对齐的设置卡片同轴）；测试 20 文件 / 175 it。前次同步：多供应商模型配置：单供应商 4 字段升级为「供应商字典 + 生图/图反推/提示词增强三角色绑定」；新增 `electron/model-config.ts` 纯逻辑模块与 `src/components/Combobox.tsx` 可搜索下拉；密钥仍只存 keytar——账户 `provider:<id>`，legacy 沿用旧 `default`，GC 仅限 `provider:` 前缀；元数据落 `userData/model-config.json` 且永不含 `apiKey`；旧配置首次启动无损迁移为 legacy「默认服务」并补齐角色标注；队列入队快照 + 执行 fail-closed、不自动重试；测试 19 文件 / 152 it。更前：2026-09-27 安装包瘦身：`build.files` 改白名单模式、构建时依赖移出 `dependencies`——安装包 185.4 MB → 112.2 MB，asar 238.6 MB → 39.7 MB；verify + 冒烟启动通过。更前：preload 白屏修复：沙箱化 preload 不能 `require` 本地模块，`preload.ts` 回退为内联通道字符串——T8 的 `import "./channels"` 曾致 `window.imageStudio` 不暴露、窗口白屏；新增 `tests/preload-channels.test.ts` 锁定两端一致。更前：redundancy-refactor 去重改造：跨层类型单源化 `shared/types.d.ts`、主进程/渲染层共享 helper 提取、需反馈的 IPC 结果统一走 `components/ipc.ts`）
+**同步日期:** 2026-09-28（多供应商平台适配器与预设：新增 `electron/providers/`（`types.ts` 适配器接口 / `presets.ts` 预设表与注册表 / `hunyuan-image.ts` 混元生图适配器，纯逻辑无副作用）与 `src/lib/provider-preset.ts`；`ProviderConfig.api?`（`ProviderApiStyle`）、`ProviderPreset`、`GenerationErrorCategory` 增 `endpoint`；设置页「添加供应商」双态卡片（预设平台只填密钥，预设经 `settings:get` 快照下发、渲染层不 import electron/）；`callImages` 按 api 分派，未命中注册表走 openai 默认路径（零回归）；混元走专用端点 + messages 协议（单张限制、size 哨兵）；测试 23 文件 / 201 it。前次同步：设置页保存底栏：保存区改悬浮固定底栏（照创作页 .run-row 视觉，白底圆角浮条 + 左渐变按钮 + 右动态状态文字：有未保存的更改 / 正在保存… / 所有更改已保存）；新增渲染层纯逻辑 `src/lib/settings-dirty.ts`（`isSettingsDirty` 草稿 vs 快照脏检测，含 23 个测试用例）；`styles.css` v2.9 分区（与左对齐的设置卡片同轴）；测试 20 文件 / 175 it。更前：多供应商模型配置：单供应商 4 字段升级为「供应商字典 + 生图/图反推/提示词增强三角色绑定」；新增 `electron/model-config.ts` 纯逻辑模块与 `src/components/Combobox.tsx` 可搜索下拉；密钥仍只存 keytar——账户 `provider:<id>`，legacy 沿用旧 `default`，GC 仅限 `provider:` 前缀；元数据落 `userData/model-config.json` 且永不含 `apiKey`；旧配置首次启动无损迁移为 legacy「默认服务」并补齐角色标注；队列入队快照 + 执行 fail-closed、不自动重试；测试 19 文件 / 152 it。更前：2026-09-27 安装包瘦身：`build.files` 改白名单模式、构建时依赖移出 `dependencies`——安装包 185.4 MB → 112.2 MB，asar 238.6 MB → 39.7 MB；verify + 冒烟启动通过。更前：preload 白屏修复：沙箱化 preload 不能 `require` 本地模块，`preload.ts` 回退为内联通道字符串——T8 的 `import "./channels"` 曾致 `window.imageStudio` 不暴露、窗口白屏；新增 `tests/preload-channels.test.ts` 锁定两端一致。更前：redundancy-refactor 去重改造：跨层类型单源化 `shared/types.d.ts`、主进程/渲染层共享 helper 提取、需反馈的 IPC 结果统一走 `components/ipc.ts`）
 
 ## OVERVIEW
 Windows 桌面端 AI 图片创作工作台（Electron + React + TypeScript）：连接 OpenAI 兼容 API 出图，并提供完全本地的高清放大 / 抠图 / 人脸优化工具箱（WebGPU/WASM）。
@@ -11,7 +11,7 @@ Windows 桌面端 AI 图片创作工作台（Electron + React + TypeScript）：
 ## STRUCTURE
 ```
 image-studio/
-├── electron/    # 主进程：窗口、IPC、本地存储、多供应商模型配置、OpenAI 兼容 API、本地 AI 模型管理（CommonJS→dist-electron）
+├── electron/    # 主进程：窗口、IPC、本地存储、多供应商模型配置与平台适配器层、OpenAI 兼容 API、本地 AI 模型管理（CommonJS→dist-electron）
 ├── src/         # React 渲染进程：UI 组件、纯逻辑 lib、WebGPU 推理 Worker（Vite→dist-renderer）
 ├── shared/      # 跨进程共享类型唯一来源（shared/types.d.ts，electron/ 与 src/ 均 import type；不参与 tsconfig include，靠 import 按需加载）
 ├── tests/       # Vitest 纯逻辑单元测试（tests/*.test.ts，无 DOM/UI 测试）
@@ -28,19 +28,23 @@ image-studio/
 | 主进程共享助手 | `electron/{fs-utils,net-utils,directory-manager}.ts` | 原子写 JSON / 超时 / joinBase / 目录选择（IPC 内联重复已清零） |
 | 主进程共享常量 | `electron/{constants,channels,outpaint-limits,local-ai-limits,data-url}.ts` | 默认模型 / 通道名 / 画布与本地 AI 上限 / dataURL 去前缀（纯模块，可被 vitest 导入） |
 | 多供应商模型配置 | `electron/{model-config.ts,main.ts}` | `model-config.ts` 纯逻辑（解析/合并/合成/校验/角色与任务绑定/写序编排）；`main.ts` 持久层与启动迁移——元数据 `userData/model-config.json`，密钥 keytar `provider:<id>`（legacy 沿用 `default`） |
+| 平台适配器 / 预设表 | `electron/providers/{types,presets,hunyuan-image}.ts` + `src/lib/provider-preset.ts` | `ProviderAdapter` 接口（只强制 `generate`）；`PROVIDER_PRESETS` 预设表 + `getAdapter`/`getPreset`（未知 api → openai 默认路径）；`presetToProviderDraft` 预设→草稿纯逻辑（渲染层经快照拿预设、不 import electron/） |
 | 图库/队列持久化 | `electron/{gallery,queue}-store.ts` | 原子写入、损坏恢复；队列 job 顶层含入队时的 `providerId`/`model` 快照 |
 | 本地 AI 模型管理 | `electron/local-ai-model-manager.ts` | 下载 / SHA-256 校验 / 断点续传 |
-| React UI | `src/main.tsx` + `src/components/*` | main.tsx 为 **499 行 shell**（同步日期 2026-09-28）；创作/结果/队列/设置面板与 useComposer 已拆入 `src/components/*`；`src/components/Combobox.tsx` 为可搜索下拉（IME/Escape/portal 契约）；设置页保存区为悬浮固定底栏 `.settings-dock`（v2.9，照创作页 `.run-row` 视觉 + `isSettingsDirty` 动态状态文字） |
+| React UI | `src/main.tsx` + `src/components/*` | main.tsx 为 **499 行 shell**（同步日期 2026-09-28）；创作/结果/队列/设置面板与 useComposer 已拆入 `src/components/*`；`src/components/Combobox.tsx` 为可搜索下拉（IME/Escape/portal 契约）；设置页保存区为悬浮固定底栏 `.settings-dock`（v2.9，照创作页 `.run-row` 视觉 + `isSettingsDirty` 动态状态文字）；设置页「添加供应商」为双态卡片（预设平台态 = Combobox 选平台 + 只填密钥，自定义态 = 原三字段表单） |
 | IPC 调用助手 | `src/components/ipc.ts` | `callIpc` / `useIpcAction` 统一 `{ok:false}`/reject 上报；渲染层需反馈的调用均经此路由 |
 | WebGPU 推理 | `src/workers/local-ai.worker.ts` | Worker 内 WebGPU→WASM 回退 |
-| 纯函数逻辑 | `src/lib/*.ts` | creative / outpaint / local-ai / tutorial / format / media / constants / settings-dirty |
-| 纯逻辑测试 | `tests/*.test.ts` | 20 文件 / 175 it，与 electron/、src/lib 一一对应（含跨层一致性测试）；`model-config.test.ts` 锁定配置纯逻辑、`settings-dirty.test.ts` 锁定设置脏检测 |
+| 纯函数逻辑 | `src/lib/*.ts` | creative / outpaint / local-ai / tutorial / format / media / constants / settings-dirty / provider-preset |
+| 纯逻辑测试 | `tests/*.test.ts` | 23 文件 / 201 it，与 electron/、src/lib 一一对应（含跨层一致性测试）；`model-config.test.ts` 锁定配置纯逻辑、`settings-dirty.test.ts` 锁定设置脏检测、`provider-presets`/`providers-hunyuan`/`provider-preset.test.ts` 锁定适配器/预设/草稿纯逻辑 |
 
 ## CODE MAP
 | Symbol | Type | Location | Role |
 |--------|------|----------|------|
 | `electron/main.ts` | entry | 主进程 | 窗口创建、IPC 注册、app 生命周期、自动更新、多供应商配置持久层与启动迁移 |
 | `electron/model-config.ts` | logic | 主进程 | 多供应商配置纯逻辑（解析/合并/合成/校验/角色与任务绑定/写序编排），无 IPC/副作用 |
+| `electron/providers/presets.ts` | logic | 主进程 | 预设表 `PROVIDER_PRESETS` + 适配器注册表 `getAdapter`/`getPreset`（未知 api → openai 默认路径），纯逻辑 |
+| `electron/providers/hunyuan-image.ts` | adapter | 主进程 | 腾讯混元生图适配器（专用端点 + messages 协议；单张限制、size 哨兵） |
+| `src/lib/provider-preset.ts` | logic | 渲染进程 | `presetToProviderDraft`：预设→供应商草稿（深拷贝预置模型），不 import electron/ |
 | `electron/preload.ts` | bridge | 预加载 | contextBridge 暴露 `window.imageStudio` |
 | `src/main.tsx` | entry | 渲染进程 | App 根组件（499 行 shell：模式路由/导航/StudioProvider/订阅/灯箱；业务逻辑在 components/*） |
 | `shared/types.d.ts` | types | 跨进程 | 全部共享 IPC 类型唯一定义处（以 electron 侧为超集） |
@@ -64,7 +68,8 @@ image-studio/
 - 需要用户反馈的 IPC 结果统一走 `src/components/ipc.ts` 的 `callIpc` / `useIpcAction`；best-effort 调用（`on*` 事件订阅、`windowControls.*`、`clipboard.copyText/copyImage`）保持直连白名单
 - 需测试的纯逻辑优先移入 `src/lib/*.ts`；主进程可测纯模块（`electron/constants`/`channels`/`model-config`/`*-limits`/`data-url`）不得含 IPC/副作用，供 vitest 直接导入
 - 多供应商配置三条契约：①保存事务固定五步（校验 → 写变更密钥 keytar → 剥离 `apiKey` 后写 JSON → best-effort 删 `provider:<id>`（跳过 legacy）→ 仅清理 `provider:` 前缀的孤儿密钥，绝不触碰 `default*` 与更新偏好账户）；②删除保护服务端强制——`removal=(当前 JSON 差集) ∪ removedProviderIds`，被 active 队列 job 引用的供应商整单拒绝（`{ok:false,error:"供应商有未完成任务"}`）；③队列执行按入队快照解析，原供应商/模型缺失时 fail-closed、绝不自动改换或重试
-- 测试是纯逻辑，无 DOM/UI/electron 运行时测试；React 组件与 main.ts 无测试，preload.ts 仅由 `tests/preload-channels.test.ts` 做源码文本一致性检查（非运行时）（现 20 文件 / 175 it）
+- 平台适配器契约：`ProviderAdapter` 只强制 `generate(ctx, fetcher?)`；`getAdapter(api)` 未命中注册表 → 走 openai 默认路径（零回归）；预设与自定义共用 `ProviderConfig`（仅多一个可选 `api`）；预设数据只经 `settings:get` 快照到达渲染层，渲染层绝不 import `electron/`；混元单次只出一张（`n>1` 拒绝）、`size` 直传前哨兵校验（宽高 [256,8192]、面积 ≤ 16777216、越界抛 `parameters`）
+- 测试是纯逻辑，无 DOM/UI/electron 运行时测试；React 组件与 main.ts 无测试，preload.ts 仅由 `tests/preload-channels.test.ts` 做源码文本一致性检查（非运行时）（现 23 文件 / 201 it）
 
 ## ANTI-PATTERNS（行为边界，源自代码而非注释）
 - 队列任务失败绝不允许代码自动重试（避免重复计费），只能用户手动触发 `queue:retry`
@@ -78,6 +83,7 @@ image-studio/
 - 禁止在 electron/ 或 src/ 重复声明跨进程类型；IPC 通道字符串唯一来源 `electron/channels.ts`，唯一例外是 `preload.ts` 出于沙箱限制刻意内联（一致性由 `tests/preload-channels.test.ts` 锁定）
 - 需用户反馈的 IPC 失败提示禁止逐字复制 `if (!result.ok) …` 模式，必须经 `src/components/ipc.ts` 的 `callIpc`/`useIpcAction`（best-effort 白名单见该文件头注释）
 - 媒体读取 / 对象 URL / 画布助手单点在 `src/lib/media.ts`（`components/media-utils.ts` 仅为 re-export 兼容层）；`new FileReader` 全仓仅 `src/lib/media.ts` 一处
+- 平台适配器绝不允许自动重试或循环多张（防重复计费）；渲染层禁止硬编码预设平台数据——预设只能经 `settings:get` 快照获得，不得 import `electron/`
 
 ## COMMANDS
 ```bash

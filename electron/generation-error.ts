@@ -42,6 +42,9 @@ export function classifyHttpError(status: number, body: string): GenerationError
   if (status === 429) {
     return { category: "rate_limit", title: "请求过于频繁", message: "服务繁忙或已达到并发限制。", suggestion: "等待片刻后手动重试；任务队列会继续保持串行。", retryable: true, status, details };
   }
+  if ((status === 400 || status === 404) && /(does not exist|not found|不存在)/i.test(details)) {
+    return { category: "endpoint", title: "模型或接口不存在", message: "服务端未找到所请求的模型或接口。", suggestion: "请检查供应商的接口类型、Base URL 与模型名是否正确。", retryable: false, status, details };
+  }
   if (status === 400 || status === 422) {
     return { category: "parameters", title: "生成参数不兼容", message: "尺寸、比例、质量或编辑参数未被接口接受。", suggestion: "先改为 1K、自动细节、单张，并检查自定义尺寸和蒙版。", retryable: false, status, details };
   }

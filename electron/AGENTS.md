@@ -10,6 +10,7 @@ Electron 主进程：窗口、IPC、本地存储、OpenAI 兼容 API、本地 AI
 | `channels.ts` | IPC 通道名常量单一来源（`main.ts` 引用；`preload.ts` 因沙箱无法 `require` 本地模块而**刻意内联**，一致性由 `tests/preload-channels.test.ts` 锁定；字符串即对外契约，不得改） |
 | `constants.ts` | 默认模型 `DEFAULT_IMAGE_MODEL`/`DEFAULT_CHAT_MODEL` + `INBOX_PROJECT_ID`（纯模块，与 `src/lib/constants` 一致性测试） |
 | `model-config.ts` | 多供应商配置纯逻辑（`parseModelsResponse`/`mergeFetchedModels`/`buildLegacyModelConfig`/`validateSavePayload`/`resolveRoleBinding`/`resolveJobBinding`/`deriveConfigured`/`runSavePlan`/`findProvider`/`stripProviderSecrets`）——无 IPC/副作用，供 main.ts 与 vitest 共用 |
+| `providers/` | 平台适配器层（纯逻辑无副作用）：`types.ts`（`ProviderAdapter`/`GenerateContext` 接口，只强制 `generate`）、`presets.ts`（`PROVIDER_PRESETS` 预设表 + `getAdapter`/`getPreset`，未知 api → `undefined`）、`hunyuan-image.ts`（腾讯混元生图适配器：专用端点 + messages 协议、单张限制、size 哨兵） |
 | `fs-utils.ts` | `ensureDir`/`atomicWriteJson`/`readJsonWithLegacy`/`replaceWithRetry`（原子写 + 重试） |
 | `net-utils.ts` | `joinBase`/`withTimeout`/`errorMessage`（网络请求共享助手） |
 | `directory-manager.ts` | 目录选择/打开/恢复默认的共享实现（依赖 `dialog`/keytar，不计入纯逻辑测试） |
@@ -37,6 +38,7 @@ Electron 主进程：窗口、IPC、本地存储、OpenAI 兼容 API、本地 AI
 | 原子写 / 网络 / 目录选择助手 | `fs-utils.ts` / `net-utils.ts` / `directory-manager.ts` |
 | 图库 / 队列持久化 | `{gallery,queue}-store.ts` |
 | 多供应商配置 / 角色解析 / 迁移 | `model-config.ts`（纯逻辑）+ `main.ts`（`loadModelConfig`/`saveModelConfig`/`providerCredential`/`resolveRole`/`SETTINGS_GET`/`SETTINGS_SAVE`/`SETTINGS_TEST`） |
+| 平台适配器 / 预设表 | `providers/`（`types.ts` 接口、`presets.ts` 注册表 `getAdapter`/`getPreset`、`hunyuan-image.ts`；新增平台 = 一条预设 + 一个适配器模块，未知 api 走 openai 默认路径） |
 | 报错分类 / 计费安全 | `generation-error.ts` |
 | 本地模型下载 / 校验 | `local-ai-model-manager.ts` + `local-ai-models.ts` |
 | PNG 元数据 / 反推 | `png-metadata.ts` / `reverse-prompt.ts` |
@@ -61,6 +63,7 @@ Electron 主进程：窗口、IPC、本地存储、OpenAI 兼容 API、本地 AI
 - 跨进程共享类型唯一来源 `../shared/types`（`shared/types.d.ts`）：本目录一律 `import type`，需对外导出时用 `export type { X } from "../shared/types"`（本仓 `isolatedModules`；异名映射如 `ImageResponse`↔`ApiImage`、`BinaryPayload`↔`BinaryInput`）。
 - IPC 通道名字符串唯一来源 `channels.ts`：`main.ts` 的 `ipcMain.handle` / `webContents.send` 引用常量；`preload.ts` 出于沙箱限制**刻意内联**字符串（sandboxed preload 不能 `require` 本地模块，否则 `dist-electron/preload.js` 的 `require("./channels")` 运行时失败 → `window.imageStudio` 不暴露 → 窗口白屏），两端一致性由 `tests/preload-channels.test.ts` 双向锁定；字符串本身是对外契约，不得改动。
 - 主进程可测纯模块（`constants`/`channels`/`model-config`/`outpaint-limits`/`local-ai-limits`/`data-url`）不得含 IPC/副作用，供 vitest 直接导入；原子写/重试/超时/目录选择等重复已收敛至 `fs-utils`/`net-utils`/`directory-manager`。
+- 平台适配器层 `providers/`：纯逻辑无副作用、可被 vitest 直接导入；`getAdapter(api)` 未命中注册表返回 `undefined` → 上层 `callImages` 走 openai 默认路径（零回归）；适配器只强制 `generate(ctx, fetcher?)`（`fetcher` 可注入供单测），`listModels` 可选；混元单次只出一张（`n>1` 抛 `parameters`）、`size` 直传前哨兵校验（宽高 [256,8192]、面积 ≤ 16777216，越界抛 `parameters`、绝不缩放）、HTTP 200 但 body 含 `error` 同样抛错；预设与自定义共用 `ProviderConfig`（仅多一个可选 `api`）；预设数据只经 `settings:get` 快照下发，渲染层绝不 import 本目录。
 - `BrowserWindow.backgroundColor`（`#fdf5f9`）现仅兜底窗口首帧底色（页面加载前防白闪）：`scrollbar-gutter` 槽位与透明滚动条轨道由渲染层 `.app` 自身背景绘制（见 `src/styles.css` v2.1 四层背景），不再依赖此值配色；保留它用于启动过渡。（Electron 44 的 overlay 滚动条 electron#53350 不可用，勿再走该方案）
 - 窗口为系统原生 WCO 模型（`titleBarStyle:'hidden'` + `titleBarOverlay` 对象，见 `createWindow()`）：禁止 `transparent:true`/`hasShadow:false`/`thickFrame:false`（会丢阴影与边缘 resize 能力），保留 `backgroundColor:"#fdf5f9"`；拖拽由渲染层 `header` 承担，其右上角原生按钮条以 `env(titlebar-area-*)` + `header::after` 从拖拽区挖除。
 - 应用菜单已移除（`Menu.setApplicationMenu(null)`）：编辑类快捷键依赖输入框内 Chromium 原生行为；dev 快捷键（F12 / Ctrl+Shift+I / Ctrl+R / Ctrl+Shift+R / F5）经 `win.webContents.on("before-input-event")` 保留，且仅在 `--dev` 下注册，不用 `globalShortcut`（避免全局生效）。
