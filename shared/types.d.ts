@@ -103,6 +103,7 @@ export type GenerationErrorCategory =
   | "authentication"
   | "balance"
   | "parameters"
+  | "endpoint"
   | "upload"
   | "content"
   | "rate_limit"
@@ -202,6 +203,9 @@ export interface RoleBinding {
   model: string;
 }
 
+/** 供应商接口风格；缺省（undefined）等同 "openai"，旧配置与 JSON 无需迁移 */
+export type ProviderApiStyle = "openai" | "hunyuan-image";
+
 export interface ProviderModel {
   id: string;
   roles: ModelRole[];
@@ -215,10 +219,22 @@ export interface ProviderConfig {
   baseUrl: string;
   models: ProviderModel[];
   modelsUpdatedAt?: string;
+  /** 接口风格；缺省（undefined）等同 "openai" */
+  api?: ProviderApiStyle;
 }
 
 export interface ProviderSummary extends ProviderConfig {
   hasKey: boolean;
+}
+
+/** 内置预设平台：预设与自定义共用 ProviderConfig 结构，仅多一个 api 字段 */
+export interface ProviderPreset {
+  id: string;
+  label: string;
+  baseUrl: string;
+  api: ProviderApiStyle;
+  presetModels: ProviderModel[];
+  keyHelp: string;
 }
 
 export interface ModelConfig {
@@ -236,6 +252,8 @@ export interface SettingsSnapshot {
   configured: boolean;
   hasSavedApiKey: boolean;
   warning?: string;
+  /** 内置预设平台列表（供设置页渲染，不含密钥）；暂为可选，待主进程快照填充 */
+  presets?: ProviderPreset[];
 }
 
 export interface SettingsSavePayload {

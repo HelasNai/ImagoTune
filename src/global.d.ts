@@ -131,9 +131,11 @@ declare global {
   type StoredAttachment = Shared.StoredAttachment;
   type ModelRole = Shared.ModelRole;
   type RoleBinding = Shared.RoleBinding;
+  type ProviderApiStyle = Shared.ProviderApiStyle;
   type ProviderModel = Shared.ProviderModel;
   type ProviderConfig = Shared.ProviderConfig;
   type ProviderSummary = Shared.ProviderSummary;
+  type ProviderPreset = Shared.ProviderPreset;
   type ModelConfig = Shared.ModelConfig;
   type SettingsSnapshot = Shared.SettingsSnapshot;
   type SettingsSavePayload = Shared.SettingsSavePayload;
