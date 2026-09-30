@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useRef } from "react";
 import { MaskPainter } from "./MaskPainter";
+import { useComposerLayout } from "./useComposerLayout";
 import { QuickModelSwitcher } from "./QuickModelSwitcher";
 import { ProgressBar } from "./ProgressBar";
 import { useProgressEvent } from "./ProgressContext";
@@ -9,6 +10,8 @@ import { qualities } from "./useComposer";
 import type { ComposerActions, ComposerState } from "./useComposer";
 import { outpaintQuickRatios, ratioOptions, resolutionOptions } from "../lib/creative";
 import { compositeFileKey } from "../lib/format";
+import { decodeLayoutCode, encodeLayoutCode, moduleDef, type LayoutMode } from "../lib/layout";
+import { useDialog } from "./Dialogs";
 import { useStudio } from "./StudioContext";
 import { useCopyText } from "./useCopy";
 import { useObjectUrl } from "./useObjectUrl";
@@ -123,18 +126,128 @@ export function ComposerPanel({
     enqueue,
     cancelActive,
   } = composerActions;
+  // 布局编辑（仅创作页三种模式；ComposerPanel 不会在 gallery/queue/settings 下渲染）。
+  const layoutMode: LayoutMode = mode === "edit" ? "edit" : mode === "outpaint" ? "outpaint" : "generate";
+  const modulesRef = useRef<HTMLDivElement | null>(null);
+  const layout = useComposerLayout({ mode: layoutMode, containerRef: modulesRef });
+  const { requestText, requestConfirm } = useDialog();
+
+  /** 恢复默认布局（有损操作，需确认）：清除自定义位置并回到默认排列。 */
+  const handleResetLayout = async () => {
+    const confirmed = await requestConfirm({
+      title: "恢复默认布局",
+      message: "将清除自定义的模块位置、大小与隐藏设置，恢复为默认排列。此操作不可撤销，确定继续吗？",
+      confirmLabel: "恢复默认",
+      danger: true,
+    });
+    if (confirmed) layout.resetLayout();
+  };
+
+  /** 复制当前布局的分享码（只含通用模块的坐标与隐藏状态）。 */
+  const handleCopyLayoutCode = async () => {
+    if (!layout.snapshot) {
+      notify("先调整布局，再复制分享码", true);
+      return;
+    }
+    await copyText(encodeLayoutCode(layout.snapshot), "布局分享码已复制，可粘贴分享");
+  };
+
+  /** 导入分享码：只替换通用模块，专属模块与其余设置保持不动。 */
+  const handleImportLayoutCode = async () => {
+    const code = await requestText({
+      title: "导入布局分享码",
+      message: "粘贴以 ITL1: 开头的布局码。导入只替换通用模块的位置与隐藏状态，专属模块保持不动。",
+      confirmLabel: "导入",
+    });
+    if (!code?.trim()) return;
+    const decoded = decodeLayoutCode(code);
+    if (!decoded) {
+      notify("分享码无效或已损坏", true);
+      return;
+    }
+    layout.importSharedLayout(decoded);
+    notify("布局已导入（通用模块已更新）");
+  };
+
+  /** 另存为新方案（复制当前布局）。 */
+  const handleCreatePreset = async () => {
+    const name = await requestText({ title: "保存为新方案", message: "为新方案取一个名字（当前布局会被复制）", confirmLabel: "保存" });
+    if (!name?.trim()) return;
+    layout.createPreset(name);
+    notify(`已保存方案「${name.trim()}」`);
+  };
+
+  /** 重命名当前方案。 */
+  const handleRenamePreset = async () => {
+    const current = layout.presets.find((item) => item.id === layout.activePresetId);
+    if (!current) return;
+    const name = await requestText({ title: "重命名方案", message: "输入新的方案名称", defaultValue: current.name, confirmLabel: "重命名" });
+    if (!name?.trim()) return;
+    layout.renamePreset(current.id, name);
+  };
+
+  /** 删除当前方案（「默认」方案不可删除）。 */
+  const handleDeletePreset = async () => {
+    const current = layout.presets.find((item) => item.id === layout.activePresetId);
+    if (!current || current.id === "default") return;
+    const confirmed = await requestConfirm({
+      title: "删除方案",
+      message: `删除方案「${current.name}」？该方案保存的布局将丢失（不可撤销）。`,
+      confirmLabel: "删除",
+      danger: true,
+    });
+    if (confirmed) layout.deletePreset(current.id);
+  };
 
   return (
-    <section className="card composer" data-tutorial="creation-form">
+    <section className={layout.editing ? "card composer composer-editing" : "card composer"} data-tutorial="creation-form">
       <div className="mode-title">
         <div>
           <span className="eyebrow">{mode === "outpaint" ? "SMART OUTPAINT" : mode === "edit" ? "IMAGE EDIT" : "CREATE STUDIO"}</span>
           <h2>{mode === "outpaint" ? "智能扩展画面" : mode === "edit" ? "编辑与局部重绘" : "描述你想要的画面"}</h2>
         </div>
-        <span className="pill">{mode === "outpaint" ? "透明画布 + 自动蒙版" : mode === "edit" ? "原图 + 蒙版 + 参考图" : "提示词 + 参考图 + 队列"}</span>
+        <div className="mode-title-side">
+          <span className="pill">{mode === "outpaint" ? "透明画布 + 自动蒙版" : mode === "edit" ? "原图 + 蒙版 + 参考图" : "提示词 + 参考图 + 队列"}</span>
+          <button type="button" className={layout.editing ? "layout-toggle active" : "layout-toggle"} onClick={layout.toggleEditing} title="自定义各模块的位置与大小">
+            {layout.editing ? "完成布局" : "调整布局"}
+          </button>
+        </div>
       </div>
 
-      <div className="project-strip">
+      {layout.editing && (
+        <div className="layout-editor-bar">
+          <span className="layout-edit-hint">拖动模块调整位置与大小：松手自动吸附网格，重叠自动避让；点模块右上角「×」可隐藏。</span>
+          <div className="layout-editor-actions">
+            <label className="layout-preset-select">
+              方案
+              <select value={layout.activePresetId} onChange={(event) => layout.switchPreset(event.target.value)}>
+                {layout.presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+              </select>
+            </label>
+            <button type="button" className="layout-tool-btn" onClick={() => void handleCreatePreset()}>另存为</button>
+            <button type="button" className="layout-tool-btn" onClick={() => void handleRenamePreset()}>重命名</button>
+            <button type="button" className="layout-tool-btn danger" disabled={layout.activePresetId === "default"} onClick={() => void handleDeletePreset()}>删除</button>
+            <span className="layout-tool-sep" aria-hidden="true" />
+            <button type="button" className="layout-tool-btn" onClick={() => void handleCopyLayoutCode()}>复制分享码</button>
+            <button type="button" className="layout-tool-btn" onClick={() => void handleImportLayoutCode()}>导入分享码</button>
+            <span className="layout-tool-sep" aria-hidden="true" />
+            {layout.hiddenIds.length > 0 && (
+              <div className="layout-hidden-panel">
+                <span>已隐藏 {layout.hiddenIds.length} 个：</span>
+                {layout.hiddenIds.map((id) => (
+                  <button key={id} type="button" className="layout-hidden-restore" onClick={() => layout.showModule(id)} title="恢复显示">
+                    {moduleDef(id).label} ↺
+                  </button>
+                ))}
+              </div>
+            )}
+            <button type="button" className="layout-reset" onClick={() => void handleResetLayout()}>恢复默认布局</button>
+          </div>
+        </div>
+      )}
+
+      <div ref={modulesRef} className={layout.modulesClassName} style={layout.modulesStyle}>
+      <div className="project-strip" data-layout-id="project-strip" style={layout.styleOf("project-strip")}>
         <label>归属项目
           <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>
             {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
@@ -146,7 +259,7 @@ export function ComposerPanel({
         <span>默认归档到收件箱，可随时批量移动。</span>
       </div>
 
-      <div className="prompt-tools">
+      <div className="prompt-tools" data-layout-id="prompt-tools" style={layout.styleOf("prompt-tools")}>
         <label>提示词模板
           <select value={selectedTemplate} onChange={(event) => applyTemplate(event.target.value)}>
             <option value="">选择模板…</option>
@@ -163,6 +276,8 @@ export function ComposerPanel({
       </div>
 
       <textarea
+        data-layout-id="prompt"
+        style={layout.styleOf("prompt")}
         value={prompt}
         onChange={(event) => setPrompt(event.target.value)}
         placeholder={mode === "edit"
@@ -171,7 +286,7 @@ export function ComposerPanel({
         rows={5}
       />
 
-      <section className="negative-prompt">
+      <section className="negative-prompt" data-layout-id="negative-prompt" style={layout.styleOf("negative-prompt")}>
         <div className="negative-head">
           <div><strong>负面提示词</strong><small>独立保存；提交时转换为“必须避免”的自然语言约束。</small></div>
           <div className="negative-template-actions">
@@ -187,7 +302,7 @@ export function ComposerPanel({
         <textarea value={negativePrompt} onChange={(event) => setNegativePrompt(event.target.value)} rows={3} placeholder="例如：水印、乱码文字、重复元素、肢体畸形、塑料质感" />
       </section>
 
-      <div className="prompt-assistant">
+      <div className="prompt-assistant" data-layout-id="prompt-assistant" style={layout.styleOf("prompt-assistant")}>
         <strong>提示词助手</strong>
         <button onClick={() => optimizeLocal("refine")}>精炼主体</button>
         <button onClick={() => optimizeLocal("detail")}>强化细节</button>
@@ -200,9 +315,9 @@ export function ComposerPanel({
         </button>
         {originalPrompt && <button onClick={() => setPrompt(originalPrompt)}>恢复原提示词</button>}
       </div>
-      {enhancing && enhanceProgress ? <ProgressBar event={enhanceProgress} /> : null}
+      {enhancing && enhanceProgress ? <div className="layout-flow-host" style={layout.followerStyle()}><ProgressBar event={enhanceProgress} /></div> : null}
 
-      <details className="reverse-prompt">
+      <details className="reverse-prompt" data-layout-id="reverse-prompt" style={layout.styleOf("reverse-prompt")}>
         <summary>图反推提示词 · {roles.reverse?.model ?? "未配置"}</summary>
         <div className="reverse-upload-row">
           <ImageDropInput accept="image/*" onFiles={(files) => { setReverseImage(files[0] ?? null); setReverseResult(null); }}>
@@ -227,7 +342,7 @@ export function ComposerPanel({
 
       {(mode === "edit" || mode === "outpaint") && (
         <>
-          <div className="upload-row">
+          <div className="upload-row" data-layout-id="upload" style={layout.styleOf("upload")}>
             <ImageDropInput accept="image/*" onFiles={(files) => setImage(files[0] ?? null)}>
               {({ inputId, dropProps }) => (
                 <label className="upload" htmlFor={inputId} {...dropProps}>
@@ -243,11 +358,11 @@ export function ComposerPanel({
               )}
             </ImageDropInput>}
           </div>
-          {mode === "edit" && <MaskPainter image={image} onMaskChange={maskChange} />}
+          {mode === "edit" && <MaskPainter image={image} onMaskChange={maskChange} layoutId="mask" style={layout.styleOf("mask")} />}
         </>
       )}
 
-      {(mode === "generate" || mode === "edit") && <section className="reference-panel" data-tutorial="reference-images">
+      {(mode === "generate" || mode === "edit") && <section className="reference-panel" data-tutorial="reference-images" data-layout-id="references" style={layout.styleOf("references")}>
         <div className="reference-head">
           <div>
             <strong>参考图片 <span>{references.length}/3</span></strong>
@@ -279,7 +394,7 @@ export function ComposerPanel({
           : "局部蒙版与多参考图不能同时提交；需要局部修改时请先移除参考图。"}</p>
       </section>}
 
-      {mode === "outpaint" && <section className="outpaint-panel">
+      {mode === "outpaint" && <section className="outpaint-panel" data-layout-id="outpaint-panel" style={layout.styleOf("outpaint-panel")}>
         <div className="outpaint-head"><div><strong>扩图画布</strong><small>{sourceDimensions ? `原图 ${sourceDimensions.width}x${sourceDimensions.height}` : "上传原图后可设置目标画布"}</small></div><span>仅扩展，不裁剪</span></div>
         <div className="outpaint-presets">
           <span>快捷转换</span>
@@ -295,14 +410,14 @@ export function ComposerPanel({
         {outpaintCheck && <p className={outpaintCheck.ok ? "outpaint-valid" : "outpaint-invalid"}>{outpaintCheck.ok ? `目标 ${outpaintCheck.layout.targetSize} · 原图位于 (${outpaintCheck.layout.x}, ${outpaintCheck.layout.y})` : outpaintCheck.error}</p>}
       </section>}
 
-      <div className="performance-presets">
+      <div className="performance-presets" data-layout-id="presets" style={layout.styleOf("presets")}>
         <span>生成速度</span>
         <button type="button" onClick={() => quickPreset("fast")}>快速预览</button>
         <button type="button" onClick={() => quickPreset("stable")}>稳定创作</button>
         <button type="button" onClick={() => quickPreset("detail")}>最终高清</button>
       </div>
 
-      <div className="controls">
+      <div className="controls" data-layout-id="controls" style={layout.styleOf("controls")}>
         <label>细节质量
           <select value={quality} onChange={(event) => setQuality(event.target.value)}>
             {qualities.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
@@ -325,7 +440,7 @@ export function ComposerPanel({
         </label>
       </div>
 
-      {mode !== "outpaint" && <div className="custom-size">
+      {mode !== "outpaint" && <div className="custom-size" data-layout-id="custom-size" style={layout.styleOf("custom-size")}>
         <label className="check">
           <input type="checkbox" checked={customSizeEnabled} onChange={(event) => setCustomSizeEnabled(event.target.checked)} />
           自定义安全尺寸
@@ -337,6 +452,32 @@ export function ComposerPanel({
           </>
         )}
       </div>}
+      {layout.editing && (
+        <div className="layout-handle-layer">
+          {layout.handles.map((handle) => (
+            <div
+              key={handle.id}
+              className={handle.id === layout.draggingId ? "layout-handle dragging" : "layout-handle"}
+              style={{ left: handle.left, top: handle.top, width: handle.width, height: handle.height }}
+              onPointerDown={(event) => layout.beginDrag(handle.id, "move", event)}
+              onPointerMove={layout.moveDrag}
+              onPointerUp={layout.endDrag}
+              onPointerCancel={layout.endDrag}
+            >
+              <span className="layout-handle-label">{handle.label}</span>
+              <button
+                type="button"
+                className="layout-handle-hide"
+                title="隐藏该模块（可从「已隐藏」列表恢复）"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => { event.stopPropagation(); layout.hideModule(handle.id); }}
+              >×</button>
+              <span className="layout-handle-resize" onPointerDown={(event) => layout.beginDrag(handle.id, "resize", event)} aria-hidden="true" />
+            </div>
+          ))}
+        </div>
+      )}
+      </div>
       <p className="size-hint">
         当前输出：{displaySize} · {mode === "outpaint" ? outpaintPreset || "扩展画布" : ratio + " 比例"} · {resolution.toUpperCase()} 清晰度 · 项目：
         {projects.find((project) => project.id === projectId)?.name || "收件箱"}

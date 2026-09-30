@@ -3019,7 +3019,9 @@ select:focus-visible {
   .sidebar-project-actions,
   .sidebar-project-body,
   .sidebar-help,
-  .queue-thumb {
+  .queue-thumb,
+  .layout-toggle,
+  .layout-handle {
     transition: none !important;
   }
   .card:hover,
@@ -5724,4 +5726,280 @@ main:has(.card.settings) {
   line-height: 16px;
   text-align: center;
   box-shadow: 0 2px 6px rgba(102, 126, 171, 0.25);
+}
+
+/* ============================================================================
+   v3.7 布局编辑模式（网格画布）
+   - .composer-modules：模块容器。默认 display:contents（不产生盒子，流式渲染与
+     加入前逐像素一致）；建立自定义布局后加 .layout-grid → 块级相对定位容器，
+     模块绝对定位（left/top/width/minHeight 由 useComposerLayout 内联注入）。
+   - .layout-toggle / .layout-edit-hint：入口按钮与编辑模式提示条。
+   - .layout-handle-layer / .layout-handle：编辑模式拖拽热区覆盖层（盖住模块、
+     替代内容交互承担拖动 / 缩放），右下角 .layout-handle-resize 为缩放把手。
+   - .layout-flow-host：容器内非模块附属元素（如增强进度条）的宿主——流式下
+     display:contents 零差异；网格下绝对定位、位置内联注入（跟随 prompt-assistant）。
+   - 模块内装饰性文字（说明小字 / 上传 label / 摘要 / 校验消息）：网格态强制单行 +
+     超出省略（放不下就隐藏），避免窗口或模块变窄时文字换行把模块撑高、破坏等比形状。
+   仅用背景 / 边框过渡，并登记进 v1.5.1 分区的 reduced-motion 组。
+   ============================================================================ */
+.mode-title-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.layout-toggle {
+  padding: 7px 11px;
+  border-radius: 20px;
+  border: 1px solid rgba(151, 180, 220, 0.4);
+  background: rgba(255, 255, 255, 0.9);
+  color: #5879a9;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease;
+}
+.layout-toggle:hover {
+  background: #edf7ff;
+  border-color: rgba(144, 183, 223, 0.6);
+  color: #4b6a99;
+}
+.layout-toggle.active {
+  background: #eef7ff;
+  border-color: #9cc4e8;
+  color: #46698f;
+}
+.layout-editor-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px dashed rgba(121, 141, 190, 0.4);
+  background: rgba(238, 247, 255, 0.9);
+}
+.layout-edit-hint {
+  color: #5c6f94;
+  font-size: 12px;
+}
+.layout-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.layout-hidden-panel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  color: #5c6f94;
+  font-size: 12px;
+}
+.layout-hidden-restore {
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(151, 180, 220, 0.4);
+  background: rgba(255, 255, 255, 0.9);
+  color: #5879a9;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.layout-hidden-restore:hover {
+  background: #edf7ff;
+}
+.layout-reset {
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(214, 158, 177, 0.45);
+  background: rgba(255, 255, 255, 0.9);
+  color: #a2587a;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.layout-reset:hover {
+  background: #fdeef3;
+}
+.layout-preset-select {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #5c6f94;
+  font-size: 12px;
+}
+.layout-preset-select select {
+  width: auto;
+  min-width: 92px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+.layout-tool-btn {
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(151, 180, 220, 0.4);
+  background: rgba(255, 255, 255, 0.9);
+  color: #5879a9;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.layout-tool-btn:hover {
+  background: #edf7ff;
+}
+.layout-tool-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.layout-tool-btn.danger {
+  border-color: rgba(214, 158, 177, 0.45);
+  color: #a2587a;
+}
+.layout-tool-btn.danger:hover:not(:disabled) {
+  background: #fdeef3;
+}
+.layout-tool-sep {
+  width: 1px;
+  height: 16px;
+  background: rgba(151, 180, 220, 0.35);
+}
+.layout-handle-hide {
+  position: absolute;
+  top: -10px;
+  right: 8px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid #fff;
+  background: #b587a6;
+  color: #fff;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+.layout-handle-hide:hover {
+  background: #a2587a;
+}
+.composer-modules {
+  display: contents;
+}
+.composer-modules.layout-grid {
+  display: block;
+  position: relative;
+  min-height: 40px;
+}
+/* 比例单位网格线背景（--layout-unit 由 useComposerLayout 注入，随窗口缩放与吸附单位同步）：
+   仅编辑模式显示（视觉辅助对齐），退出编辑后不保留 */
+.composer-editing .composer-modules.layout-grid {
+  background-image:
+    repeating-linear-gradient(to right, rgba(121, 141, 190, 0.07) 0 1px, transparent 1px var(--layout-unit, 16px)),
+    repeating-linear-gradient(to bottom, rgba(121, 141, 190, 0.07) 0 1px, transparent 1px var(--layout-unit, 16px));
+  background-position: 0 0;
+}
+/* 网格定位下模块外边距清零：绝对定位的 top/left 以 margin box 为原点，若保留自身 margin
+   会使元素相对注入坐标整体偏移（并影响「测量 → 定位」的一致性）。坐标本身已由测量承载
+   模块间距（流式 margin 计入测量 y），清零后逐像素对齐。 */
+.composer-modules.layout-grid > [data-layout-id] {
+  margin: 0;
+}
+.layout-flow-host {
+  display: contents;
+}
+.composer-modules.layout-grid .layout-flow-host {
+  display: block;
+  position: absolute;
+  z-index: 1;
+}
+.layout-handle-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+.layout-handle {
+  position: absolute;
+  pointer-events: auto;
+  cursor: grab;
+  border: 1px dashed rgba(121, 109, 228, 0.5);
+  border-radius: 12px;
+  background: rgba(121, 109, 228, 0.04);
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease;
+  touch-action: none;
+}
+.layout-handle:hover {
+  background: rgba(121, 109, 228, 0.1);
+  border-color: rgba(121, 109, 228, 0.8);
+}
+.layout-handle.dragging {
+  cursor: grabbing;
+  background: rgba(121, 109, 228, 0.14);
+  border-style: solid;
+  border-color: rgba(102, 90, 214, 0.9);
+}
+.layout-handle-label {
+  position: absolute;
+  top: -9px;
+  left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #6a78d3;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.layout-handle-resize {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1px solid #fff;
+  background: #6a78d3;
+  box-shadow: 0 1px 4px rgba(91, 108, 170, 0.35);
+  cursor: nwse-resize;
+  touch-action: none;
+}
+/* 编辑态：模块虚线描边提示可拖动（内容交互由覆盖层接管） */
+.composer-editing .composer-modules.layout-grid > [data-layout-id] {
+  outline: 1px dashed rgba(121, 109, 228, 0.3);
+  outline-offset: 2px;
+  border-radius: 12px;
+}
+/* v3.7.1：网格态模块内装饰性文字单行化——窗口 / 模块变窄时文字不换行、放不下就省略隐藏，
+   避免换行撑高模块、破坏「整层等比缩放」的布局形状。 */
+.composer-modules.layout-grid .project-strip > span,
+.composer-modules.layout-grid .negative-head small,
+.composer-modules.layout-grid .outpaint-head small,
+.composer-modules.layout-grid .reference-head small,
+.composer-modules.layout-grid .reference-panel > p,
+.composer-modules.layout-grid .reverse-prompt summary,
+.composer-modules.layout-grid .upload,
+.composer-modules.layout-grid .reference-empty,
+.composer-modules.layout-grid .custom-size small,
+.composer-modules.layout-grid .outpaint-valid,
+.composer-modules.layout-grid .outpaint-invalid {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* nowrap 文本的 flex 祖先需要 min-width:0 才能收缩并触发省略（否则被 min-content 顶住） */
+.composer-modules.layout-grid .negative-head > div:first-child,
+.composer-modules.layout-grid .outpaint-head > div:first-child {
+  min-width: 0;
 }

@@ -24,7 +24,7 @@ async function createMask(strokes: Stroke[], dimensions: Dimensions) {
   return blob;
 }
 
-export function MaskPainter({ image, onMaskChange }: { image: File | null; onMaskChange: (file: File | null) => void }) {
+export function MaskPainter({ image, onMaskChange, layoutId, style }: { image: File | null; onMaskChange: (file: File | null) => void; layoutId?: string; style?: React.CSSProperties }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null); const drawing = useRef(false); const [dimensions, setDimensions] = useState<Dimensions | null>(null); const [strokes, setStrokes] = useState<Stroke[]>([]); const [brushSize, setBrushSize] = useState(38);
   const previewUrl = useObjectUrl(image);
 
@@ -53,5 +53,5 @@ export function MaskPainter({ image, onMaskChange }: { image: File | null; onMas
   const stop = () => { drawing.current = false; };
 
   if (!image || !dimensions) return null;
-  return <section className="mask-painter"><div className="mask-head"><div><strong>局部重绘蒙版</strong><small>在需要修改的位置涂抹，未涂抹区域将尽量保持不变。</small></div><div className="mask-tools"><label>画笔 <input type="range" min="12" max="120" value={brushSize} onChange={event => setBrushSize(Number(event.target.value))} /></label><button type="button" onClick={() => setStrokes(current => current.slice(0, -1))} disabled={!strokes.length}>撤销</button><button type="button" onClick={() => setStrokes([])} disabled={!strokes.length}>清空</button></div></div><div className="mask-canvas" style={{ aspectRatio: dimensions.width + " / " + dimensions.height }}><img src={previewUrl} alt="编辑原图" /><canvas ref={canvasRef} onPointerDown={start} onPointerMove={move} onPointerUp={stop} onPointerCancel={stop} /></div></section>;
+  return <section className="mask-painter" data-layout-id={layoutId} style={style}><div className="mask-head"><div><strong>局部重绘蒙版</strong><small>在需要修改的位置涂抹，未涂抹区域将尽量保持不变。</small></div><div className="mask-tools"><label>画笔 <input type="range" min="12" max="120" value={brushSize} onChange={event => setBrushSize(Number(event.target.value))} /></label><button type="button" onClick={() => setStrokes(current => current.slice(0, -1))} disabled={!strokes.length}>撤销</button><button type="button" onClick={() => setStrokes([])} disabled={!strokes.length}>清空</button></div></div><div className="mask-canvas" style={{ aspectRatio: dimensions.width + " / " + dimensions.height }}><img src={previewUrl} alt="编辑原图" /><canvas ref={canvasRef} onPointerDown={start} onPointerMove={move} onPointerUp={stop} onPointerCancel={stop} /></div></section>;
 }
