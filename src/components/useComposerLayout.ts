@@ -73,7 +73,8 @@ export type LayoutHandle = { id: LayoutModuleId; label: string; left: number; to
 
 type DragSession = {
   id: LayoutModuleId;
-  kind: "move" | "resize";
+  /** move 跟指针移动；resize-e 只改宽、resize-s 只改高、resize-se 同时改宽高（均不移动 x/y）。 */
+  kind: "move" | "resize-e" | "resize-s" | "resize-se";
   startClientX: number;
   startClientY: number;
   /** 拖拽基准（px；取「所见位置」，y 用显示 top 而非快照 y，保证从所见位置开始拖）。 */
@@ -468,7 +469,7 @@ export function useComposerLayout({ mode, containerRef }: {
   }, [resolved, mode, colWidth, displayTops, measured]);
 
   const beginDrag = useCallback(
-    (id: LayoutModuleId, kind: "move" | "resize", event: React.PointerEvent) => {
+    (id: LayoutModuleId, kind: "move" | "resize-e" | "resize-s" | "resize-se", event: React.PointerEvent) => {
       applyGhost(null);
       const state = stateRef.current;
       if (!state.snapshot) return;
@@ -502,18 +503,21 @@ export function useComposerLayout({ mode, containerRef }: {
     const base = drag.start;
     const def = moduleDef(drag.id);
     const measuredPx = stateRef.current.measured[drag.id] ?? 0;
-    // 自由跟随指针的实时矩形（不吸附）：拖动改 x/y，缩放改 w/h。
-    const rect: LiveRect =
-      drag.kind === "move"
-        ? { id: drag.id, x: base.x + dx, y: base.y + dy, w: base.w, h: base.h }
-        : {
-            id: drag.id,
-            x: base.x,
-            y: base.y,
-            // 拖拽下限为 px 域：minW（px）换算为列、minH（px）与实测高度换算为 GRID_PX 行，避免直接当坐标单位。
-            w: Math.max(base.w + dx, Math.max(1, Math.ceil(def.minW / colWidth)) * colWidth),
-            h: Math.max(base.h + dy, Math.max(1, Math.ceil(Math.max(def.minH, measuredPx) / GRID_PX)) * GRID_PX),
-          };
+    // 拖拽下限为 px 域：minW（px）换算为列、minH（px）与实测高度换算为 GRID_PX 行，避免直接当坐标单位。
+    const minWpx = Math.max(1, Math.ceil(def.minW / colWidth)) * colWidth;
+    const minHpx = Math.max(1, Math.ceil(Math.max(def.minH, measuredPx) / GRID_PX)) * GRID_PX;
+    // 自由跟随指针的实时矩形（不吸附）：按 kind 只改动对应维度。
+    // move 改 x/y；resize-e/s/se 分别只改右缘宽 / 下缘高 / 右下角宽高，x/y 恒取基准（缩放绝不移动模块）。
+    const isMove = drag.kind === "move";
+    const growsW = drag.kind === "resize-e" || drag.kind === "resize-se";
+    const growsH = drag.kind === "resize-s" || drag.kind === "resize-se";
+    const rect: LiveRect = {
+      id: drag.id,
+      x: isMove ? base.x + dx : base.x,
+      y: isMove ? base.y + dy : base.y,
+      w: growsW ? Math.max(base.w + dx, minWpx) : base.w,
+      h: growsH ? Math.max(base.h + dy, minHpx) : base.h,
+    };
     applyLive(rect);
     // 吸附落点预览：与 endDrag 使用完全相同的吸附 / 下限 / 避让公式（同一快照），保证预览 = 落地位置。
     const state = stateRef.current;

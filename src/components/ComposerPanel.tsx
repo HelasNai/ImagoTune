@@ -476,15 +476,35 @@ export function ComposerPanel({
               onPointerUp={layout.endDrag}
               onPointerCancel={layout.endDrag}
             >
-              <span className="layout-handle-label">{handle.label}</span>
+              <span className="layout-handle-label" style={{ top: 6, left: 8 }}>{handle.label}</span>
               <button
                 type="button"
                 className="layout-handle-hide"
+                style={{ top: 6, right: 8 }}
                 title="隐藏该模块（可从「已隐藏」列表恢复）"
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => { event.stopPropagation(); layout.hideModule(handle.id); }}
               >×</button>
-              <span className="layout-handle-resize" onPointerDown={(event) => layout.beginDrag(handle.id, "resize", event)} aria-hidden="true" />
+              {/* 三向缩放把手：位置由本 todo 内联保证「全部落在 handle 盒内」；尺寸/配色归 todo 11 的 CSS。
+                  各把手自带 kind → 只改对应维度（e 改宽、s 改高、se 改宽高），x/y 恒不变。 */}
+              <span
+                className="layout-handle-resize e"
+                style={{ top: "50%", right: 4, bottom: "auto", transform: "translateY(-50%)", cursor: "ew-resize" }}
+                onPointerDown={(event) => layout.beginDrag(handle.id, "resize-e", event)}
+                aria-hidden="true"
+              />
+              <span
+                className="layout-handle-resize s"
+                style={{ left: "50%", bottom: 4, right: "auto", transform: "translateX(-50%)", cursor: "ns-resize" }}
+                onPointerDown={(event) => layout.beginDrag(handle.id, "resize-s", event)}
+                aria-hidden="true"
+              />
+              <span
+                className="layout-handle-resize se"
+                style={{ right: 4, bottom: 4, cursor: "nwse-resize" }}
+                onPointerDown={(event) => layout.beginDrag(handle.id, "resize-se", event)}
+                aria-hidden="true"
+              />
             </div>
           ))}
         </div>
