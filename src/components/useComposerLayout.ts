@@ -14,6 +14,7 @@ import {
   resolveVerticalLayout,
   setHidden,
   setPlacement,
+  snapToGrid,
   visibleModuleIds,
   type LayoutMode,
   type LayoutModuleId,
@@ -77,7 +78,7 @@ function displayLeft(placement: LayoutPlacement): number {
   return Math.max(0, Math.min(placement.x, Math.max(0, LAYOUT_COLS - width)));
 }
 
-/** 占用矩形：宽度按列范围 clamp、高度取「快照 h 与实测高度」较大者，更接近真实遮挡（unit = 比例单位 px）。 */
+/** 占用矩形：宽度按列范围 clamp、高度取「快照 h（行）与实测高度换算（px→行）」较大者，更接近真实遮挡（unit = 垂直行高 px，调用方传 GRID_PX）。 */
 function occupiedWithMeasured(
   snapshot: LayoutSnapshot,
   mode: LayoutMode,
@@ -96,7 +97,7 @@ function occupiedWithMeasured(
   return result;
 }
 
-/** 首次进入编辑模式：测量当前流式排布（以第一个模块左上角为原点），生成初始快照（水平换算为列、垂直换算为同一比例单位）。 */
+/** 首次进入编辑模式：测量当前流式排布（以第一个模块左上角为原点），生成初始快照（水平换算为列、垂直换算为 GRID_PX 行；minW/minH 为 px 语义，须换算为列/行后作下限，绝不直接当坐标单位）。 */
 function measureInitial(container: HTMLElement | null, mode: LayoutMode, cardWidth: number): LayoutSnapshot | null {
   if (!container) return null;
   const nodes = [...container.querySelectorAll<HTMLElement>("[data-layout-id]")];
@@ -114,11 +115,12 @@ function measureInitial(container: HTMLElement | null, mode: LayoutMode, cardWid
   for (const { node, rect } of rects) {
     const id = node.dataset.layoutId;
     if (!id || !isKnownModuleId(id)) continue;
+    const def = moduleDef(id);
     const placement: LayoutPlacement = {
       x: Math.floor((rect.left - originX) / colWidth),
-      y: Math.floor((rect.top - originY) / colWidth),
-      w: Math.max(Math.round(rect.width / colWidth), moduleDef(id).minW),
-      h: Math.max(Math.round(rect.height / colWidth), moduleDef(id).minH),
+      y: Math.floor((rect.top - originY) / GRID_PX),
+      w: Math.max(Math.round(rect.width / colWidth), Math.ceil(def.minW / colWidth)),
+      h: Math.max(Math.round(rect.height / GRID_PX), Math.ceil(def.minH / GRID_PX)),
     };
     snapshot = setPlacement(snapshot, mode, id, placement);
   }
@@ -127,8 +129,9 @@ function measureInitial(container: HTMLElement | null, mode: LayoutMode, cardWid
 
 /**
  * 创作页布局编辑（网格画布 + 自由拖动 / 松手吸附 / 缩放 / 隐藏）。
- * - 坐标系 = 比例单位（水平列与垂直格共用同一单位 = 卡宽 / LAYOUT_COLS）：整层随窗口
- *   等比缩放，窗口还原时布局还原（不含取整误差）；
+ * - 坐标系 = 双单位：水平 x/w 为列（1 列 = 卡宽 / LAYOUT_COLS，随窗口水平自适应）；
+ *   垂直 y/h 为固定行（1 行 = GRID_PX = 16px，与窗口无关，内容高度驱动）；
+ *   松手吸附：水平吸附到列、垂直经 snapToGrid 吸附到行；
  * - 快照为 null = 流式（与现状零差异）；首次进入编辑时测量生成，之后实时写入 localStorage；
  * - 通用模块共享一份坐标（三模式同步）、专属模块按模式分层（见 src/lib/layout.ts）；
  * - 渲染显示位置 = 意图坐标经「纵向推挤」消解（模块内容高度动态时不重叠）。
@@ -178,7 +181,7 @@ export function useComposerLayout({ mode, containerRef }: {
     }));
   }, [updateStore]);
 
-  /** 布局比例单位（px = 卡片内容宽 / LAYOUT_COLS）：水平列与垂直格共用同一单位，整层随窗口等比缩放。 */
+  /** 布局水平列宽（px = 卡片内容宽 / LAYOUT_COLS）：仅用于水平量（left/width/x/w）；垂直量一律走 GRID_PX 固定行。 */
   const colWidth = cardWidth > 0 ? cardWidth / LAYOUT_COLS : GRID_PX;
 
   // 卡片内容宽监测（display:contents 容器自身无盒，用父级 .composer 的内宽）
@@ -254,11 +257,11 @@ export function useComposerLayout({ mode, containerRef }: {
             .filter((id) => !isHidden(resolved, mode, id))
             .map((id) => {
               const placement = effectivePlacement(resolved, mode, id)!;
-              const measuredH = measured[id] ? measured[id] / colWidth : undefined;
+              const measuredH = measured[id] ? measured[id] / GRID_PX : undefined;
               return { id, placement, measuredH };
             })
         : [],
-    [resolved, mode, measured, colWidth],
+    [resolved, mode, measured],
   );
 
   const displayTops = useMemo(() => resolveVerticalLayout(layoutItems), [layoutItems]);
@@ -277,9 +280,9 @@ export function useComposerLayout({ mode, containerRef }: {
       return {
         position: "absolute",
         left: displayLeft(placement) * colWidth,
-        top: top * colWidth,
+        top: top * GRID_PX,
         width: Math.min(placement.w, LAYOUT_COLS) * colWidth,
-        minHeight: placement.h * colWidth,
+        minHeight: placement.h * GRID_PX,
       };
     },
     [resolved, mode, colWidth, live, displayTops],
@@ -290,10 +293,10 @@ export function useComposerLayout({ mode, containerRef }: {
     let bottom = 0;
     for (const item of layoutItems) {
       const top = displayTops[item.id] ?? item.placement.y;
-      bottom = Math.max(bottom, (top + Math.max(item.placement.h, item.measuredH ?? 0)) * colWidth);
+      bottom = Math.max(bottom, (top + Math.max(item.placement.h, item.measuredH ?? 0)) * GRID_PX);
     }
     return bottom;
-  }, [layoutItems, displayTops, colWidth]);
+  }, [layoutItems, displayTops]);
 
   /** 编辑模式覆盖层热区（与模块同位置同尺寸；编辑态下替代内容交互承担拖拽 / 缩放）。 */
   const handles = useMemo<LayoutHandle[]>(() => {
@@ -307,9 +310,9 @@ export function useComposerLayout({ mode, containerRef }: {
         id: item.id,
         label: moduleDef(item.id).label,
         left: displayLeft(item.placement) * colWidth,
-        top: top * colWidth,
+        top: top * GRID_PX,
         width: Math.min(item.placement.w, LAYOUT_COLS) * colWidth,
-        height: Math.max(item.measuredH ?? 0, item.placement.h) * colWidth,
+        height: Math.max(item.measuredH ?? 0, item.placement.h) * GRID_PX,
       };
     });
   }, [editing, resolved, layoutItems, displayTops, colWidth, live]);
@@ -352,11 +355,11 @@ export function useComposerLayout({ mode, containerRef }: {
     const anchor = effectivePlacement(resolved, mode, "prompt-assistant");
     if (!anchor) return undefined;
     const top = displayTops["prompt-assistant"] ?? anchor.y;
-    const anchorHeight = Math.max(anchor.h, measured["prompt-assistant"] ? measured["prompt-assistant"] / colWidth : 0);
+    const anchorHeight = Math.max(anchor.h, measured["prompt-assistant"] ? measured["prompt-assistant"] / GRID_PX : 0);
     return {
       position: "absolute",
       left: displayLeft(anchor) * colWidth,
-      top: (top + anchorHeight) * colWidth,
+      top: (top + anchorHeight) * GRID_PX,
       width: Math.min(anchor.w, LAYOUT_COLS) * colWidth,
     };
   }, [resolved, mode, colWidth, displayTops, measured]);
@@ -371,18 +374,18 @@ export function useComposerLayout({ mode, containerRef }: {
       event.preventDefault();
       event.stopPropagation();
       (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-      // 从「所见位置」开始（px）：y 取显示 top、x/w 取列范围 clamp 后的值（与渲染一致）。
+      // 从「所见位置」开始（px）：y 取显示 top（行→px 经 GRID_PX）、x/w 取列范围 clamp 后的值（与渲染一致）。
       const shownX = displayLeft(placement) * colWidth;
-      const shownY = (displayTops[id] ?? placement.y) * colWidth;
+      const shownY = (displayTops[id] ?? placement.y) * GRID_PX;
       const shownW = Math.min(placement.w, LAYOUT_COLS) * colWidth;
       dragRef.current = {
         id,
         kind,
         startClientX: event.clientX,
         startClientY: event.clientY,
-        start: { x: shownX, y: shownY, w: shownW, h: placement.h * colWidth },
+        start: { x: shownX, y: shownY, w: shownW, h: placement.h * GRID_PX },
       };
-      applyLive({ id, x: shownX, y: shownY, w: shownW, h: placement.h * colWidth });
+      applyLive({ id, x: shownX, y: shownY, w: shownW, h: placement.h * GRID_PX });
     },
     [mode, colWidth, displayTops],
   );
@@ -398,12 +401,14 @@ export function useComposerLayout({ mode, containerRef }: {
       return;
     }
     const def = moduleDef(drag.id);
+    // 拖拽下限为 px 域：minW（px）换算为列、minH（px）与实测高度换算为 GRID_PX 行，避免直接当坐标单位。
+    const measuredPx = stateRef.current.measured[drag.id] ?? 0;
     applyLive({
       id: drag.id,
       x: base.x,
       y: base.y,
-      w: Math.max(base.w + dx, def.minW * colWidth),
-      h: Math.max(base.h + dy, def.minH * colWidth),
+      w: Math.max(base.w + dx, Math.max(1, Math.ceil(def.minW / colWidth)) * colWidth),
+      h: Math.max(base.h + dy, Math.max(1, Math.ceil(Math.max(def.minH, measuredPx) / GRID_PX)) * GRID_PX),
     });
   }, [colWidth]);
 
@@ -415,14 +420,15 @@ export function useComposerLayout({ mode, containerRef }: {
     const state = stateRef.current;
     if (!drag || !liveRect || !state.snapshot) return;
     const def = moduleDef(drag.id);
-    // 松手吸附：水平吸附到列、垂直吸附到同一比例单位（整层等比）。
+    const measuredPx = state.measured[drag.id] ?? 0;
+    // 松手吸附：水平吸附到列，垂直经 snapToGrid 吸附到 GRID_PX 行；minW/minH（px）换算为列/行后作下限。
     const desired: LayoutPlacement = {
       x: Math.round(liveRect.x / colWidth),
-      y: Math.round(liveRect.y / colWidth),
-      w: Math.max(Math.round(liveRect.w / colWidth), def.minW),
-      h: Math.max(Math.round(liveRect.h / colWidth), def.minH),
+      y: Math.round(snapToGrid(liveRect.y) / GRID_PX),
+      w: Math.max(Math.round(liveRect.w / colWidth), Math.ceil(def.minW / colWidth)),
+      h: Math.max(Math.round(liveRect.h / GRID_PX), Math.ceil(Math.max(def.minH, measuredPx) / GRID_PX)),
     };
-    const occupied = occupiedWithMeasured(state.snapshot, mode, drag.id, state.measured, colWidth);
+    const occupied = occupiedWithMeasured(state.snapshot, mode, drag.id, state.measured, GRID_PX);
     const placed = findFreeSlot(desired, occupied);
     commitSnapshot(setPlacement(state.snapshot, mode, drag.id, placed));
   }, [mode, colWidth, commitSnapshot]);
@@ -525,11 +531,15 @@ export function useComposerLayout({ mode, containerRef }: {
     editing,
     /** 已建立自定义布局（快照存在 → 网格渲染）；false = 流式（与现状零差异） */
     custom: snapshot !== null,
+    /** 当前水平列宽（px = 卡片内容宽 / LAYOUT_COLS；导入旧版 ITL1 分享码时换算 y/h 用）。 */
+    colWidth,
     /** 拖动 / 缩放中的模块 id（视觉反馈用）。 */
     draggingId: live?.id ?? null,
     styleOf,
     modulesClassName: resolved ? "composer-modules layout-grid" : "composer-modules",
-    modulesStyle: resolved ? ({ height: containerHeight, "--layout-unit": `${colWidth}px` } as React.CSSProperties) : undefined,
+    modulesStyle: resolved
+      ? ({ height: containerHeight, "--layout-col-unit": `${colWidth}px`, "--layout-row-unit": `${GRID_PX}px` } as React.CSSProperties)
+      : undefined,
     handles,
     /** 当前模式下已隐藏、可从列表恢复的模块 */
     hiddenIds,
