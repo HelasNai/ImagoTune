@@ -1,20 +1,20 @@
 # tests — 纯逻辑单元测试
 
 ## OVERVIEW
-项目唯一测试层：24 个 `*.test.ts` / 215 个 it（扁平结构），Vitest 4.x 纯 Node 环境，无 DOM。
+项目唯一测试层：27 个 `*.test.ts` / 243 个 it（扁平结构），Vitest 4.x 纯 Node 环境，无 DOM。
 
 ## COVERAGE BOUNDARY
 可测（仅纯逻辑，文件名 kebab-case 与模块一一对应）：
 - `electron/`：queue-store、gallery-store、png-metadata、image-recipe、generation-error（同测于 `recipe-error.test`）、reverse-prompt、local-ai-model-manager、fs-utils、data-url、constants、model-config、providers（`provider-presets` / `providers-hunyuan`）
-- `src/lib/`：creative、local-ai、outpaint、tutorial、format、media、settings-dirty、provider-preset、role-options
+- `src/lib/`：creative、local-ai、outpaint、tutorial、format、media、settings-dirty、provider-preset、role-options、progress、queue、gallery-focus
 - `model-config.test`（50 it）覆盖多供应商配置纯逻辑：`/models` 三变体解析/去重/排序/500 截断、刷新合并（保留标注/custom 不消失/missing 标记）、legacy 迁移合成（含同 id 合并去重）、保存载荷校验（含 `api` 枚举）、`resolveRoleBinding`/`resolveJobBinding` 三分支（含 fail-closed）、`configured` 四条件、`runSavePlan` 成功与中途失败、`stripProviderSecrets` 密钥剥离
-- `settings-dirty.test`（26 it）锁定设置草稿 vs 快照脏检测（含 `api` 字段判脏、undefined 归一）；`provider-presets` / `providers-hunyuan`（5 / 8 it）锁定 `electron/providers/` 预设表、注册表与混元适配器纯逻辑（注入 fake fetcher）；`provider-preset`（5 it）锁定 `src/lib/provider-preset.ts` 草稿映射与深拷贝；`role-options`（13 it）锁定角色下拉选项（顺序/已删除供应商 ⚠ 置顶注入）、模型选项（未标注过滤与 ⚠ 注入、供应商缺失）、`firstAnnotatedModel` 三态、`buildQuickSwitchPayload`（剥离 `hasKey`、`removedProviderIds` 恒空、序列化不含 `hasKey`/`apiKey`）
+- `settings-dirty.test`（26 it）锁定设置草稿 vs 快照脏检测（含 `api` 字段判脏、undefined 归一）；`provider-presets` / `providers-hunyuan`（5 / 8 it）锁定 `electron/providers/` 预设表、注册表与混元适配器纯逻辑（注入 fake fetcher）；`provider-preset`（5 it）锁定 `src/lib/provider-preset.ts` 草稿映射与深拷贝；`role-options`（13 it）锁定角色下拉选项（顺序/已删除供应商 ⚠ 置顶注入）、模型选项（未标注过滤与 ⚠ 注入、供应商缺失）、`firstAnnotatedModel` 三态、`buildQuickSwitchPayload`（剥离 `hasKey`、`removedProviderIds` 恒空、序列化不含 `hasKey`/`apiKey`）；`progress`（11 it）锁定统一进度纯逻辑：`normalizeLegacyProgress`（scope/id/状态映射、100→done、无 message/progress）、`mapLocalAIProgress`（单阶段即局部值、多阶段等分、跨阶段单调不减、越界钳制）、`clampProgress`、`formatElapsed`（elapsedMs 优先、无起始返回 null、负差归零）；`format` 新增 `queueStatusLabel` 六状态中文映射与 `formatShortDate`（5 it）侧栏紧凑时间（今天=时:分、今年=月/日、更早=年/月/日、无效输入空串、ISO/时间戳入参）；`queue`（4 it）锁定展示排序（活跃 FIFO 置顶 + 历史倒序）、`waitingAheadCount`（按活跃 FIFO 位置计算，与渲染顺序解耦）与 `historyQueueCount`；`queue-store` 新增 `clear()` 用例（仅清非活跃、保留 queued/running）；`gallery-focus`（6 it）锁定跨页聚焦定位：页码按「目标所属项目自身列表」换算（非全局位置）、newest/oldest 双向排序、整除边界的向上取整、悬空 id → null、收件箱与其它项目归属
 - 跨层一致性测试（同时导入 electron 纯模块与 `src/lib` 同名常量/行为）：`constants.test`（默认模型 / inbox）、`outpaint-limits.test`（画布常量）、`local-ai-limits.test`（本地 AI 上限）、`data-url.test`（去前缀正则，含 `image/svg+xml` 与大写 MIME 用例）
-- 源码文本一致性测试：`preload-channels.test`（导入 `../electron/channels` 并读取 `../electron/preload.ts` 源码，双向锁定 71 个通道字符串；因沙箱化 preload 无法 `import` 本地模块，用源码文本守卫替代运行时单源化）
+- 源码文本一致性测试：`preload-channels.test`（导入 `../electron/channels` 并读取 `../electron/preload.ts` 源码，双向锁定 74 个通道字符串；因沙箱化 preload 无法 `import` 本地模块，用源码文本守卫替代运行时单源化）
 
 绝不测：
 - UI 组件（`src/components`、`src/main.tsx`）
-- `electron/main.ts`（IPC / 窗口 / 生命周期）；`electron/preload.ts` 无运行时测试，但由 `tests/preload-channels.test.ts` 做源码文本一致性检查（preload↔channels 71 通道双向锁定）
+- `electron/main.ts`（IPC / 窗口 / 生命周期）；`electron/preload.ts` 无运行时测试，但由 `tests/preload-channels.test.ts` 做源码文本一致性检查（preload↔channels 74 通道双向锁定）
 - `src/workers/`（WebGPU 推理）
 
 ## CONVENTIONS
