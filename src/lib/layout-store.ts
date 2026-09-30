@@ -64,29 +64,68 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), Math.max(min, max));
 }
 
-/** 解析 v4：结构不合法返回 null；缺 default 方案时补回到最前（沿用旧 loadStore 容错语义）。 */
+/**
+ * 规范化 v4 快照的内层形状（畸形输入降级为安全空结构，绝不抛错；least data loss）。
+ * 语义（只修「形状」，不校验单个 placement 的坐标语义——坐标合法性由运行时 clamp / 补位兜底）：
+ * - snapshot 非普通对象（含 null / undefined）→ null（表示尚未自定义，走流式渲染）；
+ * - shared 非普通对象 → {}；
+ * - modes 非普通对象 → {}；generate / edit / outpaint 各自非普通对象 → {}；
+ * - hidden 非普通对象 → { shared: [], modes: { generate: [], edit: [], outpaint: [] } }；各内层列表非数组 → []；
+ * - 合法部分原样保留（引用不变），内层 version 归位 1（store 外层 4 与内层 1 为独立版本空间）。
+ */
+function normalizeV4Snapshot(value: unknown): LayoutSnapshot | null {
+  if (value === null || value === undefined) return null;
+  if (!isPlainObject(value)) return null;
+  const placementMap = (raw: unknown): PlacementMap => (isPlainObject(raw) ? (raw as PlacementMap) : {});
+  const hiddenList = (raw: unknown): LayoutModuleId[] => (Array.isArray(raw) ? (raw as LayoutModuleId[]) : []);
+  const rawModes = isPlainObject(value.modes) ? value.modes : {};
+  const rawHidden = isPlainObject(value.hidden) ? value.hidden : {};
+  const rawHiddenModes = isPlainObject(rawHidden.modes) ? rawHidden.modes : {};
+  return {
+    version: 1,
+    shared: placementMap(value.shared),
+    modes: {
+      generate: placementMap(rawModes.generate),
+      edit: placementMap(rawModes.edit),
+      outpaint: placementMap(rawModes.outpaint),
+    },
+    hidden: {
+      shared: hiddenList(rawHidden.shared),
+      modes: {
+        generate: hiddenList(rawHiddenModes.generate),
+        edit: hiddenList(rawHiddenModes.edit),
+        outpaint: hiddenList(rawHiddenModes.outpaint),
+      },
+    },
+  };
+}
+
+/**
+ * 解析 v4：顶层 presets 结构非法（缺失 / 非数组 / 空）返回 null；缺 default 方案时补回到最前（沿用旧 loadStore 容错语义）；
+ * 每份快照经 `normalizeV4Snapshot` 做形状归一（畸形降级而非整库作废，避免 render 期 `ensureModePlacements` 抛错白屏）；
+ * `activePresetId` 悬空（非字符串或匹配不到任何方案）→ 回落 `default`（镜像 `migrateV3ToV4`），
+ * 保证 `commitSnapshot` 的 `preset.id === activePresetId` 查找必有命中、布局编辑能落盘。
+ */
 function parseV4(record: Record<string, unknown>): LayoutStore | null {
   const presets = record.presets;
   if (!Array.isArray(presets) || presets.length === 0) return null;
   const normalized: LayoutPreset[] = [];
   for (const item of presets) {
     if (!isPlainObject(item) || typeof item.id !== "string") return null;
-    const snapshot = item.snapshot;
-    if (snapshot !== null && snapshot !== undefined && !isPlainObject(snapshot)) return null;
     normalized.push({
       id: item.id,
       name: typeof item.name === "string" ? item.name : item.id,
-      snapshot: snapshot === undefined ? null : (snapshot as LayoutSnapshot | null),
+      snapshot: normalizeV4Snapshot(item.snapshot),
     });
   }
   if (!normalized.some((item) => item.id === DEFAULT_PRESET.id)) {
     normalized.unshift({ ...DEFAULT_PRESET });
   }
-  return {
-    version: 4,
-    activePresetId: typeof record.activePresetId === "string" ? record.activePresetId : DEFAULT_PRESET.id,
-    presets: normalized,
-  };
+  const activePresetId =
+    typeof record.activePresetId === "string" && normalized.some((item) => item.id === record.activePresetId)
+      ? record.activePresetId
+      : DEFAULT_PRESET.id;
+  return { version: 4, activePresetId, presets: normalized };
 }
 
 /** 解析 v3：仅校验顶层结构（presets 非空数组），其余原样保留（迁移时再逐项容错）。 */

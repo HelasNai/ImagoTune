@@ -196,7 +196,11 @@ export function rectsOverlap(a: LayoutPlacement, b: LayoutPlacement): boolean {
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 }
 
-/** 某模式下已占用的矩形列表（可见、未隐藏、排除自身），供碰撞检测 / 避让使用。 */
+/**
+ * 某模式下已占用的矩形列表（可见、未隐藏、排除自身），供碰撞检测 / 避让使用。
+ * 注意：这是**纯快照**占用（高度用快照 h），**不是生产拖拽/缩放路径**——实时避让由 `useComposerLayout`
+ * 内部的 `occupiedWithMeasured` 完成（快照 h 与实测高度取大，更接近真实遮挡）；本函数供测试与无实测数据场景使用。
+ */
 export function occupiedInMode(snapshot: LayoutSnapshot, mode: LayoutMode, excludeId?: LayoutModuleId): LayoutPlacement[] {
   const result: LayoutPlacement[] = [];
   for (const id of visibleModuleIds(mode)) {

@@ -114,6 +114,85 @@ describe("parseStoredLayout", () => {
     expect(result.store.activePresetId).toBe("preset-a");
   });
 
+  it("v4 快照为空对象时归一为形状安全的空快照（不整库作废、不崩溃）", () => {
+    const raw = JSON.stringify({
+      version: 4,
+      activePresetId: "default",
+      presets: [{ id: "default", name: "默认", snapshot: {} }],
+    });
+    const result = parseStoredLayout(raw);
+    expect(result.kind).toBe("v4");
+    if (result.kind !== "v4") throw new Error("unreachable");
+    expect(result.store.presets[0].snapshot).toEqual({
+      version: 1,
+      shared: {},
+      modes: { generate: {}, edit: {}, outpaint: {} },
+      hidden: { shared: [], modes: { generate: [], edit: [], outpaint: [] } },
+    });
+  });
+
+  it("v4 快照内层字段类型错乱时仍安全归一（shared=null / modes=字符串 / hidden=数字）", () => {
+    const raw = JSON.stringify({
+      version: 4,
+      activePresetId: "default",
+      presets: [{ id: "default", name: "默认", snapshot: { shared: null, modes: "x", hidden: 42 } }],
+    });
+    const result = parseStoredLayout(raw);
+    expect(result.kind).toBe("v4");
+    if (result.kind !== "v4") throw new Error("unreachable");
+    expect(result.store.presets[0].snapshot).toEqual({
+      version: 1,
+      shared: {},
+      modes: { generate: {}, edit: {}, outpaint: {} },
+      hidden: { shared: [], modes: { generate: [], edit: [], outpaint: [] } },
+    });
+  });
+
+  it("v4 快照部分合法时保留合法数据、只归一畸形字段（least data loss）", () => {
+    const raw = JSON.stringify({
+      version: 4,
+      activePresetId: "default",
+      presets: [
+        {
+          id: "default",
+          name: "默认",
+          snapshot: {
+            shared: { prompt: { x: 2, y: 5, w: 40, h: 10 } },
+            modes: { generate: "bad", edit: { mask: { x: 4, y: 6, w: 24, h: 15 } } },
+            hidden: { shared: null, modes: { generate: "bad", edit: ["upload"] } },
+          },
+        },
+      ],
+    });
+    const result = parseStoredLayout(raw);
+    expect(result.kind).toBe("v4");
+    if (result.kind !== "v4") throw new Error("unreachable");
+    const snapshot = result.store.presets[0].snapshot;
+    expect(snapshot?.shared.prompt).toEqual({ x: 2, y: 5, w: 40, h: 10 });
+    expect(snapshot?.modes.generate).toEqual({});
+    expect(snapshot?.modes.edit.mask).toEqual({ x: 4, y: 6, w: 24, h: 15 });
+    expect(snapshot?.modes.outpaint).toEqual({});
+    expect(snapshot?.hidden.shared).toEqual([]);
+    expect(snapshot?.hidden.modes.generate).toEqual([]);
+    expect(snapshot?.hidden.modes.edit).toEqual(["upload"]);
+    expect(snapshot?.hidden.modes.outpaint).toEqual([]);
+  });
+
+  it("v4 activePresetId 悬空时回落 default（commitSnapshot 式查找必有命中）", () => {
+    const raw = JSON.stringify({
+      version: 4,
+      activePresetId: "ghost",
+      presets: [{ id: "preset-a", name: "方案 A", snapshot: null }],
+    });
+    const result = parseStoredLayout(raw);
+    expect(result.kind).toBe("v4");
+    if (result.kind !== "v4") throw new Error("unreachable");
+    expect(result.store.presets.map((item) => item.id)).toEqual(["default", "preset-a"]);
+    expect(result.store.activePresetId).toBe("default");
+    const hit = result.store.presets.find((item) => item.id === result.store.activePresetId);
+    expect(hit).toBeDefined();
+  });
+
   it("v3 数据识别为 kind=v3 且原样保留", () => {
     const legacy = makeLegacyStore();
     const result = parseStoredLayout(JSON.stringify(legacy));
