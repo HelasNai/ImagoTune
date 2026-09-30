@@ -337,8 +337,11 @@ export function resolveAllConflicts(snapshot: LayoutSnapshot, mode: LayoutMode):
   return next;
 }
 
+/** 旧版分享码前缀（v1：x/w 与 y/h 同为「64 列比例单位」，导入时 y/h 需按当前 colWidth 近似换算为行）。 */
+export const LAYOUT_CODE_PREFIX_V1 = "ITL1:";
+
 /** 分享码前缀（字符串即对外契约；格式不兼容调整时递增版本号数字）。 */
-export const LAYOUT_CODE_PREFIX = "ITL1:";
+export const LAYOUT_CODE_PREFIX = "ITL2:";
 
 function toBase64Url(value: string): string {
   return btoa(value).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -362,14 +365,51 @@ export function encodeLayoutCode(snapshot: LayoutSnapshot): string {
     if (placement) modules[def.id] = [placement.x, placement.y, placement.w, placement.h];
   }
   const hidden = snapshot.hidden.shared.filter((id) => isSharedModule(id));
-  return LAYOUT_CODE_PREFIX + toBase64Url(JSON.stringify({ v: 1, m: modules, h: hidden }));
+  return LAYOUT_CODE_PREFIX + toBase64Url(JSON.stringify({ v: 2, m: modules, h: hidden }));
 }
 
-/** 分享码解码（严格校验：前缀 / base64 / JSON / 版本 / 模块范围 / 数值护栏）；任何异常返回 null。 */
-export function decodeLayoutCode(code: string): { shared: PlacementMap; hidden: LayoutModuleId[] } | null {
+/** 分享码解码结果：legacy=true 仅表示来自旧版 ITL1 码（y/h 为按当前 colWidth 的近似换算，x/w 列值精确）。 */
+export type DecodedLayoutCode = { shared: PlacementMap; hidden: LayoutModuleId[]; legacy: boolean };
+
+/** 分享码数值护栏（防畸形码撑爆布局）：在取整 / 换算之后校验。y 以「行」为单位，上限高于 x/w/h。 */
+function withinShareGuards(placement: LayoutPlacement): boolean {
+  return (
+    placement.x >= 0 &&
+    placement.x <= 400 &&
+    placement.y >= 0 &&
+    placement.y <= 4000 &&
+    placement.w >= 1 &&
+    placement.w <= 400 &&
+    placement.h >= 1 &&
+    placement.h <= 400
+  );
+}
+
+/**
+ * 旧版（ITL1）坐标换算：x/w 为列（数值不变、钳入列范围）；
+ * y/h 为旧比例单位（1 单位 = colWidth px），经 colWidth / GRID_PX 近似换算为行（y/h 不保真，仅近似）。
+ */
+function convertLegacyPlacement(x: number, y: number, w: number, h: number, colWidth: number): LayoutPlacement {
+  const nextW = clampInt(Math.round(w), 1, LAYOUT_COLS);
+  return {
+    x: clampInt(Math.round(x), 0, LAYOUT_COLS - nextW),
+    y: Math.max(0, Math.round((y * colWidth) / GRID_PX)),
+    w: nextW,
+    h: Math.max(1, Math.round((h * colWidth) / GRID_PX)),
+  };
+}
+
+/**
+ * 分享码解码（严格校验：前缀 / base64 / JSON / 版本 / 模块范围 / 数值护栏）；任何异常返回 null。
+ * ITL2 直接解码；ITL1 旧码需提供有效的 colWidth（当前列宽 px）做 y/h 近似换算，缺失或非法一律拒绝。
+ */
+export function decodeLayoutCode(code: string, colWidth?: number): DecodedLayoutCode | null {
   const trimmed = code.trim();
-  if (!trimmed.startsWith(LAYOUT_CODE_PREFIX)) return null;
-  const json = fromBase64Url(trimmed.slice(LAYOUT_CODE_PREFIX.length));
+  const isV2 = trimmed.startsWith(LAYOUT_CODE_PREFIX);
+  const isV1 = !isV2 && trimmed.startsWith(LAYOUT_CODE_PREFIX_V1);
+  if (!isV2 && !isV1) return null;
+  if (isV1 && (typeof colWidth !== "number" || !Number.isFinite(colWidth) || colWidth <= 0)) return null;
+  const json = fromBase64Url(trimmed.slice((isV2 ? LAYOUT_CODE_PREFIX : LAYOUT_CODE_PREFIX_V1).length));
   if (!json) return null;
   let payload: unknown;
   try {
@@ -379,22 +419,24 @@ export function decodeLayoutCode(code: string): { shared: PlacementMap; hidden: 
   }
   if (!payload || typeof payload !== "object") return null;
   const record = payload as { v?: unknown; m?: unknown; h?: unknown };
-  if (record.v !== 1 || !record.m || typeof record.m !== "object") return null;
+  if (record.v !== (isV2 ? 2 : 1) || !record.m || typeof record.m !== "object") return null;
   const shared: PlacementMap = {};
   for (const [id, value] of Object.entries(record.m as Record<string, unknown>)) {
     if (!isKnownModuleId(id) || !isSharedModule(id)) continue; // 只接受通用模块
     if (!Array.isArray(value) || value.length !== 4) continue;
-    const [x, y, w, h] = value as unknown[];
-    if (![x, y, w, h].every((item) => typeof item === "number" && Number.isFinite(item))) continue;
-    if ((x as number) < 0 || (y as number) < 0 || (w as number) <= 0 || (h as number) <= 0) continue;
-    if ((x as number) > 400 || (y as number) > 2000 || (w as number) > 400 || (h as number) > 400) continue; // 防畸形码撑爆布局
-    shared[id] = { x: Math.round(x as number), y: Math.round(y as number), w: Math.round(w as number), h: Math.round(h as number) };
+    const [rawX, rawY, rawW, rawH] = value as unknown[];
+    if (![rawX, rawY, rawW, rawH].every((item) => typeof item === "number" && Number.isFinite(item))) continue;
+    const placement = isV2
+      ? { x: Math.round(rawX as number), y: Math.round(rawY as number), w: Math.round(rawW as number), h: Math.round(rawH as number) }
+      : convertLegacyPlacement(rawX as number, rawY as number, rawW as number, rawH as number, colWidth as number);
+    if (!withinShareGuards(placement)) continue; // 防畸形码撑爆布局（换算后同样受限）
+    shared[id] = placement;
   }
   const hidden = Array.isArray(record.h)
     ? (record.h as unknown[]).filter((id): id is LayoutModuleId => typeof id === "string" && isKnownModuleId(id) && isSharedModule(id))
     : [];
   if (!Object.keys(shared).length) return null;
-  return { shared, hidden };
+  return { shared, hidden, legacy: isV1 };
 }
 
 /** 导入应用：只替换通用池（坐标 + 隐藏），专属层原样保留（撞位由 resolveAllConflicts 让位）。 */

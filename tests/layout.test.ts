@@ -261,38 +261,76 @@ describe("layout ensure placements", () => {
 });
 
 describe("layout share code", () => {
-  it("编码只含通用模块（专属不进码），解码完整还原坐标与隐藏", () => {
+  it("ITL2 往返：编码只含通用模块（专属不进码），解码完整还原坐标与隐藏（legacy=false）", () => {
     let snapshot = createEmptySnapshot();
     snapshot = setPlacement(snapshot, "generate", "prompt", { x: 2, y: 3, w: 40, h: 8 });
     snapshot = setPlacement(snapshot, "generate", "controls", { x: 0, y: 12, w: 40, h: 4 });
     snapshot = setPlacement(snapshot, "edit", "mask", { x: 1, y: 1, w: 20, h: 10 });
     snapshot = setHidden(snapshot, "generate", "reverse-prompt", true);
     const code = encodeLayoutCode(snapshot);
-    expect(code.startsWith("ITL1:")).toBe(true);
+    expect(code.startsWith("ITL2:")).toBe(true);
     const decoded = decodeLayoutCode(code);
     expect(decoded).not.toBeNull();
+    expect(decoded!.legacy).toBe(false);
     expect(decoded!.shared.prompt).toEqual({ x: 2, y: 3, w: 40, h: 8 });
     expect(decoded!.shared.controls).toEqual({ x: 0, y: 12, w: 40, h: 4 });
     expect(decoded!.shared.mask).toBeUndefined();
     expect(decoded!.hidden).toEqual(["reverse-prompt"]);
   });
 
-  it("拒绝无前缀 / 坏 base64 / 坏 JSON / 错误版本", () => {
+  it("拒绝无前缀 / 坏 base64 / 坏 JSON / 错误版本（ITL2 前缀配 v=1、ITL1 前缀配 v=2 均拒绝）", () => {
     expect(decodeLayoutCode("hello")).toBeNull();
-    expect(decodeLayoutCode("ITL1:!!!not-base64!!!")).toBeNull();
-    expect(decodeLayoutCode("ITL1:" + btoa("not json"))).toBeNull();
-    expect(decodeLayoutCode("ITL1:" + btoa(JSON.stringify({ v: 2, m: {} })))).toBeNull();
+    expect(decodeLayoutCode("ITL2:!!!not-base64!!!")).toBeNull();
+    expect(decodeLayoutCode("ITL2:" + btoa("not json"))).toBeNull();
+    expect(decodeLayoutCode("ITL2:" + btoa(JSON.stringify({ v: 1, m: { prompt: [0, 0, 4, 4] } })))).toBeNull();
+    expect(decodeLayoutCode("ITL1:" + btoa(JSON.stringify({ v: 2, m: { prompt: [0, 0, 4, 4] } })), 16)).toBeNull();
   });
 
   it("忽略非法模块、非通用模块与越界数值；全无有效坐标视为无效", () => {
-    const payload = { v: 1, m: { nope: [0, 0, 1, 1], mask: [0, 0, 1, 1], prompt: [0, 0, -5, 4], controls: [-1, 0, 4, 4], presets: [0, 0, 4, 4] }, h: ["nope", "mask", "presets"] };
-    const decoded = decodeLayoutCode("ITL1:" + btoa(JSON.stringify(payload)));
+    const payload = { v: 2, m: { nope: [0, 0, 1, 1], mask: [0, 0, 1, 1], prompt: [0, 0, -5, 4], controls: [-1, 0, 4, 4], presets: [0, 0, 4, 4] }, h: ["nope", "mask", "presets"] };
+    const decoded = decodeLayoutCode("ITL2:" + btoa(JSON.stringify(payload)));
     expect(decoded).not.toBeNull();
+    expect(decoded!.legacy).toBe(false);
     expect(decoded!.shared.prompt).toBeUndefined();
     expect(decoded!.shared.controls).toBeUndefined();
     expect(decoded!.shared.presets).toEqual({ x: 0, y: 0, w: 4, h: 4 });
     expect(decoded!.hidden).toEqual(["presets"]);
-    expect(decodeLayoutCode("ITL1:" + btoa(JSON.stringify({ v: 1, m: { mask: [0, 0, 1, 1] }, h: [] })))).toBeNull();
+    expect(decodeLayoutCode("ITL2:" + btoa(JSON.stringify({ v: 2, m: { mask: [0, 0, 1, 1] }, h: [] })))).toBeNull();
+  });
+
+  it("数值护栏在取整后校验：y 上限 4000（行单位），超界条目被丢弃", () => {
+    const ok = decodeLayoutCode("ITL2:" + btoa(JSON.stringify({ v: 2, m: { prompt: [0, 4000.4, 4, 400] } })));
+    expect(ok).not.toBeNull();
+    expect(ok!.shared.prompt).toEqual({ x: 0, y: 4000, w: 4, h: 400 });
+    expect(decodeLayoutCode("ITL2:" + btoa(JSON.stringify({ v: 2, m: { prompt: [0, 4000.6, 4, 4] } })))).toBeNull();
+  });
+
+  it("ITL1 旧码换算：x/w 列值不变，y/h 按 colWidth/GRID_PX 换算为行（legacy=true）", () => {
+    // colWidth=16 = GRID_PX：旧比例单位 y=2 → 2 行、h=4 → 4 行；x/w 原样保留
+    const payload = { v: 1, m: { prompt: [10, 2, 40, 4] }, h: ["presets"] };
+    const decoded = decodeLayoutCode("ITL1:" + btoa(JSON.stringify(payload)), 16);
+    expect(decoded).not.toBeNull();
+    expect(decoded!.legacy).toBe(true);
+    expect(decoded!.shared.prompt).toEqual({ x: 10, y: 2, w: 40, h: 4 });
+    expect(decoded!.hidden).toEqual(["presets"]);
+  });
+
+  it("ITL1 换算结果钳制：x 钳入列范围；换算后 h 超 400 行的条目被丢弃", () => {
+    // controls：x=60 + w=10 → x' 钳到 64-10=54；y=1×16/16=1 行、h=2×16/16=2 行
+    // prompt：h=1000 单位 × 16/16 = 1000 行 > 400 → 整条丢弃（旧码换算不得撑爆布局）
+    const payload = { v: 1, m: { prompt: [0, 0, 4, 1000], controls: [60, 1, 10, 2] }, h: [] };
+    const decoded = decodeLayoutCode("ITL1:" + btoa(JSON.stringify(payload)), 16);
+    expect(decoded).not.toBeNull();
+    expect(decoded!.shared.prompt).toBeUndefined();
+    expect(decoded!.shared.controls).toEqual({ x: 54, y: 1, w: 10, h: 2 });
+  });
+
+  it("ITL1 缺少或非法 colWidth 时一律拒绝", () => {
+    const code = "ITL1:" + btoa(JSON.stringify({ v: 1, m: { prompt: [0, 0, 4, 4] }, h: [] }));
+    expect(decodeLayoutCode(code)).toBeNull();
+    expect(decodeLayoutCode(code, 0)).toBeNull();
+    expect(decodeLayoutCode(code, -1)).toBeNull();
+    expect(decodeLayoutCode(code, Number.NaN)).toBeNull();
   });
 });
 
