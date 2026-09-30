@@ -6003,3 +6003,28 @@ main:has(.card.settings) {
 .composer-modules.layout-grid .outpaint-head > div:first-child {
   min-width: 0;
 }
+
+/* ============================================================================
+   v3.8 弹性内容（仅网格态）
+   - .layout-grid .mask-painter .mask-canvas：解除流式模式的两处画布上限——
+     ① styles.css:963 的 width: min(100%, 760px)（宽度上限）
+     ② styles.css:1837 的 max-height: 400px（高度上限）
+     画布宽度撑满模块内容宽；高度仍由 MaskPainter 行内 aspect-ratio（图像比例）
+     决定，模块多余高度留白——刻意不做非等比拉伸：pointFromEvent 以 canvas 的
+     getBoundingClientRect 映射图像坐标，盒比例 = 图像比例一旦破坏蒙版即错位。
+   - .layout-grid .negative-prompt：纵向 flex，textarea flex:1 1 auto 随模块高度拉伸。
+   - prompt 模块根即 textarea 本体（flex 对自身无效），由内联 min-height 撑开，无需规则。
+   仅网格态生效（流式无 .layout-grid 类，零差异）；无动画、无需登记 reduced-motion。
+   ============================================================================ */
+.layout-grid .mask-painter .mask-canvas {
+  width: 100%;
+  margin: 0;
+  max-height: none;
+}
+.layout-grid .negative-prompt {
+  display: flex;
+  flex-direction: column;
+}
+.layout-grid .negative-prompt textarea {
+  flex: 1 1 auto;
+}
