@@ -95,6 +95,8 @@ export function createGalleryStore(galleryDir: string) {
   const indexPath = path.join(galleryDir, "index.json");
   const backupPath = path.join(galleryDir, "index.v2.backup.json");
   const thumbsDir = path.join(galleryDir, ".thumbs");
+  /** 原图绝对路径（basename 归一，防目录穿越）；load / thumbnail / openTarget 共用。 */
+  const sourcePathOf = (item: GalleryItem) => path.join(galleryDir, path.basename(item.fileName));
 
   async function write(state: GalleryState) {
     await atomicWriteJson(indexPath, state);
@@ -208,7 +210,7 @@ export function createGalleryStore(galleryDir: string) {
     const state = await read();
     const item = state.items.find((value) => value.id === id);
     if (!item) return null;
-    try { return { item, b64: (await fs.readFile(path.join(galleryDir, path.basename(item.fileName)))).toString("base64") }; }
+    try { return { item, b64: (await fs.readFile(sourcePathOf(item))).toString("base64") }; }
     catch { return { item, b64: "" }; }
   }
 
@@ -220,10 +222,23 @@ export function createGalleryStore(galleryDir: string) {
     const thumbPath = path.join(thumbsDir, `${id}.jpg`);
     try {
       const stat = await fs.stat(thumbPath);
-      const sourceStat = await fs.stat(path.join(galleryDir, path.basename(item.fileName)));
+      const sourceStat = await fs.stat(sourcePathOf(item));
       if (stat.mtimeMs >= sourceStat.mtimeMs) return (await fs.readFile(thumbPath)).toString("base64");
     } catch {}
-    return { sourcePath: path.join(galleryDir, path.basename(item.fileName)), thumbPath };
+    return { sourcePath: sourcePathOf(item), thumbPath };
+  }
+
+  /** 解析本地打开目标：返回原图绝对路径；记录缺失或文件已被外部删除/移动时返回 null。 */
+  async function openTarget(id: string) {
+    const state = await read();
+    const item = state.items.find((value) => value.id === id);
+    if (!item) return null;
+    const sourcePath = sourcePathOf(item);
+    try {
+      const stat = await fs.stat(sourcePath);
+      if (!stat.isFile()) return null;
+    } catch { return null; }
+    return { sourcePath };
   }
 
   return {
@@ -236,6 +251,7 @@ export function createGalleryStore(galleryDir: string) {
     addImages,
     load,
     thumbnail,
+    openTarget,
     search: async (input: GallerySearch = {}) => searchGallery(await read(), input),
     getProjects: async () => (await read()).projects,
     readState: read,

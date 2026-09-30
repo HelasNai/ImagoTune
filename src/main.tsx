@@ -76,6 +76,9 @@ function App() {
   const copyImage = useCopyImage(notify);
   const [localAISource, setLocalAISource] = useState<LocalAISource | null>(null);
   const [localAIAction, setLocalAIAction] = useState<LocalAIAction>("upscale");
+  // 跨页跳转意图（图片级 / 项目级，二选一）：由 openGalleryAt / openGalleryProject 写入，
+  // GalleryWorkspace 定位（或目标失效）后经 onFocusConsumed 清空。
+  const [galleryTarget, setGalleryTarget] = useState<{ imageId?: string; projectId?: string } | null>(null);
 
   const updateTutorialState = useCallback((next: TutorialState) => {
     setTutorialState(next);
@@ -328,6 +331,14 @@ function App() {
     }
   };
 
+  // 交给操作系统：默认关联程序打开 / 在文件资源管理器中定位（仅图库图片带 galleryId）。
+  const openGalleryFile = (galleryId: string, mode: "open" | "reveal") => {
+    void callIpc(
+      () => window.imageStudio.gallery.openLocal(galleryId, mode),
+      { fallbackError: mode === "reveal" ? "无法定位文件" : "无法打开文件", onError: (message) => notify(message, true) },
+    ).catch(() => { /* callIpc 已上报 */ });
+  };
+
   const runningCount = useMemo(
     () => queueItems.filter((item) => ["queued", "running"].includes(item.status)).length,
     [queueItems],
@@ -350,6 +361,12 @@ function App() {
     setLocalAISource({ title: item.title || item.id, dataUrl: b64ToDataUrl(b64), recipe: item.recipe, sourceId: item.id });
     setLocalAIAction(action);
     setMode("local-ai");
+  }
+
+  /** 从任意页面跳转图库并定位到指定图片：先写入跳转意图，再切换模式（沿用 openLocalAI 的「写 payload 后 setMode」模式，setMode 不携带 payload）。 */
+  function openGalleryAt(imageId: string) {
+    setGalleryTarget({ imageId });
+    setMode("gallery");
   }
 
   return (
@@ -417,6 +434,8 @@ function App() {
                 onVariation={(item) => createVariation(item)}
                 onLocalAI={openGalleryLocalAI}
                 onNotice={notify}
+                focusImageId={galleryTarget?.imageId}
+                onFocusConsumed={() => setGalleryTarget(null)}
               />
             ) : mode === "local-ai" ? (
               <LocalAIToolbox
@@ -479,6 +498,16 @@ function App() {
                 >
                   复制图片
                 </button>
+                {(() => {
+                  const galleryId = preview.galleryId;
+                  if (!galleryId) return null;
+                  return (
+                    <>
+                      <button onClick={() => { openGalleryFile(galleryId, "open"); setPreviewContextMenu(null); }}>用系统应用打开</button>
+                      <button onClick={() => { openGalleryFile(galleryId, "reveal"); setPreviewContextMenu(null); }}>在文件夹中显示</button>
+                    </>
+                  );
+                })()}
                 <button onClick={() => openLocalAI(preview, "upscale")}>高清放大</button>
                 <button onClick={() => openLocalAI(preview, "remove-background")}>智能抠图</button>
                 <button onClick={() => openLocalAI(preview, "face-restore")}>人脸优化 Beta</button>

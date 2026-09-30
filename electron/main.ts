@@ -30,7 +30,7 @@ import type { ApiImage, BinaryPayload, ModelConfig, ModelRole, PromptTemplate, P
 import {
   CLIPBOARD_COPY_IMAGE, CLIPBOARD_COPY_TEXT, CLIPBOARD_READ_IMAGE,
   GALLERY_BULK, GALLERY_DELETE, GALLERY_EXPORT_ZIP, GALLERY_LIST, GALLERY_LOAD_IMAGE,
-  GALLERY_SEARCH, GALLERY_THUMBNAIL, GALLERY_TOGGLE_FAVORITE, GALLERY_UPDATE, GALLERY_WORKSPACE,
+  GALLERY_OPEN_LOCAL, GALLERY_SEARCH, GALLERY_THUMBNAIL, GALLERY_TOGGLE_FAVORITE, GALLERY_UPDATE, GALLERY_WORKSPACE,
   IMAGE_CANCEL, IMAGE_EDIT, IMAGE_GENERATE, IMAGE_PROGRESS, IMAGE_SAVE,
   LOCAL_AI_ARCHIVE_RESULT, LOCAL_AI_CAPABILITIES, LOCAL_AI_CHOOSE_MODEL_DIR, LOCAL_AI_DELETE_MODEL,
   LOCAL_AI_DOWNLOAD_MODEL, LOCAL_AI_MODEL_PROGRESS, LOCAL_AI_MODELS, LOCAL_AI_MODEL_URL,
@@ -1174,6 +1174,14 @@ app.whenReady().then(async () => {
     const image = nativeImage.createFromPath(value.sourcePath); if (image.isEmpty()) return { ok: false, error: "图片文件不存在" }; const thumb = image.resize({ width: 360, quality: "good" }).toJPEG(82); await fs.writeFile(value.thumbPath, thumb); return { ok: true, b64: thumb.toString("base64") };
   });
   ipcMain.handle(GALLERY_LOAD_IMAGE, async (_e, id: string) => { const value = await galleryStore.load(id); return value?.b64 ? { ok: true, b64: value.b64, item: value.item } : { ok: false, error: "图片文件不存在" }; });
+  // 交给操作系统打开（默认关联程序）或在文件资源管理器中定位；仅接受 id，绝对路径由主进程解析。
+  ipcMain.handle(GALLERY_OPEN_LOCAL, async (_e, id: string, mode: "open" | "reveal") => {
+    const target = await galleryStore.openTarget(id);
+    if (!target) return { ok: false, error: "图片文件不存在或已被移动" };
+    if (mode === "reveal") { shell.showItemInFolder(target.sourcePath); return { ok: true }; }
+    const failure = await shell.openPath(target.sourcePath);
+    return failure ? { ok: false, error: failure } : { ok: true };
+  });
   ipcMain.handle(GALLERY_UPDATE, async (_e, id: string, patch: { title?: string; tags?: string[]; projectId?: string }) => {
     const state = await galleryStore.readState(); const item = state.items.find(value => value.id === id); if (!item) return { ok: false, error: "图库记录不存在" }; if (typeof patch.title === "string") item.title = patch.title.trim().slice(0, 120) || item.title; if (Array.isArray(patch.tags)) item.recipe.tags = tagsValue(patch.tags); if (patch.projectId && state.projects.some(project => project.id === patch.projectId)) item.recipe.projectId = patch.projectId; await galleryStore.writeState(state); return { ok: true, item };
   });

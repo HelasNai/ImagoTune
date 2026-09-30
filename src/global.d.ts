@@ -78,6 +78,7 @@ declare global {
         bulk: (input: unknown) => Promise<{ ok: boolean; count?: number; error?: string }>;
         exportZip: (ids: string[]) => Promise<{ ok: boolean; canceled?: boolean; path?: string; count?: number; error?: string }>;
         loadImage: (id: string) => Promise<{ ok: boolean; b64?: string; item?: GalleryItem; error?: string }>;
+        openLocal: (id: string, mode: "open" | "reveal") => Promise<{ ok: boolean; error?: string }>;
       };
       projects: {
         create: (name: string) => Promise<{ ok: boolean; project?: GalleryProject; error?: string }>;

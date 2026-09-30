@@ -2891,6 +2891,7 @@ select:focus-visible {
   .empty span,
   .combobox-list,
   .quick-switch,
+  .archive-card.archive-card-flash,
   .progress-track div:not([style*="width: 0"]),
   .progress-track.indeterminate {
     animation: none !important;
@@ -5188,5 +5189,42 @@ main:has(.card.settings) {
 @media (max-width: 900px) {
   .run-row .dock-model-trigger {
     margin-left: auto;
+  }
+}
+
+/* ============================================================================
+   v3.2 图库缩略图与跨页聚焦
+   - .gallery-thumb-image / .gallery-thumb-placeholder：GalleryThumb 组件（懒加载缩略图）的
+     图片与占位（进入视口前 / 悬空 id 共用）。尺寸与圆角由调用方传入的根元素类名控制。
+   - .archive-card-flash：GalleryWorkspace 经 galleryTarget 定位到目标卡片后由 JS 添加、
+     约 2s 后移除的临时高亮（含背景脉冲动画，已登记进 v1.5.1 分区的 prefers-reduced-motion 组；
+     减少动态效果下仅保留静态描边/阴影高亮）。
+   ============================================================================ */
+.gallery-thumb-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.gallery-thumb-placeholder {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 44px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, #f2f7fc, #e9f2fa);
+}
+.archive-card.archive-card-flash {
+  border-color: #79bde8;
+  box-shadow: 0 0 0 4px rgba(134, 203, 242, 0.32), 0 14px 30px rgba(84, 116, 168, 0.18);
+  animation: archive-card-flash 1.1s var(--ease-soft) 2;
+}
+@keyframes archive-card-flash {
+  0%,
+  100% {
+    background: rgba(255, 255, 255, 0.9);
+  }
+  50% {
+    background: #eaf7ff;
   }
 }

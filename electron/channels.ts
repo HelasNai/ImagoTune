@@ -78,6 +78,7 @@ export const GALLERY_UPDATE = "gallery:update";
 export const GALLERY_BULK = "gallery:bulk";
 export const GALLERY_EXPORT_ZIP = "gallery:exportZip";
 export const GALLERY_LOAD_IMAGE = "gallery:loadImage";
+export const GALLERY_OPEN_LOCAL = "gallery:openLocal";
 
 // —— invoke：项目 ——
 export const PROJECTS_CREATE = "projects:create";

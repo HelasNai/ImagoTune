@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { parseTags, resolutionLevels } from "../lib/creative";
 import { INBOX_PROJECT_ID } from "../lib/constants";
 import { formatTags } from "../lib/format";
+import { resolveFocusLocation } from "../lib/gallery-focus";
 import { b64ToDataUrl } from "../lib/media";
 import type { LocalAIAction } from "./LocalAIToolbox";
 import { useDialog } from "./Dialogs";
@@ -14,16 +15,27 @@ import type { StudioNotify } from "./StudioContext";
 type OpenAction = "preview" | "reuse" | "edit" | "outpaint";
 type CompareItem = { item: GalleryItem; b64: string };
 
+/** 图库每页条数：refresh 的 search 与跨页聚焦的页码推导共用同一分页契约。 */
+const GALLERY_PAGE_SIZE = 40;
+/** 聚焦高亮持续时间（毫秒）。 */
+const FOCUS_FLASH_MS = 2000;
+
 export function GalleryWorkspace({
   onOpen,
   onVariation,
   onLocalAI,
   onNotice,
+  focusImageId,
+  onFocusConsumed,
 }: {
   onOpen: (item: GalleryItem, b64: string, action: OpenAction) => void;
   onVariation: (item: GalleryItem) => void;
   onLocalAI: (item: GalleryItem, b64: string, action: LocalAIAction) => void;
   onNotice: StudioNotify;
+  /** 跨页跳转目标：定位到该图片（切项目 → 翻页 → 滚动并短暂高亮）。 */
+  focusImageId?: string;
+  /** 跳转意图消费回调：定位完成或目标失效后调用一次，父级据此清空目标（图片级 / 项目级共用）。 */
+  onFocusConsumed?: () => void;
 }) {
   const [projects, setProjects] = useState<GalleryProject[]>([]);
   const [items, setItems] = useState<GalleryItem[]>([]);
@@ -48,8 +60,22 @@ export function GalleryWorkspace({
   const [bulkTags, setBulkTags] = useState("");
   const [compare, setCompare] = useState<CompareItem[]>([]);
   const { requestText, requestConfirm } = useDialog();
+  // —— 跨页聚焦（focusImageId 驱动）：待落地的页码 / 待滚动的目标 / 网格容器等 ——
+  const [pendingFocus, setPendingFocus] = useState<{ projectId: string; page: number } | null>(null);
+  const [scrollTarget, setScrollTarget] = useState<string | null>(null);
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  /** 刷新请求序号：只用于「page 0 替换语义」的过期响应保护（见 refresh 内的检查）。 */
+  const refreshSeqRef = useRef(0);
+  /** 聚焦落地中：抑制自动刷新，等目标页确定后再拉取。 */
+  const focusLandingRef = useRef(false);
+  /** 已消费的聚焦 id：同一跳转意图只驱动一次；prop 清空时复位。 */
+  const processedFocusRef = useRef<string | null>(null);
+  const flashTimerRef = useRef<number | null>(null);
+  /** 聚焦流程要读取的最新值（不进入 effect 依赖，避免父级重渲染重启流程）。 */
+  const focusEnvRef = useRef({ sort, onNotice, onFocusConsumed });
 
   const refresh = useCallback(async (targetPage = page) => {
+    const seq = ++refreshSeqRef.current;
     try {
       const workspace = await callIpc(() => window.imageStudio.gallery.workspace(), { fallbackError: "图库读取失败" });
       setProjects(workspace.projects || []);
@@ -66,8 +92,11 @@ export function GalleryWorkspace({
         seed: seedFilter || undefined,
         sort,
         page: targetPage,
-        pageSize: 40,
+        pageSize: GALLERY_PAGE_SIZE,
       }), { fallbackError: "图库读取失败" });
+      // 过期保护：page 0 是「替换」语义（挂载 / 筛选重置），只有它仍是最新一次刷新时才允许应用——
+      // 否则聚焦跳页期间晚到的第 0 页响应会把目标页覆盖掉；page>0 是「加载更多」的累加语义，保持原样。
+      if (targetPage === 0 && seq !== refreshSeqRef.current) return;
       const nextItems = result.items || [];
       setItems((current) => {
         if (targetPage === 0) return nextItems;
@@ -82,6 +111,9 @@ export function GalleryWorkspace({
   }, [activeProject, favoriteOnly, page, query, resolutionFilter, seedFilter, sizeFilter, sort, tag]);
 
   useEffect(() => {
+    // 聚焦落地期间跳过中间态刷新：等目标页确定后（见下方 pendingFocus effect）再拉取，
+    // 避免用旧页码发出的请求污染 items。
+    if (focusLandingRef.current) return;
     void refresh(page);
   }, [page, refresh]);
 
@@ -89,6 +121,99 @@ export function GalleryWorkspace({
     setPage(0);
     setSelected(new Set());
   }, [activeProject, favoriteOnly, query, resolutionFilter, seedFilter, sizeFilter, sort, tag]);
+
+  // ——————————————— 跨页聚焦（focusImageId 驱动） ———————————————
+  // 由 App 经 openGalleryAt 写入跳转意图；这里按三步落地：
+  // ① 验证目标并解析项目与页码 → ② 切项目并在「筛选器重置」之后落页 → ③ 滚动高亮并消费意图。
+  const consumeFocus = (focusId: string) => {
+    if (processedFocusRef.current === focusId) return;
+    processedFocusRef.current = focusId;
+    focusEnvRef.current.onFocusConsumed?.();
+  };
+
+  // 同步聚焦流程要读取的最新值（每次渲染后更新）。
+  useEffect(() => {
+    focusEnvRef.current = { sort, onNotice, onFocusConsumed };
+  });
+
+  // 第一步：验证目标 id 并解析所属项目与页码。
+  // 同一 id 只消费一次；prop 清空时复位标记，保证对同一图片的再次跳转仍然生效。
+  useEffect(() => {
+    if (!focusImageId) {
+      processedFocusRef.current = null;
+      return;
+    }
+    if (processedFocusRef.current === focusImageId) return;
+    let active = true;
+    void (async () => {
+      // 悬空 id（已删除 / 图库重建为全新 uuid）一律优雅降级：提示 + 消费，绝不抛出。
+      let exists = false;
+      try {
+        const response = await callIpc(() => window.imageStudio.gallery.loadImage(focusImageId), { fallbackError: "图片不存在或已被删除" });
+        exists = response.ok !== false;
+      } catch { /* callIpc 已抛出结构化错误，按不存在处理 */ }
+      if (!active) return;
+      if (!exists) {
+        onNotice("图片不存在或已被删除", true);
+        consumeFocus(focusImageId);
+        return;
+      }
+      // 用全量（未分页）数据定位：页码 = 目标在「所属项目自身列表」中的位置换算（1 基）。
+      let location: { projectId: string; page: number } | null = null;
+      try {
+        const workspace = await callIpc(() => window.imageStudio.gallery.workspace(), { fallbackError: "图库读取失败", onError: (message) => onNotice(message, true) });
+        location = resolveFocusLocation(workspace.items || [], focusImageId, GALLERY_PAGE_SIZE, focusEnvRef.current.sort);
+      } catch { /* callIpc 已上报 */ }
+      if (!active) return;
+      if (!location) {
+        onNotice("图片不存在或已被删除", true);
+        consumeFocus(focusImageId);
+        return;
+      }
+      // 先切项目；页码由第二步在「筛选器重置」之后落地，并由 focusLandingRef 抑制中间态刷新。
+      focusLandingRef.current = true;
+      setScrollTarget(focusImageId);
+      setPendingFocus({ projectId: location.projectId, page: location.page - 1 });
+      setActiveProject(location.projectId);
+    })();
+    return () => { active = false; };
+  }, [focusImageId, onNotice]);
+
+  // 第二步：落到目标页（setActiveProject 与 setPendingFocus 同批提交，此刻 activeProject 必已生效）。
+  // 必须声明在「筛选条件变化重置页码」effect 之后：两者同批执行，setPage 以最后者为准，
+  // 否则目标页会被重置回第 0 页。这里顺带清空 items，让目标页以「替换」而非并集方式呈现。
+  useEffect(() => {
+    if (!pendingFocus) return;
+    setItems([]);
+    setPendingFocus(null);
+    focusLandingRef.current = false;
+    const pageChanged = page !== pendingFocus.page;
+    setPage(pendingFocus.page);
+    // 目标页恰好等于当前页时刷新 effect 不会触发（page 未变化），这里补一次拉取。
+    if (!pageChanged) void refresh(pendingFocus.page);
+  }, [page, pendingFocus, refresh]);
+
+  // 第三步：目标页渲染完成后滚动到卡片并短暂高亮（~2s），然后消费跳转意图。
+  useEffect(() => {
+    if (!scrollTarget) return;
+    if (pendingFocus) return; // 聚焦尚未落入目标页：等第二步完成后再滚动
+    const node = gridRef.current?.querySelector<HTMLElement>(`[data-item-id="${scrollTarget}"]`);
+    if (!node) return; // 目标页数据尚未就绪：等 items 更新后重试
+    setScrollTarget(null);
+    node.scrollIntoView({ behavior: "smooth", block: "center" });
+    node.classList.add("archive-card-flash");
+    if (flashTimerRef.current !== null) window.clearTimeout(flashTimerRef.current);
+    flashTimerRef.current = window.setTimeout(() => {
+      flashTimerRef.current = null;
+      node.classList.remove("archive-card-flash");
+    }, FOCUS_FLASH_MS);
+    consumeFocus(scrollTarget);
+  }, [items, pendingFocus, scrollTarget]);
+
+  // 卸载时清理高亮定时器（避免对已卸载节点回调）。
+  useEffect(() => () => {
+    if (flashTimerRef.current !== null) window.clearTimeout(flashTimerRef.current);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -139,6 +264,14 @@ export function GalleryWorkspace({
   const open = (item: GalleryItem, action: OpenAction) => loadAndOpen(item, (b64) => onOpen(item, b64, action));
 
   const openLocalAI = (item: GalleryItem, action: LocalAIAction) => loadAndOpen(item, (b64) => onLocalAI(item, b64, action));
+
+  // 交给操作系统：默认关联程序打开 / 在文件资源管理器中定位（仅传 id，绝对路径由主进程解析）。
+  const openLocally = (item: GalleryItem, mode: "open" | "reveal") => {
+    void callIpc(
+      () => window.imageStudio.gallery.openLocal(item.id, mode),
+      { fallbackError: mode === "reveal" ? "无法定位文件" : "无法打开文件", onError: (message) => onNotice(message, true) },
+    ).catch(() => { /* callIpc 已上报 */ });
+  };
 
   const createProject = async () => {
     const response = await callIpc(() => window.imageStudio.projects.create(newProject), { fallbackError: "创建项目失败", onError: (message) => onNotice(message, true) });
@@ -343,9 +476,9 @@ export function GalleryWorkspace({
             <small>生成完成后会自动归档到收件箱或你选择的项目。</small>
           </div>
         ) : (
-          <div className="archive-grid">
+          <div className="archive-grid" ref={gridRef}>
             {items.map((item) => (
-              <article className={selected.has(item.id) ? "archive-card selected" : "archive-card"} key={item.id}>
+              <article className={selected.has(item.id) ? "archive-card selected" : "archive-card"} key={item.id} data-item-id={item.id}>
                 <label className="select-box">
                   <input type="checkbox" checked={selected.has(item.id)} onChange={() => toggleSelection(item.id)} />
                 </label>
@@ -377,6 +510,8 @@ export function GalleryWorkspace({
                     </button>
                     <button onClick={() => void updateMetadata(item)}>编辑信息</button>
                     {item.recipe.projectId !== INBOX_PROJECT_ID && <button onClick={() => void setCover(item)}>设为封面</button>}
+                    <button onClick={() => openLocally(item, "open")}>用系统应用打开</button>
+                    <button onClick={() => openLocally(item, "reveal")}>在文件夹中显示</button>
                   </div>
                 </details>
               </article>

@@ -90,7 +90,8 @@ contextBridge.exposeInMainWorld("imageStudio", {
     update: (id: string, patch: unknown) => ipcRenderer.invoke("gallery:update", id, patch),
     bulk: (input: unknown) => ipcRenderer.invoke("gallery:bulk", input),
     exportZip: (ids: string[]) => ipcRenderer.invoke("gallery:exportZip", ids),
-    loadImage: (id: string) => ipcRenderer.invoke("gallery:loadImage", id)
+    loadImage: (id: string) => ipcRenderer.invoke("gallery:loadImage", id),
+    openLocal: (id: string, mode: "open" | "reveal") => ipcRenderer.invoke("gallery:openLocal", id, mode)
   },
   projects: { create: (name: string) => ipcRenderer.invoke("projects:create", name), rename: (id: string, name: string) => ipcRenderer.invoke("projects:rename", id, name), delete: (id: string) => ipcRenderer.invoke("projects:delete", id), setCover: (projectId: string, itemId: string) => ipcRenderer.invoke("projects:setCover", projectId, itemId) },
   templates: {

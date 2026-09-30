@@ -26,11 +26,11 @@ function declaredChannels(): Set<string> {
 }
 
 describe("preload channel inlining consistency", () => {
-  it("channels.ts 导出 73 个通道值（对外契约总数）", () => {
-    expect(declaredChannels().size).toBe(73);
+  it("channels.ts 导出 74 个通道值（对外契约总数）", () => {
+    expect(declaredChannels().size).toBe(74);
   });
 
-  it("preload.ts 内联字符串与 channels.ts 导出值双向完全一致（73===73）", () => {
+  it("preload.ts 内联字符串与 channels.ts 导出值双向完全一致（74===74）", () => {
     const declared = declaredChannels();
     const inlined = extractInlinedChannels(preloadSrc);
     const onlyInChannels = [...declared].filter((channel) => !inlined.has(channel));
@@ -38,8 +38,8 @@ describe("preload channel inlining consistency", () => {
     expect(onlyInChannels, "仅 channels.ts 声明、preload.ts 缺失的通道").toEqual([]);
     expect(onlyInPreload, "仅 preload.ts 使用、channels.ts 未声明的通道").toEqual([]);
     // 显式锁定两侧基数，避免两端同时漏掉同一通道而静默通过。
-    expect(inlined.size).toBe(73);
-    expect(declared.size).toBe(73);
+    expect(inlined.size).toBe(74);
+    expect(declared.size).toBe(74);
   });
 
   it("preload.ts 绝不 import ./channels（沙箱化 preload 无法 require 本地模块）", () => {
