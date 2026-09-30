@@ -4,8 +4,10 @@ import { INBOX_PROJECT_ID } from "../lib/constants";
 import { formatBytes, formatDurationSeconds } from "../lib/format";
 import { validateUpscaleOutput } from "../lib/local-ai";
 import { b64FromDataUrl, b64ToDataUrl, fileToDataUrl } from "../lib/media";
+import { mapLocalAIProgress } from "../lib/progress";
 import { useDialog } from "./Dialogs";
 import { callIpc } from "./ipc";
+import { ProgressBar } from "./ProgressBar";
 import { useCopyImage } from "./useCopy";
 import { useSaveImage } from "./useSaveImage";
 import { ImageDropInput } from "./ImageDropInput";
@@ -29,7 +31,7 @@ type WorkerResult = {
   steps: Array<{ tool: LocalAITool; modelId: string; device: "webgpu" | "wasm"; elapsedMs: number; parameters: Record<string, string | number | boolean> }>;
   elapsedMs: number;
 };
-type WorkerProgress = { type: "progress"; id: string; phase: string; progress: number; message: string; device?: "webgpu" | "wasm" };
+type WorkerProgress = { type: "progress"; id: string; phase: string; progress?: number; message: string; device?: "webgpu" | "wasm"; stageIndex?: number; totalStages?: number; stageLabel?: string };
 type WorkerError = { type: "error"; id: string; cancelled?: boolean; error: string };
 
 const actionLabels: Record<LocalAIAction, string> = {
@@ -129,7 +131,8 @@ export function LocalAIToolbox({
   const [backgroundColor, setBackgroundColor] = useState("#dbe7f2");
   const [busy, setBusy] = useState(false);
   const [downloadBusy, setDownloadBusy] = useState("");
-  const [progress, setProgress] = useState({ value: 0, message: "等待开始", device: "" });
+  const [progress, setProgress] = useState<{ value: number | undefined; message: string; device: string; stageIndex: number; totalStages: number }>({ value: 0, message: "等待开始", device: "", stageIndex: 0, totalStages: 1 });
+  const [runStartedAt, setRunStartedAt] = useState(0);
   const [result, setResult] = useState<{ dataUrl: string; width: number; height: number; recipe: ImageRecipeV1 } | null>(null);
   const [compare, setCompare] = useState(50);
   const [zoom, setZoom] = useState(false);
@@ -200,7 +203,7 @@ export function LocalAIToolbox({
 
   const run = async () => {
     if (!source || busy) return;
-    setBusy(true); setResult(null); setProgress({ value: 1, message: "正在检查本地模型", device: "" });
+    setBusy(true); setResult(null); setRunStartedAt(Date.now()); setProgress({ value: 1, message: "正在检查本地模型", device: "", stageIndex: 0, totalStages: 1 });
     try {
       const sourcePixels = await dataUrlToPixels(source.dataUrl);
       if (action === "upscale") {
@@ -221,7 +224,7 @@ export function LocalAIToolbox({
         const value = event.data;
         if (value.id !== taskId) return;
         if (value.type === "progress") {
-          setProgress({ value: value.progress, message: value.message, device: value.device || "" });
+          setProgress({ value: value.progress, message: value.message, device: value.device || "", stageIndex: value.stageIndex ?? 0, totalStages: value.totalStages ?? 1 });
           return;
         }
         if (value.type === "error") {
@@ -246,7 +249,7 @@ export function LocalAIToolbox({
         };
         const archive = await callIpc(() => window.imageStudio.localAI.archiveResult({ dataUrl, title: `${source.title} - ${actionLabels[action]}`, recipe }), { fallbackError: "未知错误", onError: (message) => onNotice("处理完成，但归档失败：" + message, true) });
         setResult({ dataUrl, width: value.width, height: value.height, recipe });
-        setBusy(false); setProgress({ value: 100, message: `处理完成，用时 ${formatDurationSeconds(value.elapsedMs)}`, device: value.steps.at(-1)?.device || "" });
+        setBusy(false); setProgress({ value: 100, message: `处理完成，用时 ${formatDurationSeconds(value.elapsedMs)}`, device: value.steps.at(-1)?.device || "", stageIndex: 0, totalStages: 1 });
         onArchived({ b64: b64FromDataUrl(dataUrl), recipe, galleryId: archive.item?.id });
         if (archive.ok) onNotice("本地处理完成，成品已作为新图片归档", false);
         worker.terminate();
@@ -263,6 +266,27 @@ export function LocalAIToolbox({
     if (!workerRef.current || !taskIdRef.current) return;
     workerRef.current.postMessage({ id: taskIdRef.current, type: "cancel" });
   };
+
+  // 统一进度条数据：把「下载模型」与「推理进度」合并到同一条时间线，
+  // 避免准备阶段进度条长时间卡在 1%。真实百分比不可知时缺省 progress（渲染层显示不确定态）。
+  const downloading = busy && downloadBusy ? models.find((item) => item.id === downloadBusy) : undefined;
+  const liveProgress: TaskProgressEvent | null = downloading
+    ? { id: "local-ai", scope: "local-ai", message: `正在下载 ${downloading.name}`, progress: downloading.progress, state: "running" }
+    : busy
+      ? {
+          id: "local-ai",
+          scope: "local-ai",
+          message: progress.message,
+          progress: progress.value === undefined ? undefined : mapLocalAIProgress(progress.value, progress.stageIndex, progress.totalStages),
+          stageIndex: progress.stageIndex,
+          totalStages: progress.totalStages,
+          startedAt: runStartedAt || undefined,
+          detail: progress.device || undefined,
+          state: "running",
+        }
+      : progress.value !== undefined && progress.value >= 100
+        ? { id: "local-ai", scope: "local-ai", message: progress.message, progress: 100, state: "done" }
+        : null;
 
   const pauseDownload = async (id: LocalAIModelId) => {
     await callIpc(() => window.imageStudio.localAI.pauseDownload(id), { fallbackError: "暂停下载失败", onError: (message) => onNotice(message, true) });
@@ -361,7 +385,14 @@ export function LocalAIToolbox({
         {action === "pipeline" && <p className="pipeline-order">处理顺序：人脸优化 → 2× 超分 → 智能抠图。任一步失败即停止，不保存中间结果。</p>}
 
         <div className="local-run-row"><button className="primary" disabled={!source || busy} onClick={() => void run()}>{busy ? "正在本地处理…" : actionLabels[action]}</button>{busy && <button className="secondary" onClick={cancel}>取消</button>}</div>
-        {(busy || progress.value > 0) && <div className="progress"><div className="progress-track"><div style={{ width: `${progress.value}%` }} /></div><span>{progress.message}{progress.device ? ` · ${progress.device.toUpperCase()}` : ""}</span></div>}
+        {busy && progress.totalStages > 1 ? (
+          <div className="stage-indicator">
+            {["人脸优化", "高清放大", "智能抠图"].map((label, index) => (
+              <span key={label} className={index < progress.stageIndex ? "done" : index === progress.stageIndex ? "active" : ""}>{label}</span>
+            ))}
+          </div>
+        ) : null}
+        {liveProgress ? <ProgressBar event={liveProgress} /> : null}
       </section>
 
       <section className="local-ai-result card">

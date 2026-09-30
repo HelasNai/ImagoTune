@@ -97,4 +97,5 @@ export const QUEUE_RESULT = "queue:result";
 export const QUEUE_ERROR = "queue:error";
 export const UPDATE_STATUS = "update:status";
 export const LOCAL_AI_MODEL_PROGRESS = "localAI:modelProgress";
+export const PROGRESS_UPDATE = "progress:update";
 export const TUTORIAL_OPEN = "tutorial:open";

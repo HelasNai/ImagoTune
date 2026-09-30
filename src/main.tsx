@@ -12,6 +12,7 @@ import { QuickModelSwitcher } from "./components/QuickModelSwitcher";
 import { ResultPanel } from "./components/ResultPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { StudioProvider, type StudioNotify } from "./components/StudioContext";
+import { ProgressProvider } from "./components/ProgressContext";
 import { useComposer } from "./components/useComposer";
 import { recipeFromQueueInput } from "./components/queue-utils";
 import { dataUrlFor } from "./components/media-utils";
@@ -493,5 +494,5 @@ function App() {
 }
 
 createRoot(document.getElementById("root")!).render(
-  <React.StrictMode><DialogProvider><App /></DialogProvider></React.StrictMode>,
+  <React.StrictMode><DialogProvider><ProgressProvider><App /></ProgressProvider></DialogProvider></React.StrictMode>,
 );

@@ -26,7 +26,7 @@ import { CANVAS_MAX_EDGE, CANVAS_MAX_PIXELS, CANVAS_MULTIPLE } from "./outpaint-
 import { LOCAL_AI_MAX_EDGE, LOCAL_AI_MAX_PIXELS } from "./local-ai-limits";
 import { getAdapter, PROVIDER_PRESETS } from "./providers/presets";
 import type { GenerateContext } from "./providers/types";
-import type { ApiImage, BinaryPayload, ModelConfig, ModelRole, PromptTemplate, ProviderApiStyle, ProviderSummary, QueueRetryOptions, RoleBinding, SettingsSavePayload, SettingsSnapshot, SettingsTestInput, UpdateChannel, UpdateStatus } from "../shared/types";
+import type { ApiImage, BinaryPayload, ModelConfig, ModelRole, PromptTemplate, ProviderApiStyle, ProviderSummary, QueueRetryOptions, RoleBinding, SettingsSavePayload, SettingsSnapshot, SettingsTestInput, TaskProgressEvent, UpdateChannel, UpdateStatus } from "../shared/types";
 import {
   CLIPBOARD_COPY_IMAGE, CLIPBOARD_COPY_TEXT, CLIPBOARD_READ_IMAGE,
   GALLERY_BULK, GALLERY_DELETE, GALLERY_EXPORT_ZIP, GALLERY_LIST, GALLERY_LOAD_IMAGE,
@@ -37,7 +37,7 @@ import {
   LOCAL_AI_OPEN_MODEL_DIR, LOCAL_AI_PAUSE_DOWNLOAD, LOCAL_AI_RESET_MODEL_DIR,
   OUTPAINT_PREPARE, PNG_READ_RECIPE,
   PROJECTS_CREATE, PROJECTS_DELETE, PROJECTS_RENAME, PROJECTS_SET_COVER,
-  PROMPT_ENHANCE, PROMPT_REVERSE,
+  PROGRESS_UPDATE, PROMPT_ENHANCE, PROMPT_REVERSE,
   QUEUE_CANCEL, QUEUE_ENQUEUE, QUEUE_ERROR, QUEUE_LIST, QUEUE_REMOVE, QUEUE_RESULT, QUEUE_RETRY, QUEUE_UPDATE,
   SETTINGS_CHOOSE_SAVE_DIR, SETTINGS_CLEAR, SETTINGS_GET, SETTINGS_OPEN_SAVE_DIR, SETTINGS_RESET_SAVE_DIR,
   SETTINGS_SAVE, SETTINGS_TEST,
@@ -626,6 +626,15 @@ function emit(win: BrowserWindow, requestId: string, status: string, progress?: 
   win.webContents.send(IMAGE_PROGRESS, { requestId, status, progress, message });
 }
 
+/**
+ * 统一进度通道（progress:update）。窗口不存在或已销毁时静默跳过——
+ * 关闭窗口后仍在跑的请求不应因推送进度而抛错。
+ */
+function emitProgress(win: BrowserWindow | null | undefined, event: TaskProgressEvent) {
+  if (!win || win.isDestroyed()) return;
+  win.webContents.send(PROGRESS_UPDATE, event);
+}
+
 function formatHttpError(status: number, body: string) {
   return new GenerationError(classifyHttpError(status, body));
 }
@@ -1182,8 +1191,36 @@ app.whenReady().then(async () => {
     if (input.action === "tags") { const tags = tagsValue(input.tags || []); state.items = state.items.map(item => ids.has(item.id) ? { ...item, recipe: { ...item.recipe, tags } } : item); }
     await galleryStore.writeState(state); return { ok: true, count: selected.length };
   });
-  ipcMain.handle(PROMPT_ENHANCE, async (_e, input: { prompt: string; mode: "generate" | "edit" }) => { const prompt = String(input?.prompt || "").trim(); if (!prompt) return { ok: false, error: "请先输入提示词" }; try { return { ok: true, prompt: await enhancePromptWithModel(prompt, input.mode === "edit" ? "edit" : "generate") }; } catch (error) { return { ok: false, error: errorMessage(error, "提示词增强失败") }; } });
-  ipcMain.handle(PROMPT_REVERSE, async (_e, input: { image: BinaryInput }) => { try { return { ok: true, ...(await reversePromptWithModel(input.image)) }; } catch (error) { return { ok: false, error: errorMessage(error, "图反推失败，原提示词未改变") }; } });
+  ipcMain.handle(PROMPT_ENHANCE, async (e, input: { prompt: string; mode: "generate" | "edit" }) => {
+    const prompt = String(input?.prompt || "").trim();
+    if (!prompt) return { ok: false, error: "请先输入提示词" };
+    // 增强没有可用的真实百分比：只发 startedAt 让渲染层本地计时，绝不编造进度（单例操作，固定 id）。
+    const report = (event: Omit<TaskProgressEvent, "id" | "scope">) => emitProgress(BrowserWindow.fromWebContents(e.sender), { id: "prompt-enhance", scope: "enhance", ...event });
+    const startedAt = Date.now();
+    report({ message: "AI 增强中", startedAt, state: "running" });
+    try {
+      const enhanced = await enhancePromptWithModel(prompt, input.mode === "edit" ? "edit" : "generate");
+      report({ message: "AI 增强完成", elapsedMs: Date.now() - startedAt, state: "done" });
+      return { ok: true, prompt: enhanced };
+    } catch (error) {
+      report({ message: "AI 增强失败", elapsedMs: Date.now() - startedAt, state: "error" });
+      return { ok: false, error: errorMessage(error, "提示词增强失败") };
+    }
+  });
+  ipcMain.handle(PROMPT_REVERSE, async (e, input: { image: BinaryInput }) => {
+    // 同增强：无真实百分比，用 startedAt 驱动秒表。
+    const report = (event: Omit<TaskProgressEvent, "id" | "scope">) => emitProgress(BrowserWindow.fromWebContents(e.sender), { id: "prompt-reverse", scope: "reverse", ...event });
+    const startedAt = Date.now();
+    report({ message: "正在分析图片", startedAt, state: "running" });
+    try {
+      const result = await reversePromptWithModel(input.image);
+      report({ message: "图反推完成", elapsedMs: Date.now() - startedAt, state: "done" });
+      return { ok: true, ...result };
+    } catch (error) {
+      report({ message: "图反推失败", elapsedMs: Date.now() - startedAt, state: "error" });
+      return { ok: false, error: errorMessage(error, "图反推失败，原提示词未改变") };
+    }
+  });
   ipcMain.handle(QUEUE_LIST, async () => ({ ok: true, items: await queueSnapshot() }));
   ipcMain.handle(QUEUE_ENQUEUE, async (_e, input: { kind: "generate" | "edit"; payload: Record<string, unknown> }) => { try { const binding = resolveRole("image"); if (!binding) return { ok: false, error: "请先配置生图模型" }; const job = await queueStore.enqueue(input.kind, input.payload, binding); broadcast(QUEUE_UPDATE, await queueStore.read()); setImmediate(() => { void processQueue(); }); return { ok: true, job }; } catch (error) { return { ok: false, error: errorMessage(error, "无法创建任务") }; } });
   ipcMain.handle(QUEUE_RETRY, async (_e, id: string, options?: QueueRetryOptions) => {
@@ -1217,9 +1254,21 @@ app.whenReady().then(async () => {
     const png = Buffer.from(await blob.arrayBuffer());
     return png.length ? { ok: true, b64: png.toString("base64") } : { ok: false, error: "无法读取剪贴板图片" };
   });
-  ipcMain.handle(GALLERY_EXPORT_ZIP, async (_e, ids: string[]) => {
+  ipcMain.handle(GALLERY_EXPORT_ZIP, async (e, ids: string[]) => {
     const state = await galleryStore.readState(); const selected = state.items.filter(item => (ids || []).includes(item.id)); if (!selected.length) return { ok: false, error: "未选择图片" }; await fs.mkdir(saveDir, { recursive: true }); const dialogResult = await dialog.showSaveDialog({ defaultPath: path.join(saveDir, `image-studio-${Date.now()}.zip`), filters: [{ name: "ZIP 文件", extensions: ["zip"] }] }); if (dialogResult.canceled || !dialogResult.filePath) return { ok: true, canceled: true };
-    await new Promise<void>((resolve, reject) => { const output = createWriteStream(dialogResult.filePath!); const archive = new archiver.ZipArchive({ zlib: { level: 9 } }); output.on("close", resolve); archive.on("error", reject); archive.pipe(output); for (const item of selected) archive.file(path.join(galleryDir, path.basename(item.fileName)), { name: `${item.title.replace(/[\\/:*?\"<>|]/g, "_") || item.id}.png` }); void archive.finalize(); }); return { ok: true, path: dialogResult.filePath, count: selected.length };
+    // 导出进度：逐张入包计数（单例操作，固定 id，无需渲染层传 requestId）。
+    const report = (event: Omit<TaskProgressEvent, "id" | "scope">) => emitProgress(BrowserWindow.fromWebContents(e.sender), { id: "gallery-export", scope: "export", ...event });
+    const startedAt = Date.now();
+    let archived = 0;
+    try {
+      report({ message: `正在导出 0/${selected.length}`, progress: 0, stageIndex: 0, totalStages: selected.length, startedAt, state: "running" });
+      await new Promise<void>((resolve, reject) => { const output = createWriteStream(dialogResult.filePath!); const archive = new archiver.ZipArchive({ zlib: { level: 9 } }); output.on("close", resolve); archive.on("error", reject); archive.pipe(output); for (const item of selected) { archive.file(path.join(galleryDir, path.basename(item.fileName)), { name: `${item.title.replace(/[\\/:*?\"<>|]/g, "_") || item.id}.png` }); archived += 1; report({ message: `正在导出 ${archived}/${selected.length}`, progress: Math.round((archived / selected.length) * 100), stageIndex: archived - 1, totalStages: selected.length, startedAt, state: "running" }); } void archive.finalize(); });
+      report({ message: `已导出 ${selected.length} 张图片`, progress: 100, stageIndex: selected.length - 1, totalStages: selected.length, elapsedMs: Date.now() - startedAt, state: "done" });
+      return { ok: true, path: dialogResult.filePath, count: selected.length };
+    } catch (error) {
+      report({ message: "导出失败", elapsedMs: Date.now() - startedAt, state: "error" });
+      throw error;
+    }
   });
   ipcMain.handle(TEMPLATES_LIST, async () => ({ ok: true, items: [...DEFAULT_TEMPLATES, ...(await readCustomTemplates())] }));
   ipcMain.handle(TEMPLATES_SAVE, async (_e, input: Partial<PromptTemplate>) => { if (!input.title?.trim() || !input.prompt?.trim()) return { ok: false, error: "模板标题和提示词不能为空" }; const items = await readCustomTemplates(); const item: PromptTemplate = { id: input.id && !input.id.startsWith("builtin-") ? input.id : `custom-${randomUUID()}`, title: input.title.trim(), category: input.category?.trim() || "自定义", prompt: input.prompt.trim(), kind: input.kind === "negative" ? "negative" : "positive", ratio: input.ratio, resolution: input.resolution, quality: input.quality }; const next = [...items.filter(value => value.id !== item.id), item]; await fs.mkdir(path.dirname(await templatesFile()), { recursive: true }); await fs.writeFile(await templatesFile(), JSON.stringify(next, null, 2), "utf8"); return { ok: true, item }; });

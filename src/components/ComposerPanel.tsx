@@ -1,6 +1,8 @@
 import React from "react";
 import { MaskPainter } from "./MaskPainter";
 import { QuickModelSwitcher } from "./QuickModelSwitcher";
+import { ProgressBar } from "./ProgressBar";
+import { useProgressEvent } from "./ProgressContext";
 import { NavIcon } from "./icons";
 import { ImageDropInput } from "./ImageDropInput";
 import { qualities } from "./useComposer";
@@ -53,6 +55,9 @@ export function ComposerPanel({
 }) {
   const { projectId, setProjectId, tagsText, setTagsText, chatModel, roles, autoArchive, notify } = useStudio();
   const copyText = useCopyText(notify);
+  // 增强 / 反推的进度事件（主进程在等待期推送；两者均为单例操作，id 固定）。
+  const enhanceProgress = useProgressEvent("prompt-enhance");
+  const reverseProgress = useProgressEvent("prompt-reverse");
   const {
     prompt,
     negativePrompt,
@@ -195,6 +200,7 @@ export function ComposerPanel({
         </button>
         {originalPrompt && <button onClick={() => setPrompt(originalPrompt)}>恢复原提示词</button>}
       </div>
+      {enhancing && enhanceProgress ? <ProgressBar event={enhanceProgress} /> : null}
 
       <details className="reverse-prompt">
         <summary>图反推提示词 · {roles.reverse?.model ?? "未配置"}</summary>
@@ -208,6 +214,7 @@ export function ComposerPanel({
           </ImageDropInput>
           <button className="assistant-ai" onClick={() => void reversePrompt()} disabled={reversing}>{reversing ? "分析中…" : "生成中英文提示词"}</button>
         </div>
+        {reversing && reverseProgress ? <ProgressBar event={reverseProgress} /> : null}
         {reverseResult && <div className="reverse-results">
           {[{ key: "zh", label: "中文提示词", value: reverseResult.zh }, { key: "en", label: "English Prompt", value: reverseResult.en }].map((item) => item.value && (
             <article key={item.key}>

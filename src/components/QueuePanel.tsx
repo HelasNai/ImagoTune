@@ -1,13 +1,17 @@
 import React, { useState } from "react";
-import { formatDateTime } from "../lib/format";
+import { formatDateTime, queueStatusLabel } from "../lib/format";
 import { recipeFromQueueInput, recipeModeLabel } from "./queue-utils";
 import { NavIcon } from "./icons";
 import { useIpcAction } from "./ipc";
+import { ProgressBar } from "./ProgressBar";
+import { useProgressEvents } from "./ProgressContext";
 import { useStudio } from "./StudioContext";
 
 export function QueuePanel({ queueItems, onRefresh }: { queueItems: QueueJob[]; onRefresh: () => Promise<void> }) {
   const { setError, roles, providers } = useStudio();
   const { pending, run } = useIpcAction(setError);
+  // 运行中任务的实时进度（主进程按 requestId 推送；单一运行任务，直接按 job.requestId 命中）。
+  const progressEvents = useProgressEvents();
   const currentImageBinding = roles.image;
   const [retryChoice, setRetryChoice] = useState<string | null>(null);
 
@@ -44,12 +48,15 @@ export function QueuePanel({ queueItems, onRefresh }: { queueItems: QueueJob[]; 
         <div className="empty"><span><NavIcon name="list-todo" size={40} /></span><p>队列为空</p><small>提交生成或变体后，任务会显示在这里。</small></div>
       ) : (
         <div className="queue-list">
-          {queueItems.map((job) => (
+          {queueItems.map((job) => {
+            const live = job.status === "running" ? progressEvents[job.requestId] : undefined;
+            return (
             <article key={job.id}>
               <div>
-                <strong>{recipeModeLabel(recipeFromQueueInput(job.input, job.kind, "1024x1024"))} · {job.status}</strong>
+                <strong>{recipeModeLabel(recipeFromQueueInput(job.input, job.kind, "1024x1024"))} · {queueStatusLabel(job.status)}</strong>
                 <small>{formatDateTime(job.createdAt)} · 尝试 {job.attempts} 次</small>
                 <p>{recipeFromQueueInput(job.input, job.kind, "1024x1024").prompt}</p>
+                {live && live.state === "running" ? <ProgressBar event={live} /> : null}
                 {job.errorInfo ? <div className="queue-error"><em>{job.errorInfo.title}：{job.errorInfo.message}</em><small>{job.errorInfo.suggestion}</small></div> : job.error && <em>{job.error}</em>}
               </div>
               <div className="queue-actions">
@@ -78,7 +85,8 @@ export function QueuePanel({ queueItems, onRefresh }: { queueItems: QueueJob[]; 
                 </div>
               )}
             </article>
-          ))}
+            );
+          })}
         </div>
       )}
     </section>

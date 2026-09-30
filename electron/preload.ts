@@ -105,6 +105,11 @@ contextBridge.exposeInMainWorld("imageStudio", {
     ipcRenderer.on("image:progress", listener);
     return () => ipcRenderer.removeListener("image:progress", listener);
   },
+  onProgressUpdate: (callback: (event: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, value: unknown) => callback(value);
+    ipcRenderer.on("progress:update", listener);
+    return () => ipcRenderer.removeListener("progress:update", listener);
+  },
   onUpdateStatus: (callback: (event: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, value: unknown) => callback(value);
     ipcRenderer.on("update:status", listener);

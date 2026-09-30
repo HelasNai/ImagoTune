@@ -90,6 +90,7 @@ declare global {
         delete: (id: string) => Promise<{ ok: boolean; error?: string }>;
       };
       onProgress: (callback: (event: AppProgress) => void) => () => void;
+      onProgressUpdate: (callback: (event: TaskProgressEvent) => void) => () => void;
       onQueueUpdate: (callback: (event: QueueJob[]) => void) => () => void;
       onQueueResult: (callback: (event: { job: QueueJob; result: ApiResult }) => void) => () => void;
       onQueueError: (callback: (event: QueueJob) => void) => () => void;
@@ -102,6 +103,9 @@ declare global {
   // 跨进程共享类型：定义已全部迁至 shared/types.d.ts（单一来源），此处仅保留全局别名。
   // 渲染层消费者继续以这些名字引用类型（如 ImageRecipeV1 / QueueJob / GalleryItem），无需改动。
   type AppProgress = Shared.AppProgress;
+  type ProgressScope = Shared.ProgressScope;
+  type ProgressState = Shared.ProgressState;
+  type TaskProgressEvent = Shared.TaskProgressEvent;
   type BinaryPayload = Shared.BinaryPayload;
   type RecipeMode = Shared.RecipeMode;
   type UpdateChannel = Shared.UpdateChannel;

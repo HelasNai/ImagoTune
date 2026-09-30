@@ -11,6 +11,38 @@ export interface AppProgress {
   message?: string;
 }
 
+/** 进度作用域：任务型活动。下载类（更新/模型）继续走各自既有数据模型，不并入此处。 */
+export type ProgressScope = "generate" | "enhance" | "reverse" | "local-ai" | "export";
+
+/** 进度事件状态：running 进行中；done / error / cancelled 为终态。 */
+export type ProgressState = "running" | "done" | "error" | "cancelled";
+
+/**
+ * 统一进度事件（统一进度反馈模型）。
+ * 与 AppProgress 并存：AppProgress 是云生图旧通道载荷，TaskProgressEvent 是渲染层统一消费的模型。
+ * 关键约定：progress 缺省即"不确定进度"（渲染流光条），绝不编造百分比。
+ */
+export interface TaskProgressEvent {
+  /** 关联 id：生成/增强/反推/导出由渲染层传入 requestId，主进程原样回显；本地推理用 taskId。 */
+  id: string;
+  scope: ProgressScope;
+  /** 面向用户的当前阶段文案（中文）。 */
+  message: string;
+  /** 0-100 全局进度；缺省 = 不确定进度（流光条，绝不编造百分比）。 */
+  progress?: number;
+  /** 多阶段流水线（如人脸→超分→抠图）：当前阶段（0 起）与总数；单阶段省略。 */
+  stageIndex?: number;
+  totalStages?: number;
+  stageLabel?: string;
+  /** 起始时间 epoch ms：渲染层本地秒表用，主进程无需高频心跳。 */
+  startedAt?: number;
+  /** 终态总耗时（done / error 时给出精确值）。 */
+  elapsedMs?: number;
+  state: ProgressState;
+  /** 附加信息，如 device: "webgpu" | "wasm"。 */
+  detail?: string;
+}
+
 export interface BinaryPayload {
   name: string;
   type: string;

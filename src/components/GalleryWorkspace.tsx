@@ -7,6 +7,8 @@ import type { LocalAIAction } from "./LocalAIToolbox";
 import { useDialog } from "./Dialogs";
 import { callIpc } from "./ipc";
 import { NavIcon } from "./icons";
+import { ProgressBar } from "./ProgressBar";
+import { useProgressEvent } from "./ProgressContext";
 import type { StudioNotify } from "./StudioContext";
 
 type OpenAction = "preview" | "reuse" | "edit" | "outpaint";
@@ -28,6 +30,8 @@ export function GalleryWorkspace({
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [query, setQuery] = useState("");
   const [tag, setTag] = useState("");
+  /** 导出 ZIP 的进度事件（主进程逐张推送；导出为单例操作，id 固定）。 */
+  const exportProgress = useProgressEvent("gallery-export");
   const [activeProject, setActiveProject] = useState("all");
   const [favoriteOnly, setFavoriteOnly] = useState(false);
   const [resolutionFilter, setResolutionFilter] = useState("");
@@ -329,6 +333,8 @@ export function GalleryWorkspace({
             <button className="danger" disabled={!selected.size} onClick={() => void bulk("delete")}>删除</button>
           </div>
         </div>
+
+        {exportProgress && exportProgress.state === "running" ? <ProgressBar event={exportProgress} /> : null}
 
         {items.length === 0 ? (
           <div className="empty">

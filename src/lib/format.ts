@@ -86,3 +86,16 @@ export function nowISO(): string {
 export function compositeFileKey(file: CompositeFileLike): string {
   return `${file.name}-${file.size}-${file.lastModified}`;
 }
+
+/** 队列任务状态 → 中文文案（替换队列面板原先裸露的英文枚举）。 */
+export function queueStatusLabel(status: QueueStatus): string {
+  const labels: Record<QueueStatus, string> = {
+    queued: "排队中",
+    running: "运行中",
+    completed: "已完成",
+    failed: "失败",
+    cancelled: "已取消",
+    interrupted: "已中断",
+  };
+  return labels[status] ?? status;
+}

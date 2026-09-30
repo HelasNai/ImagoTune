@@ -21,8 +21,12 @@ const scope = self as unknown as DedicatedWorkerGlobalScope;
 const sessions = new Map<string, { session: ort.InferenceSession; device: Device }>();
 const cancelled = new Set<string>();
 
-function progress(id: string, phase: string, value: number, message: string, device?: Device) {
-  scope.postMessage({ type: "progress", id, phase, progress: value, message, device });
+/** 当前流水线阶段（多阶段任务如「一键优化」用于渲染层换算全局进度与阶段指示器）。 */
+let activeStage = { index: 0, total: 1, label: "" };
+
+/** value 缺省表示"无法给出真实百分比"（长推理）：渲染层显示不确定态，而非冻结的进度条。 */
+function progress(id: string, phase: string, value: number | undefined, message: string, device?: Device) {
+  scope.postMessage({ type: "progress", id, phase, progress: value, message, device, stageIndex: activeStage.index, totalStages: activeStage.total, stageLabel: activeStage.label });
 }
 function ensureActive(id: string) {
   if (cancelled.has(id)) throw new DOMException("任务已取消", "AbortError");
@@ -142,6 +146,8 @@ async function removeBackground(task: WorkerTask, input: ReturnType<typeof pixel
   const tensorData = nchwFromRgba(resized, 1024, 1024);
   for (let index = 0; index < tensorData.length; index += 1) tensorData[index] -= 0.5;
   ensureActive(task.id);
+  // 单次 1024×1024 推理无法给出中间进度：发不确定态文案，渲染层用秒表显示"已耗时"。
+  progress(task.id, "inference", undefined, "正在执行 1024×1024 分割推理", holder.device);
   const result = await holder.session.run({ [holder.session.inputNames[0]]: new ort.Tensor("float32", tensorData, [1, 3, 1024, 1024]) });
   const raw = result[holder.session.outputNames[0]].data as Float32Array;
   const plane = raw.length >= 1024 * 1024 ? raw.subarray(0, 1024 * 1024) : raw;
@@ -204,6 +210,7 @@ async function restoreFace(task: WorkerTask, input: ReturnType<typeof pixels>) {
   if (!detectorUrl || !restorerUrl) throw new Error("人脸优化需要安装 YuNet 与 GFPGAN 两个模型");
   const detector = await getSession("yunet", detectorUrl, task.id);
   const detectSize = 640;
+  progress(task.id, "detect", undefined, "正在检测人脸", detector.device);
   const detectInput = resizeRgba(input.data, input.width, input.height, detectSize, detectSize);
   const detectorResult = await detector.session.run({ [detector.session.inputNames[0]]: new ort.Tensor("float32", nchwFromRgba(detectInput, detectSize, detectSize, "bgr", "raw"), [1, 3, detectSize, detectSize]) });
   let faces = decodeYuNet(detectorResult, detectSize, detectSize).map((face) => ({
@@ -256,19 +263,25 @@ async function execute(task: WorkerTask) {
   let current = input;
   const steps: Array<{ tool: LocalAITool; modelId: string; device: Device; elapsedMs: number; parameters: Record<string, string | number | boolean> }> = [];
   if (task.type === "upscale") {
+    activeStage = { index: 0, total: 1, label: "高清放大" };
     const start = performance.now(); const result = await upscale(task, current, task.scale || 2); current = result;
     steps.push({ tool: "upscale", modelId: result.modelId, device: result.device, elapsedMs: Math.round(performance.now() - start), parameters: { scale: task.scale || 2 } });
   } else if (task.type === "removeBackground") {
+    activeStage = { index: 0, total: 1, label: "智能抠图" };
     const start = performance.now(); const result = await removeBackground(task, current); current = result;
     steps.push({ tool: "remove-background", modelId: result.modelId, device: result.device, elapsedMs: Math.round(performance.now() - start), parameters: { feather: task.feather || 2, edgeRefine: task.edgeRefine !== false } });
   } else if (task.type === "restoreFace") {
+    activeStage = { index: 0, total: 1, label: "人脸优化" };
     const start = performance.now(); const result = await restoreFace(task, current); current = result;
     steps.push({ tool: "face-restore", modelId: result.modelId, device: result.device, elapsedMs: Math.round(performance.now() - start), parameters: { strength: task.strength ?? 0.7, allFaces: Boolean(task.allFaces), faceCount: result.faceCount } });
   } else if (task.type === "pipeline") {
+    activeStage = { index: 0, total: 3, label: "人脸优化" };
     let start = performance.now(); const restored = await restoreFace(task, current); current = restored;
     steps.push({ tool: "face-restore", modelId: restored.modelId, device: restored.device, elapsedMs: Math.round(performance.now() - start), parameters: { strength: task.strength ?? 0.7, allFaces: Boolean(task.allFaces), faceCount: restored.faceCount } });
+    activeStage = { index: 1, total: 3, label: "高清放大" };
     start = performance.now(); const enlarged = await upscale({ ...task, source: undefined }, current, 2); current = enlarged;
     steps.push({ tool: "upscale", modelId: enlarged.modelId, device: enlarged.device, elapsedMs: Math.round(performance.now() - start), parameters: { scale: 2 } });
+    activeStage = { index: 2, total: 3, label: "智能抠图" };
     start = performance.now(); const cutout = await removeBackground(task, current); current = cutout;
     steps.push({ tool: "remove-background", modelId: cutout.modelId, device: cutout.device, elapsedMs: Math.round(performance.now() - start), parameters: { feather: task.feather || 2, edgeRefine: task.edgeRefine !== false } });
   } else throw new Error("未知的本地处理任务");

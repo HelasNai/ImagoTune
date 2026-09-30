@@ -2706,6 +2706,71 @@ select:focus-visible {
   background-size: 180% 100%;
   animation: progress-glow 2.2s ease-in-out infinite;
 }
+/* 统一进度反馈：不确定进度（真实百分比不可知）——斜纹流动表示"在动"，绝不谎报百分比。 */
+.progress-track.indeterminate {
+  background-image: repeating-linear-gradient(
+    115deg,
+    rgba(121, 201, 239, 0.55) 0 10px,
+    rgba(231, 166, 202, 0.5) 10px 20px,
+    rgba(143, 211, 197, 0.5) 20px 30px
+  );
+  background-size: 200% 100%;
+  animation: progress-stripes 1.4s linear infinite;
+}
+@keyframes progress-stripes {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 60px 0;
+  }
+}
+/* 统一进度反馈：多阶段流水线的阶段指示器（如本地 AI「一键优化」）——纯 CSS 圆点，不用字符图标。 */
+.stage-indicator {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-top: 14px;
+  font-size: 12px;
+  color: #9aa3b2;
+}
+.stage-indicator span {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.stage-indicator span::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #dfe4ee;
+}
+.stage-indicator span:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  right: -13px;
+  top: 50%;
+  width: 8px;
+  height: 1px;
+  background: #d9dce8;
+}
+.stage-indicator span.done {
+  color: #79b6d8;
+}
+.stage-indicator span.done::before {
+  background: #8ecff2;
+}
+.stage-indicator span.active {
+  color: #716bba;
+  font-weight: 600;
+}
+.stage-indicator span.active::before {
+  background: #796de4;
+  box-shadow: 0 0 0 3px rgba(121, 109, 228, 0.14);
+}
 .lightbox,
 .compare-modal,
 .export-modal,
@@ -2820,7 +2885,8 @@ select:focus-visible {
   .empty span,
   .combobox-list,
   .quick-switch,
-  .progress-track div:not([style*="width: 0"]) {
+  .progress-track div:not([style*="width: 0"]),
+  .progress-track.indeterminate {
     animation: none !important;
   }
   .card,

@@ -10,6 +10,7 @@ import {
   modeLabel,
   nowISO,
   parsePixelSize,
+  queueStatusLabel,
   roundUp16,
   uniqueBy,
 } from "../src/lib/format";
@@ -191,6 +192,17 @@ describe("format helpers", () => {
       expect(compositeFileKey({ name: "a.png", size: 1, lastModified: 1 })).not.toBe(
         compositeFileKey({ name: "a.png", size: 1, lastModified: 2 }),
       );
+    });
+  });
+
+  describe("queueStatusLabel", () => {
+    it("把队列状态枚举映射为中文文案", () => {
+      expect(queueStatusLabel("queued")).toBe("排队中");
+      expect(queueStatusLabel("running")).toBe("运行中");
+      expect(queueStatusLabel("completed")).toBe("已完成");
+      expect(queueStatusLabel("failed")).toBe("失败");
+      expect(queueStatusLabel("cancelled")).toBe("已取消");
+      expect(queueStatusLabel("interrupted")).toBe("已中断");
     });
   });
 
