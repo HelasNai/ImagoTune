@@ -37,6 +37,10 @@ import { useGlobalKeyDown } from "./useKeyboard";
 
 const STORAGE_KEY = "imagotune:layout:v1";
 
+/** 边缘自动滚动：指针进入 .app 视口上/下边缘带（px）时，按接近度线性加速（距离 band→0，速度 0→EDGE_MAX_STEP px/帧）。 */
+const EDGE_BAND = 48;
+const EDGE_MAX_STEP = 15;
+
 /** 键盘快捷键豁免：焦点在输入控件 / 可编辑元素时，Ctrl+Z 等交给原生文本编辑，绝不拦截。 */
 function isTextEditingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -79,6 +83,12 @@ type DragSession = {
   startClientY: number;
   /** 拖拽基准（px；取「所见位置」，y 用显示 top 而非快照 y，保证从所见位置开始拖）。 */
   start: LayoutPlacement;
+  /** 拖拽开始时记录页面滚动容器（.app，唯一页面级滚动容器）与其 scrollTop；null = 无（测试 / 未挂载）。 */
+  app: HTMLElement | null;
+  scroll0: number;
+  /** 最近一次指针 client 坐标：边缘自动滚动每帧据此重算实时矩形 + 吸附预览，让模块跟随滚动。 */
+  lastClientX: number;
+  lastClientY: number;
 };
 
 type LiveRect = { id: LayoutModuleId; x: number; y: number; w: number; h: number };
@@ -170,6 +180,8 @@ export function useComposerLayout({ mode, containerRef }: {
   const [ghost, setGhost] = useState<LayoutPlacement | null>(null);
   const ghostRef = useRef<LayoutPlacement | null>(null);
   const dragRef = useRef<DragSession | null>(null);
+  /** 边缘自动滚动 rAF 句柄（非 null = 循环运行中；全路径终止时清零，防泄漏）。 */
+  const scrollRafRef = useRef<number | null>(null);
   /** 事件回调读取的最新状态（事件发生在提交之后，effect 同步足够）。 */
   const stateRef = useRef({ snapshot, measured, cardWidth });
   useEffect(() => {
@@ -186,6 +198,22 @@ export function useComposerLayout({ mode, containerRef }: {
     ghostRef.current = slot;
     setGhost(slot);
   };
+
+  /** 指针相对 .app 视口的位置：-1 = 上边缘带内、1 = 下边缘带内、0 = 带外（决定自动滚动启停与方向）。 */
+  const edgeDirection = useCallback((app: HTMLElement, clientY: number): -1 | 0 | 1 => {
+    const rect = app.getBoundingClientRect();
+    if (clientY < rect.top + EDGE_BAND) return -1;
+    if (clientY > rect.bottom - EDGE_BAND) return 1;
+    return 0;
+  }, []);
+
+  /** 停止边缘自动滚动（幂等）：拖动结束 / 指针离带 / pointercancel / 卸载统一经此清理，绝不留循环。 */
+  const cancelAutoScroll = useCallback(() => {
+    if (scrollRafRef.current !== null) {
+      window.cancelAnimationFrame(scrollRafRef.current);
+      scrollRafRef.current = null;
+    }
+  }, []);
 
   /** 更新持久化 store（React state 与 localStorage 同步；函数式更新避免读到旧值）。 */
   const updateStore = useCallback((mutate: (current: LayoutStore) => LayoutStore) => {
@@ -470,6 +498,7 @@ export function useComposerLayout({ mode, containerRef }: {
 
   const beginDrag = useCallback(
     (id: LayoutModuleId, kind: "move" | "resize-e" | "resize-s" | "resize-se", event: React.PointerEvent) => {
+      cancelAutoScroll();
       applyGhost(null);
       const state = stateRef.current;
       if (!state.snapshot) return;
@@ -483,59 +512,121 @@ export function useComposerLayout({ mode, containerRef }: {
       const shownX = displayLeft(placement) * colWidth;
       const shownY = (displayTops[id] ?? placement.y) * GRID_PX;
       const shownW = Math.min(placement.w, LAYOUT_COLS) * colWidth;
+      // 页面滚动补偿基准：记录唯一页面滚动容器 .app 与其当前 scrollTop（不存在时为 null，行为退化为无补偿）。
+      const app = containerRef.current ? (containerRef.current.closest(".app") as HTMLElement | null) : null;
       dragRef.current = {
         id,
         kind,
         startClientX: event.clientX,
         startClientY: event.clientY,
         start: { x: shownX, y: shownY, w: shownW, h: placement.h * GRID_PX },
+        app,
+        scroll0: app ? app.scrollTop : 0,
+        lastClientX: event.clientX,
+        lastClientY: event.clientY,
       };
       applyLive({ id, x: shownX, y: shownY, w: shownW, h: placement.h * GRID_PX });
     },
-    [mode, colWidth, displayTops],
+    [mode, colWidth, displayTops, containerRef, cancelAutoScroll],
   );
 
-  const moveDrag = useCallback((event: React.PointerEvent) => {
-    const drag = dragRef.current;
-    if (!drag) return;
-    const dx = event.clientX - drag.startClientX;
-    const dy = event.clientY - drag.startClientY;
-    const base = drag.start;
-    const def = moduleDef(drag.id);
-    const measuredPx = stateRef.current.measured[drag.id] ?? 0;
-    // 拖拽下限为 px 域：minW（px）换算为列、minH（px）与实测高度换算为 GRID_PX 行，避免直接当坐标单位。
-    const minWpx = Math.max(1, Math.ceil(def.minW / colWidth)) * colWidth;
-    const minHpx = Math.max(1, Math.ceil(Math.max(def.minH, measuredPx) / GRID_PX)) * GRID_PX;
-    // 自由跟随指针的实时矩形（不吸附）：按 kind 只改动对应维度。
-    // move 改 x/y；resize-e/s/se 分别只改右缘宽 / 下缘高 / 右下角宽高，x/y 恒取基准（缩放绝不移动模块）。
-    const isMove = drag.kind === "move";
-    const growsW = drag.kind === "resize-e" || drag.kind === "resize-se";
-    const growsH = drag.kind === "resize-s" || drag.kind === "resize-se";
-    const rect: LiveRect = {
-      id: drag.id,
-      x: isMove ? base.x + dx : base.x,
-      y: isMove ? base.y + dy : base.y,
-      w: growsW ? Math.max(base.w + dx, minWpx) : base.w,
-      h: growsH ? Math.max(base.h + dy, minHpx) : base.h,
-    };
-    applyLive(rect);
-    // 吸附落点预览：与 endDrag 使用完全相同的吸附 / 下限 / 避让公式（同一快照），保证预览 = 落地位置。
-    const state = stateRef.current;
-    if (!state.snapshot) {
-      applyGhost(null);
-      return;
+  /**
+   * 依据指针 client 坐标重算实时矩形与吸附预览（moveDrag 与边缘自动滚动每帧共用同一路径，避免两处公式漂移）。
+   * 垂直位移追加页面滚动补偿：dy = 指针位移 + (.app.scrollTop − 起始 scrollTop)。.app 是唯一页面级滚动容器，
+   * 拖动中页面滚动时，被拖模块（move 的 y / 缩放的下缘高）须继续贴在指针下——缩放的高度同样跟指针内容坐标距离走。
+   */
+  const recomputeDrag = useCallback(
+    (clientX: number, clientY: number) => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      drag.lastClientX = clientX;
+      drag.lastClientY = clientY;
+      const dx = clientX - drag.startClientX;
+      const dy = clientY - drag.startClientY + ((drag.app?.scrollTop ?? 0) - drag.scroll0);
+      const base = drag.start;
+      const def = moduleDef(drag.id);
+      const measuredPx = stateRef.current.measured[drag.id] ?? 0;
+      // 拖拽下限为 px 域：minW（px）换算为列、minH（px）与实测高度换算为 GRID_PX 行，避免直接当坐标单位。
+      const minWpx = Math.max(1, Math.ceil(def.minW / colWidth)) * colWidth;
+      const minHpx = Math.max(1, Math.ceil(Math.max(def.minH, measuredPx) / GRID_PX)) * GRID_PX;
+      // 自由跟随指针的实时矩形（不吸附）：按 kind 只改动对应维度。
+      // move 改 x/y；resize-e/s/se 分别只改右缘宽 / 下缘高 / 右下角宽高，x/y 恒取基准（缩放绝不移动模块）。
+      const isMove = drag.kind === "move";
+      const growsW = drag.kind === "resize-e" || drag.kind === "resize-se";
+      const growsH = drag.kind === "resize-s" || drag.kind === "resize-se";
+      const rect: LiveRect = {
+        id: drag.id,
+        x: isMove ? base.x + dx : base.x,
+        y: isMove ? base.y + dy : base.y,
+        w: growsW ? Math.max(base.w + dx, minWpx) : base.w,
+        h: growsH ? Math.max(base.h + dy, minHpx) : base.h,
+      };
+      applyLive(rect);
+      // 吸附落点预览：与 endDrag 使用完全相同的吸附 / 下限 / 避让公式（同一快照），保证预览 = 落地位置。
+      const state = stateRef.current;
+      if (!state.snapshot) {
+        applyGhost(null);
+        return;
+      }
+      const desired: LayoutPlacement = {
+        x: Math.round(rect.x / colWidth),
+        y: Math.round(snapToGrid(rect.y) / GRID_PX),
+        w: Math.max(Math.round(rect.w / colWidth), Math.ceil(def.minW / colWidth)),
+        h: Math.max(Math.round(rect.h / GRID_PX), Math.ceil(Math.max(def.minH, measuredPx) / GRID_PX)),
+      };
+      const occupied = occupiedWithMeasured(state.snapshot, mode, drag.id, state.measured, GRID_PX);
+      applyGhost(findFreeSlot(desired, occupied));
+    },
+    [colWidth, mode],
+  );
+
+  /**
+   * 边缘自动滚动每帧执行体（命名函数表达式：自调度用内部名，不构成 useCallback 的循环类型依赖）。
+   * 指针在 .app 视口上/下 48px 带内时按接近度线性滚动（0→15px/帧）；每帧用最后指针坐标重算实时矩形 + 吸附预览，
+   * 模块随自动滚动继续跟手。离开边缘带 / 无 drag / 已到顶底 → 停止（不再排下一帧）。
+   */
+  const stepAutoScroll = useCallback(
+    function step() {
+      scrollRafRef.current = null;
+      const drag = dragRef.current;
+      const app = drag?.app ?? null;
+      if (!drag || !app) return;
+      const direction = edgeDirection(app, drag.lastClientY);
+      if (direction === 0) return; // 指针已离开边缘带：停止循环
+      const rect = app.getBoundingClientRect();
+      // 接近度 0 → 1（距离 48 → 0），方向由上下边缘决定（上 = -1 向上滚、下 = +1 向下滚）。
+      const distance = direction < 0 ? Math.max(0, drag.lastClientY - rect.top) : Math.max(0, rect.bottom - drag.lastClientY);
+      const proximity = (EDGE_BAND - distance) / EDGE_BAND;
+      const before = app.scrollTop;
+      app.scrollTop = before + direction * proximity * EDGE_MAX_STEP;
+      if (app.scrollTop === before) return; // 已到顶 / 底：无滚动可做，停止空转（指针再动会经 moveDrag 重启）
+      recomputeDrag(drag.lastClientX, drag.lastClientY);
+      scrollRafRef.current = window.requestAnimationFrame(step);
+    },
+    [edgeDirection, recomputeDrag],
+  );
+
+  /** 启动边缘自动滚动（幂等：已有循环不重复排帧）。 */
+  const startAutoScroll = useCallback(() => {
+    if (scrollRafRef.current === null) {
+      scrollRafRef.current = window.requestAnimationFrame(stepAutoScroll);
     }
-    const desired: LayoutPlacement = {
-      x: Math.round(rect.x / colWidth),
-      y: Math.round(snapToGrid(rect.y) / GRID_PX),
-      w: Math.max(Math.round(rect.w / colWidth), Math.ceil(def.minW / colWidth)),
-      h: Math.max(Math.round(rect.h / GRID_PX), Math.ceil(Math.max(def.minH, measuredPx) / GRID_PX)),
-    };
-    const occupied = occupiedWithMeasured(state.snapshot, mode, drag.id, state.measured, GRID_PX);
-    applyGhost(findFreeSlot(desired, occupied));
-  }, [colWidth, mode]);
+  }, [stepAutoScroll]);
+
+  const moveDrag = useCallback(
+    (event: React.PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      recomputeDrag(event.clientX, event.clientY);
+      // 指针在边缘带内 → 启动自动滚动；离带 → 立即取消，绝不让循环在带外继续跑。
+      if (drag.app && edgeDirection(drag.app, event.clientY) !== 0) startAutoScroll();
+      else cancelAutoScroll();
+    },
+    [recomputeDrag, edgeDirection, startAutoScroll, cancelAutoScroll],
+  );
 
   const endDrag = useCallback(() => {
+    cancelAutoScroll();
     const drag = dragRef.current;
     const liveRect = liveRef.current;
     const ghostSlot = ghostRef.current;
@@ -562,7 +653,10 @@ export function useComposerLayout({ mode, containerRef }: {
     const occupied = occupiedWithMeasured(state.snapshot, mode, drag.id, state.measured, GRID_PX);
     const placed = findFreeSlot(desired, occupied);
     commitSnapshot(setPlacement(state.snapshot, mode, drag.id, placed));
-  }, [mode, colWidth, commitSnapshot]);
+  }, [mode, colWidth, commitSnapshot, cancelAutoScroll]);
+
+  // 卸载清理：组件卸载时终止仍在运行的自动滚动循环（与 endDrag / 离带 / pointercancel 并列的第四道取消点）。
+  useEffect(() => cancelAutoScroll, [cancelAutoScroll]);
 
   /** 入口：进入编辑模式（首次 = 测量现状生成初始快照；已有 = 补位缺失模块）；再次点击退出。进出均清空撤销栈（会话级）。 */
   const toggleEditing = useCallback(() => {
