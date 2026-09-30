@@ -54,6 +54,11 @@ import {
 // 故把窗口底色取成页面右缘近似色，使槽位与页面/header 融为一体。
 protocol.registerSchemesAsPrivileged([{ scheme: "local-ai-model", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }]);
 
+// 本地 AI 推理强制独显：Windows 上 Chromium 的 WebGPU 会忽略 powerPreference（crbug 369219127），
+// 且只暴露 GPU 进程已占用的单一适配器（chromium:329211593），双显卡设备因此默认把推理放在核显上。
+// 此开关为浏览器级强制（Chromium ≥145 在 Windows 生效；单显卡机器无影响），必须早于 app ready / GPU 进程启动。
+app.commandLine.appendSwitch("force_high_performance_gpu");
+
 const SERVICE = "imagotune";
 const LEGACY_SERVICES = ["ai-image-studio", "pinaic-image-studio"];
 const ACCOUNT = "default";
