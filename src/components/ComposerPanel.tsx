@@ -247,7 +247,7 @@ export function ComposerPanel({
       )}
 
       <div ref={modulesRef} className={layout.modulesClassName} style={layout.modulesStyle}>
-      <div className="project-strip" data-layout-id="project-strip" style={layout.styleOf("project-strip")}>
+      <div className="project-strip" data-layout-id="project-strip" {...layout.dataFlagsOf("project-strip")} style={layout.styleOf("project-strip")}>
         <label>归属项目
           <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>
             {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
@@ -259,7 +259,7 @@ export function ComposerPanel({
         <span>默认归档到收件箱，可随时批量移动。</span>
       </div>
 
-      <div className="prompt-tools" data-layout-id="prompt-tools" style={layout.styleOf("prompt-tools")}>
+      <div className="prompt-tools" data-layout-id="prompt-tools" {...layout.dataFlagsOf("prompt-tools")} style={layout.styleOf("prompt-tools")}>
         <label>提示词模板
           <select value={selectedTemplate} onChange={(event) => applyTemplate(event.target.value)}>
             <option value="">选择模板…</option>
@@ -286,7 +286,7 @@ export function ComposerPanel({
         rows={5}
       />
 
-      <section className="negative-prompt" data-layout-id="negative-prompt" style={layout.styleOf("negative-prompt")}>
+      <section className="negative-prompt" data-layout-id="negative-prompt" {...layout.dataFlagsOf("negative-prompt")} style={layout.styleOf("negative-prompt")}>
         <div className="negative-head">
           <div><strong>负面提示词</strong><small>独立保存；提交时转换为“必须避免”的自然语言约束。</small></div>
           <div className="negative-template-actions">
@@ -302,7 +302,7 @@ export function ComposerPanel({
         <textarea value={negativePrompt} onChange={(event) => setNegativePrompt(event.target.value)} rows={3} placeholder="例如：水印、乱码文字、重复元素、肢体畸形、塑料质感" />
       </section>
 
-      <div className="prompt-assistant" data-layout-id="prompt-assistant" style={layout.styleOf("prompt-assistant")}>
+      <div className="prompt-assistant" data-layout-id="prompt-assistant" {...layout.dataFlagsOf("prompt-assistant")} style={layout.styleOf("prompt-assistant")}>
         <strong>提示词助手</strong>
         <button onClick={() => optimizeLocal("refine")}>精炼主体</button>
         <button onClick={() => optimizeLocal("detail")}>强化细节</button>
@@ -317,7 +317,7 @@ export function ComposerPanel({
       </div>
       {enhancing && enhanceProgress ? <div className="layout-flow-host" style={layout.followerStyle()}><ProgressBar event={enhanceProgress} /></div> : null}
 
-      <details className="reverse-prompt" data-layout-id="reverse-prompt" style={layout.styleOf("reverse-prompt")}>
+      <details className="reverse-prompt" data-layout-id="reverse-prompt" {...layout.dataFlagsOf("reverse-prompt")} style={layout.styleOf("reverse-prompt")}>
         <summary>图反推提示词 · {roles.reverse?.model ?? "未配置"}</summary>
         <div className="reverse-upload-row">
           <ImageDropInput accept="image/*" onFiles={(files) => { setReverseImage(files[0] ?? null); setReverseResult(null); }}>
@@ -342,7 +342,7 @@ export function ComposerPanel({
 
       {(mode === "edit" || mode === "outpaint") && (
         <>
-          <div className="upload-row" data-layout-id="upload" style={layout.styleOf("upload")}>
+          <div className="upload-row" data-layout-id="upload" {...layout.dataFlagsOf("upload")} style={layout.styleOf("upload")}>
             <ImageDropInput accept="image/*" onFiles={(files) => setImage(files[0] ?? null)}>
               {({ inputId, dropProps }) => (
                 <label className="upload" htmlFor={inputId} {...dropProps}>
@@ -362,7 +362,7 @@ export function ComposerPanel({
         </>
       )}
 
-      {(mode === "generate" || mode === "edit") && <section className="reference-panel" data-tutorial="reference-images" data-layout-id="references" style={layout.styleOf("references")}>
+      {(mode === "generate" || mode === "edit") && <section className="reference-panel" data-tutorial="reference-images" data-layout-id="references" {...layout.dataFlagsOf("references")} style={layout.styleOf("references")}>
         <div className="reference-head">
           <div>
             <strong>参考图片 <span>{references.length}/3</span></strong>
@@ -394,7 +394,7 @@ export function ComposerPanel({
           : "局部蒙版与多参考图不能同时提交；需要局部修改时请先移除参考图。"}</p>
       </section>}
 
-      {mode === "outpaint" && <section className="outpaint-panel" data-layout-id="outpaint-panel" style={layout.styleOf("outpaint-panel")}>
+      {mode === "outpaint" && <section className="outpaint-panel" data-layout-id="outpaint-panel" {...layout.dataFlagsOf("outpaint-panel")} style={layout.styleOf("outpaint-panel")}>
         <div className="outpaint-head"><div><strong>扩图画布</strong><small>{sourceDimensions ? `原图 ${sourceDimensions.width}x${sourceDimensions.height}` : "上传原图后可设置目标画布"}</small></div><span>仅扩展，不裁剪</span></div>
         <div className="outpaint-presets">
           <span>快捷转换</span>
@@ -417,7 +417,7 @@ export function ComposerPanel({
         <button type="button" onClick={() => quickPreset("detail")}>最终高清</button>
       </div>
 
-      <div className="controls" data-layout-id="controls" style={layout.styleOf("controls")}>
+      <div className="controls" data-layout-id="controls" {...layout.dataFlagsOf("controls")} style={layout.styleOf("controls")}>
         <label>细节质量
           <select value={quality} onChange={(event) => setQuality(event.target.value)}>
             {qualities.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
@@ -440,7 +440,7 @@ export function ComposerPanel({
         </label>
       </div>
 
-      {mode !== "outpaint" && <div className="custom-size" data-layout-id="custom-size" style={layout.styleOf("custom-size")}>
+      {mode !== "outpaint" && <div className="custom-size" data-layout-id="custom-size" {...layout.dataFlagsOf("custom-size")} style={layout.styleOf("custom-size")}>
         <label className="check">
           <input type="checkbox" checked={customSizeEnabled} onChange={(event) => setCustomSizeEnabled(event.target.checked)} />
           自定义安全尺寸

@@ -14,6 +14,7 @@ import {
   resolveVerticalLayout,
   setHidden,
   setPlacement,
+  sizeFlags,
   snapToGrid,
   visibleModuleIds,
   type LayoutMode,
@@ -147,6 +148,8 @@ export function useComposerLayout({ mode, containerRef }: {
   const [editing, setEditing] = useState(false);
   /** 模块实测高度（px；id → 高度）。 */
   const [measured, setMeasured] = useState<Record<string, number>>({});
+  /** 模块实测宽度（px；id → 宽度），驱动网格态尺寸档位属性（与高度同一套 ResizeObserver）。 */
+  const [widths, setWidths] = useState<Record<string, number>>({});
   /** 卡片内容宽（px，模块可用宽）。 */
   const [cardWidth, setCardWidth] = useState(0);
   /** 拖动 / 缩放中的实时矩形（px，自由不吸附）。 */
@@ -199,7 +202,8 @@ export function useComposerLayout({ mode, containerRef }: {
     return () => observer.disconnect();
   }, [containerRef]);
 
-  // 模块高度测量：ResizeObserver 盯住现有模块，MutationObserver 负责条件渲染带来的增删
+  // 模块尺寸测量：ResizeObserver 盯住现有模块（高度 + 宽度），MutationObserver 负责条件渲染带来的增删
+  // （隐藏 → 恢复复用同一套观察：节点重新连上后再次回调，宽度随之重建，档位属性自然恢复）
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -215,6 +219,21 @@ export function useComposerLayout({ mode, containerRef }: {
           const height = node.getBoundingClientRect().height;
           if (Math.abs((next[id] ?? -1) - height) > 0.5) {
             next[id] = height;
+            changed = true;
+          }
+        }
+        return changed ? next : current;
+      });
+      setWidths((current) => {
+        let changed = false;
+        const next = { ...current };
+        for (const entry of entries) {
+          const node = entry.target as HTMLElement;
+          const id = node.dataset.layoutId;
+          if (!id) continue;
+          const width = node.getBoundingClientRect().width;
+          if (Math.abs((next[id] ?? -1) - width) > 0.5) {
+            next[id] = width;
             changed = true;
           }
         }
@@ -243,6 +262,21 @@ export function useComposerLayout({ mode, containerRef }: {
       mutations.disconnect();
     };
   }, [containerRef]);
+
+  /** 模块尺寸档位（由实测宽度推导）：widthPx ≤ 0（未测量）不触发任何档位；无档位模块恒全 false。 */
+  const flagsOf = useCallback((id: LayoutModuleId) => sizeFlags(id, widths[id] ?? 0), [widths]);
+
+  /** 模块根属性注入：仅返回真实生效的档位键（值为字符串 "true"，供 CSS 精确选择器匹配；无档位 → 空对象）。 */
+  const dataFlagsOf = useCallback(
+    (id: LayoutModuleId): { "data-layout-compact"?: "true"; "data-layout-narrow"?: "true" } => {
+      const flags = flagsOf(id);
+      const attrs: { "data-layout-compact"?: "true"; "data-layout-narrow"?: "true" } = {};
+      if (flags.compact) attrs["data-layout-compact"] = "true";
+      if (flags.narrow) attrs["data-layout-narrow"] = "true";
+      return attrs;
+    },
+    [flagsOf],
+  );
 
   // 渲染用快照：补齐当前模式下缺失的模块（不改写持久化，等下次进入编辑时落盘）
   const resolved = useMemo<LayoutSnapshot | null>(
@@ -536,6 +570,8 @@ export function useComposerLayout({ mode, containerRef }: {
     /** 拖动 / 缩放中的模块 id（视觉反馈用）。 */
     draggingId: live?.id ?? null,
     styleOf,
+    /** 按实测宽度推导的尺寸档位属性（仅含生效键；流式注入无副作用，CSS 仅在 .layout-grid 作用域响应）。 */
+    dataFlagsOf,
     modulesClassName: resolved ? "composer-modules layout-grid" : "composer-modules",
     modulesStyle: resolved
       ? ({ height: containerHeight, "--layout-col-unit": `${colWidth}px`, "--layout-row-unit": `${GRID_PX}px` } as React.CSSProperties)
