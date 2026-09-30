@@ -26,6 +26,8 @@ export type NavIconName =
   | "arrow-right"
   | "refresh-cw"
   | "rotate-cw"
+  | "undo"
+  | "redo"
   | "loader-circle"
   | "download"
   | "upload"
@@ -153,6 +155,20 @@ const paths: Record<NavIconName, ReactNode> = {
     <>
       <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
       <path d="M21 3v5h-5" />
+    </>
+  ),
+  // 撤销：回退箭头
+  undo: (
+    <>
+      <path d="M9 14 4 9l5-5" />
+      <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11" />
+    </>
+  ),
+  // 重做：前进箭头
+  redo: (
+    <>
+      <path d="m15 14 5-5-5-5" />
+      <path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13" />
     </>
   ),
   // 加载中：圆弧

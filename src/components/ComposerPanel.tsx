@@ -222,6 +222,13 @@ export function ComposerPanel({
         <div className="layout-editor-bar">
           <span className="layout-edit-hint">拖动模块调整位置与大小：松手自动吸附网格，重叠自动避让；点模块右上角「×」可隐藏。</span>
           <div className="layout-editor-actions">
+            <button type="button" className="layout-tool-btn" onClick={layout.undo} disabled={!layout.canUndo} title="撤销（Ctrl+Z）" aria-label="撤销">
+              <NavIcon name="undo" size={16} />
+            </button>
+            <button type="button" className="layout-tool-btn" onClick={layout.redo} disabled={!layout.canRedo} title="重做（Ctrl+Shift+Z / Ctrl+Y）" aria-label="重做">
+              <NavIcon name="redo" size={16} />
+            </button>
+            <span className="layout-tool-sep" aria-hidden="true" />
             <label className="layout-preset-select">
               方案
               <select value={layout.activePresetId} onChange={(event) => layout.switchPreset(event.target.value)}>

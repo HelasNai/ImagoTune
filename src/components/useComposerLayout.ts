@@ -32,8 +32,17 @@ import {
   type LayoutStore,
   type LegacyLayoutStoreV3,
 } from "../lib/layout-store";
+import { createHistory, pushHistory, redoHistory, undoHistory, type LayoutHistory } from "../lib/layout-history";
+import { useGlobalKeyDown } from "./useKeyboard";
 
 const STORAGE_KEY = "imagotune:layout:v1";
+
+/** 键盘快捷键豁免：焦点在输入控件 / 可编辑元素时，Ctrl+Z 等交给原生文本编辑，绝不拦截。 */
+function isTextEditingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
+}
 
 const DEFAULT_PRESET: LayoutPreset = { id: "default", name: "默认", snapshot: null };
 
@@ -186,13 +195,32 @@ export function useComposerLayout({ mode, containerRef }: {
     });
   }, []);
 
-  /** 写入当前激活方案的快照（拖动 / 缩放 / 隐藏 / 重置的统一落点）。 */
-  const commitSnapshot = useCallback((next: LayoutSnapshot | null) => {
-    updateStore((current) => ({
-      ...current,
-      presets: current.presets.map((preset) => (preset.id === current.activePresetId ? { ...preset, snapshot: next } : preset)),
-    }));
-  }, [updateStore]);
+  /** 编辑会话内的撤销 / 重做历史（ref 供事件回调同步读取，state 驱动 canUndo/canRedo 重渲染）。 */
+  const historyRef = useRef<LayoutHistory>(createHistory());
+  const [historyState, setHistoryState] = useState<LayoutHistory>(() => createHistory());
+  const applyHistory = useCallback((next: LayoutHistory) => {
+    historyRef.current = next;
+    setHistoryState(next);
+  }, []);
+
+  /**
+   * 写入当前激活方案的快照（拖动 / 缩放 / 隐藏 / 重置 / 导入 / 撤销 / 重做的统一落点）。
+   * 默认把「将被替换的旧快照」压入撤销栈（仅用户对布局的真实改动入栈）；
+   * `{ noHistory: true }` 用于会话边界（进入编辑）与回放本身（撤销 / 重做 / 重置），避免污染撤销栈。
+   */
+  const commitSnapshot = useCallback(
+    (next: LayoutSnapshot | null, options?: { noHistory?: boolean }) => {
+      const previous = stateRef.current.snapshot;
+      if (!options?.noHistory && previous) {
+        applyHistory(pushHistory(historyRef.current, previous));
+      }
+      updateStore((current) => ({
+        ...current,
+        presets: current.presets.map((preset) => (preset.id === current.activePresetId ? { ...preset, snapshot: next } : preset)),
+      }));
+    },
+    [updateStore, applyHistory],
+  );
 
   /** 布局水平列宽（px = 卡片内容宽 / LAYOUT_COLS）：仅用于水平量（left/width/x/w）；垂直量一律走 GRID_PX 固定行。 */
   const colWidth = cardWidth > 0 ? cardWidth / LAYOUT_COLS : GRID_PX;
@@ -418,9 +446,9 @@ export function useComposerLayout({ mode, containerRef }: {
     [mode, commitSnapshot],
   );
 
-  /** 恢复默认布局：清空自定义快照 → 回到流式渲染（与现状零差异），并退出编辑模式。 */
+  /** 恢复默认布局：清空自定义快照 → 回到流式渲染（与现状零差异），并退出编辑模式（不入撤销栈）。 */
   const resetLayout = useCallback(() => {
-    commitSnapshot(null);
+    commitSnapshot(null, { noHistory: true });
     setEditing(false);
   }, [commitSnapshot]);
 
@@ -532,9 +560,10 @@ export function useComposerLayout({ mode, containerRef }: {
     commitSnapshot(setPlacement(state.snapshot, mode, drag.id, placed));
   }, [mode, colWidth, commitSnapshot]);
 
-  /** 入口：进入编辑模式（首次 = 测量现状生成初始快照；已有 = 补位缺失模块）；再次点击退出。 */
+  /** 入口：进入编辑模式（首次 = 测量现状生成初始快照；已有 = 补位缺失模块）；再次点击退出。进出均清空撤销栈（会话级）。 */
   const toggleEditing = useCallback(() => {
     if (editing) {
+      applyHistory(createHistory());
       setEditing(false);
       return;
     }
@@ -548,9 +577,50 @@ export function useComposerLayout({ mode, containerRef }: {
     } else {
       base = ensureModePlacements(base, mode);
     }
-    commitSnapshot(base);
+    applyHistory(createHistory());
+    commitSnapshot(base, { noHistory: true });
     setEditing(true);
-  }, [editing, mode, containerRef, commitSnapshot]);
+  }, [editing, mode, containerRef, commitSnapshot, applyHistory]);
+
+  // —— 撤销 / 重做（仅编辑会话内；回放本身不入栈）——
+
+  const undo = useCallback(() => {
+    const current = stateRef.current.snapshot;
+    if (!current) return;
+    const step = undoHistory(historyRef.current, current);
+    if (!step) return;
+    applyHistory(step.history);
+    commitSnapshot(step.snapshot, { noHistory: true });
+  }, [applyHistory, commitSnapshot]);
+
+  const redo = useCallback(() => {
+    const current = stateRef.current.snapshot;
+    if (!current) return;
+    const step = redoHistory(historyRef.current, current);
+    if (!step) return;
+    applyHistory(step.history);
+    commitSnapshot(step.snapshot, { noHistory: true });
+  }, [applyHistory, commitSnapshot]);
+
+  // 快捷键：仅编辑态生效；焦点在输入控件 / 可编辑元素时不拦截（保留原生文本撤销）。
+  const handleShortcut = useCallback(
+    (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      if (isTextEditingTarget(event.target)) return;
+      const key = event.key.toLowerCase();
+      if (key === "z" && !event.shiftKey) {
+        event.preventDefault();
+        undo();
+        return;
+      }
+      if ((key === "z" && event.shiftKey) || key === "y") {
+        event.preventDefault();
+        redo();
+      }
+    },
+    [undo, redo],
+  );
+  useGlobalKeyDown(handleShortcut, editing);
 
   // —— 方案管理（新建 / 切换 / 重命名 / 删除）——
 
@@ -654,6 +724,14 @@ export function useComposerLayout({ mode, containerRef }: {
     moveDrag,
     endDrag,
     toggleEditing,
+    /** 撤销栈非空（按钮可用态） */
+    canUndo: historyState.past.length > 0,
+    /** 重做栈非空（按钮可用态） */
+    canRedo: historyState.future.length > 0,
+    /** 撤销上一步布局改动（仅编辑会话内；回放不入栈） */
+    undo,
+    /** 重做被撤销的布局改动 */
+    redo,
     /** 当前激活方案快照（编码分享码用） */
     snapshot,
     /** 方案列表（id + 名称） */
