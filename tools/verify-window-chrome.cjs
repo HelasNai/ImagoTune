@@ -343,6 +343,58 @@ async function runAssertions(cdp, initialShotBytes) {
   );
 
   // -------------------------------------------------------------------------
+  // LIGHTBOX：图片灯箱覆盖 header 的 88px 拖拽盒，且渲染在 header 之后
+  // （main.tsx：<header> 在前，{preview && <div className="lightbox">} 在后）。
+  // ① z-index 必须高于 header(40)——全屏弹层契约 ≥50，与 .compare-modal /
+  //    .export-modal 一致；灯箱自 v1.1 遗留 z-index 20，v2.0 header 升级为
+  //    fixed z-index 40 拖拽层后，预览时 header 会盖住图片上部（v3.1 修复的 bug）。
+  // ② 必须显式 no-drag——拖拽区按 DOM 前序收集、后声明者胜（Chromium
+  //    CollectAnnotatedRegions → Electron DraggableRegionsToSkRegion），灯箱晚于
+  //    header 渲染，full-screen no-drag 矩形可整体挖除 header 拖拽区；否则灯箱
+  //    顶部 88px 内的点击会被 OS 当成拖窗口（v2.7 TOAST 同理）。
+  // ③ 关闭按钮必须避开右上原生按钮条（高 env(titlebar-area-height)，回退 32px）：
+  //    该区域是 OS 级、DOM 元素点击会被系统按钮吞掉（v2.7 TOAST 同理），
+  //    故 close 的 top 必须 ≥ 按钮条高度。
+  // 灯箱条件渲染（无 preview 时不在 DOM），用同 class 的同构隐藏探测节点读取
+  // CSS 规则的解析结果来断言样式契约（与 TOAST 段同手法）。
+  // -------------------------------------------------------------------------
+  log("");
+  log("--- LIGHTBOX ---");
+  const lightboxRaw = await evaluate(
+    `(function(){
+      var probe=document.createElement('div');
+      probe.className='lightbox';
+      var close=document.createElement('button');
+      close.className='lightbox-close';
+      probe.appendChild(close);
+      probe.style.visibility='hidden';
+      document.body.appendChild(probe);
+      var pcs=getComputedStyle(probe);
+      var ccs=getComputedStyle(close);
+      var region=pcs['-webkit-app-region']||pcs.getPropertyValue('-webkit-app-region')||pcs.getPropertyValue('app-region');
+      var closeTop=parseFloat(ccs.top)||0;
+      var probeZ=parseInt(pcs.zIndex,10);
+      probe.remove();
+      var headerZ=parseInt(getComputedStyle(document.querySelector('header')).zIndex,10);
+      var tp=document.createElement('div');
+      tp.style.paddingTop='env(titlebar-area-height, 0px)';
+      document.body.appendChild(tp);
+      var titlebarAreaHeight=parseFloat(getComputedStyle(tp).paddingTop)||0;
+      tp.remove();
+      return JSON.stringify({zIndex:probeZ,headerZ:headerZ,region:region,closeTop:+closeTop.toFixed(2),titlebarAreaHeight:+titlebarAreaHeight.toFixed(2)});
+    })()`
+  );
+  const lightbox = JSON.parse(lightboxRaw);
+  check(
+    "LIGHTBOX z-index >= 50 > header, no-drag full-screen carve-out, close button clears native caption strip",
+    lightbox.zIndex >= 50 &&
+      lightbox.zIndex > lightbox.headerZ &&
+      lightbox.region === "no-drag" &&
+      lightbox.closeTop >= lightbox.titlebarAreaHeight - 0.5,
+    lightboxRaw
+  );
+
+  // -------------------------------------------------------------------------
   // WCO：窗口按钮改由系统原生 Window Controls Overlay 承载——
   // DOM 内不再有 .window-controls；navigator.windowControlsOverlay 可见。
   // 注意：Electron 44 未实现 navigator.windowControlsOverlay.getTitleBarAreaRect()

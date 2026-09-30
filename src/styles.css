@@ -359,13 +359,16 @@ label {
 .lightbox {
   position: fixed;
   inset: 0;
-  z-index: 20;
+  z-index: 50;
   background: var(--overlay-bg);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 5vh 5vw;
   backdrop-filter: blur(var(--overlay-blur));
+  /* v3.1 修复：v2.0 起 header 是 fixed z-index 40 的 WCO 拖拽层，全屏弹层契约要求 ≥50（见 v2.9 分区 z-index 注释），灯箱自 v1.1 遗留 z-index 20，预览时 header 盖住图片上部；这里提升到 50 与 .compare-modal / .export-modal 对齐。同时给灯箱加 no-drag：它覆盖 header 的 88px 拖拽盒，拖拽区按「DOM 前序收集、后声明者胜」计算（灯箱在 header 之后渲染），全屏 no-drag 矩形可整体挖除覆盖区，否则顶部区域的点击会被 OS 当拖窗口。 */
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 .lightbox img {
   max-width: 90vw;
@@ -379,7 +382,8 @@ label {
 .lightbox-close {
   position: absolute;
   right: 28px;
-  top: 20px;
+  /* v3.1 修复：右上原生按钮条（高 env(titlebar-area-height)，回退 32px）是 OS 级区域、DOM 元素不可用（点击会被系统按钮吞掉），原 top:20px 与按钮条重叠 12px；下移到按钮条下方留 12px 间隙。 */
+  top: calc(env(titlebar-area-height, 32px) + 12px);
   width: 42px;
   height: 42px;
   border-radius: 50%;
