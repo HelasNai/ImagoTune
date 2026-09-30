@@ -458,6 +458,7 @@ export function ComposerPanel({
       </div>}
       {layout.editing && (
         <div className="layout-handle-layer">
+          {layout.ghostRect && <div className="layout-ghost" style={layout.ghostRect} aria-hidden="true" />}
           {layout.handles.map((handle) => (
             <div
               key={handle.id}

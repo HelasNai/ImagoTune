@@ -156,6 +156,9 @@ export function useComposerLayout({ mode, containerRef }: {
   /** 拖动 / 缩放中的实时矩形（px，自由不吸附）。 */
   const [live, setLive] = useState<LiveRect | null>(null);
   const liveRef = useRef<LiveRect | null>(null);
+  /** 拖动 / 缩放时的吸附落点预览（快照坐标系：x/w 列、y/h 行）；null = 无预览。 */
+  const [ghost, setGhost] = useState<LayoutPlacement | null>(null);
+  const ghostRef = useRef<LayoutPlacement | null>(null);
   const dragRef = useRef<DragSession | null>(null);
   /** 事件回调读取的最新状态（事件发生在提交之后，effect 同步足够）。 */
   const stateRef = useRef({ snapshot, measured, cardWidth });
@@ -166,6 +169,12 @@ export function useComposerLayout({ mode, containerRef }: {
   const applyLive = (rect: LiveRect | null) => {
     liveRef.current = rect;
     setLive(rect);
+  };
+
+  /** 写入吸附预览：ref 镜像供事件回调（endDrag）同步读取最新值，避免闭包读到旧 state。 */
+  const applyGhost = (slot: LayoutPlacement | null) => {
+    ghostRef.current = slot;
+    setGhost(slot);
   };
 
   /** 更新持久化 store（React state 与 localStorage 同步；函数式更新避免读到旧值）。 */
@@ -370,6 +379,19 @@ export function useComposerLayout({ mode, containerRef }: {
     });
   }, [editing, resolved, layoutItems, displayTops, colWidth, live]);
 
+  /** 吸附落点预览矩形（px）：与 handles 同一坐标系（.layout-handle-layer 内绝对定位），无预览时 undefined。 */
+  const ghostRect = useMemo<React.CSSProperties | undefined>(() => {
+    if (!ghost) return undefined;
+    return {
+      position: "absolute",
+      left: ghost.x * colWidth,
+      top: ghost.y * GRID_PX,
+      width: ghost.w * colWidth,
+      height: ghost.h * GRID_PX,
+      pointerEvents: "none",
+    };
+  }, [ghost, colWidth]);
+
   /** 当前模式下被隐藏的模块（供「已隐藏」列表恢复；通用模块隐藏 = 三模式同藏）。 */
   const hiddenIds = useMemo(
     () => (resolved ? visibleModuleIds(mode).filter((id) => isHidden(resolved, mode, id)) : []),
@@ -419,6 +441,7 @@ export function useComposerLayout({ mode, containerRef }: {
 
   const beginDrag = useCallback(
     (id: LayoutModuleId, kind: "move" | "resize", event: React.PointerEvent) => {
+      applyGhost(null);
       const state = stateRef.current;
       if (!state.snapshot) return;
       const current = ensureModePlacements(state.snapshot, mode);
@@ -449,29 +472,52 @@ export function useComposerLayout({ mode, containerRef }: {
     const dx = event.clientX - drag.startClientX;
     const dy = event.clientY - drag.startClientY;
     const base = drag.start;
-    if (drag.kind === "move") {
-      applyLive({ id: drag.id, x: base.x + dx, y: base.y + dy, w: base.w, h: base.h });
+    const def = moduleDef(drag.id);
+    const measuredPx = stateRef.current.measured[drag.id] ?? 0;
+    // 自由跟随指针的实时矩形（不吸附）：拖动改 x/y，缩放改 w/h。
+    const rect: LiveRect =
+      drag.kind === "move"
+        ? { id: drag.id, x: base.x + dx, y: base.y + dy, w: base.w, h: base.h }
+        : {
+            id: drag.id,
+            x: base.x,
+            y: base.y,
+            // 拖拽下限为 px 域：minW（px）换算为列、minH（px）与实测高度换算为 GRID_PX 行，避免直接当坐标单位。
+            w: Math.max(base.w + dx, Math.max(1, Math.ceil(def.minW / colWidth)) * colWidth),
+            h: Math.max(base.h + dy, Math.max(1, Math.ceil(Math.max(def.minH, measuredPx) / GRID_PX)) * GRID_PX),
+          };
+    applyLive(rect);
+    // 吸附落点预览：与 endDrag 使用完全相同的吸附 / 下限 / 避让公式（同一快照），保证预览 = 落地位置。
+    const state = stateRef.current;
+    if (!state.snapshot) {
+      applyGhost(null);
       return;
     }
-    const def = moduleDef(drag.id);
-    // 拖拽下限为 px 域：minW（px）换算为列、minH（px）与实测高度换算为 GRID_PX 行，避免直接当坐标单位。
-    const measuredPx = stateRef.current.measured[drag.id] ?? 0;
-    applyLive({
-      id: drag.id,
-      x: base.x,
-      y: base.y,
-      w: Math.max(base.w + dx, Math.max(1, Math.ceil(def.minW / colWidth)) * colWidth),
-      h: Math.max(base.h + dy, Math.max(1, Math.ceil(Math.max(def.minH, measuredPx) / GRID_PX)) * GRID_PX),
-    });
-  }, [colWidth]);
+    const desired: LayoutPlacement = {
+      x: Math.round(rect.x / colWidth),
+      y: Math.round(snapToGrid(rect.y) / GRID_PX),
+      w: Math.max(Math.round(rect.w / colWidth), Math.ceil(def.minW / colWidth)),
+      h: Math.max(Math.round(rect.h / GRID_PX), Math.ceil(Math.max(def.minH, measuredPx) / GRID_PX)),
+    };
+    const occupied = occupiedWithMeasured(state.snapshot, mode, drag.id, state.measured, GRID_PX);
+    applyGhost(findFreeSlot(desired, occupied));
+  }, [colWidth, mode]);
 
   const endDrag = useCallback(() => {
     const drag = dragRef.current;
     const liveRect = liveRef.current;
+    const ghostSlot = ghostRef.current;
     dragRef.current = null;
+    // 退出路径一律清理：提前 return（无 drag / 无 liveRect）也不例外，避免预览残留。
     applyLive(null);
+    applyGhost(null);
     const state = stateRef.current;
     if (!drag || !liveRect || !state.snapshot) return;
+    // 落点优先取拖动中实时预览（moveDrag 已用相同公式算好并避让）；无预览时回退重算，行为与改造前一致。
+    if (ghostSlot) {
+      commitSnapshot(setPlacement(state.snapshot, mode, drag.id, ghostSlot));
+      return;
+    }
     const def = moduleDef(drag.id);
     const measuredPx = state.measured[drag.id] ?? 0;
     // 松手吸附：水平吸附到列，垂直经 snapToGrid 吸附到 GRID_PX 行；minW/minH（px）换算为列/行后作下限。
@@ -596,6 +642,8 @@ export function useComposerLayout({ mode, containerRef }: {
       ? ({ height: containerHeight, "--layout-col-unit": `${colWidth}px`, "--layout-row-unit": `${GRID_PX}px` } as React.CSSProperties)
       : undefined,
     handles,
+    /** 拖动 / 缩放时的吸附落点预览（px 绝对定位矩形；null 表示无预览） */
+    ghostRect,
     /** 当前模式下已隐藏、可从列表恢复的模块 */
     hiddenIds,
     hideModule,
