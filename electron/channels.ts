@@ -60,6 +60,7 @@ export const QUEUE_ENQUEUE = "queue:enqueue";
 export const QUEUE_RETRY = "queue:retry";
 export const QUEUE_CANCEL = "queue:cancel";
 export const QUEUE_REMOVE = "queue:remove";
+export const QUEUE_CLEAR = "queue:clear";
 
 // —— invoke：剪贴板 ——
 export const CLIPBOARD_COPY_TEXT = "clipboard:copyText";

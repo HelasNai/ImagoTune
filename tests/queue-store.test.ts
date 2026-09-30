@@ -59,4 +59,20 @@ describe("persistent queue", () => {
       await rm(directory, { recursive: true, force: true });
     }
   });
+
+  it("clears finished history but keeps queued and running jobs", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "image-studio-queue-clear-"));
+    try {
+      const store = createQueueStore(directory);
+      const waiting = await store.enqueue("generate", { requestId: "waiting", prompt: "waiting" });
+      const done = await store.enqueue("generate", { requestId: "done", prompt: "done" });
+      const failed = await store.enqueue("generate", { requestId: "failed", prompt: "failed" });
+      await store.save({ ...done, status: "completed" });
+      await store.save({ ...failed, status: "failed" });
+      expect(await store.clear()).toBe(2);
+      expect((await store.read()).map((item) => item.id)).toEqual([waiting.id]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 });

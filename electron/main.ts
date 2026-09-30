@@ -38,7 +38,7 @@ import {
   OUTPAINT_PREPARE, PNG_READ_RECIPE,
   PROJECTS_CREATE, PROJECTS_DELETE, PROJECTS_RENAME, PROJECTS_SET_COVER,
   PROGRESS_UPDATE, PROMPT_ENHANCE, PROMPT_REVERSE,
-  QUEUE_CANCEL, QUEUE_ENQUEUE, QUEUE_ERROR, QUEUE_LIST, QUEUE_REMOVE, QUEUE_RESULT, QUEUE_RETRY, QUEUE_UPDATE,
+  QUEUE_CANCEL, QUEUE_CLEAR, QUEUE_ENQUEUE, QUEUE_ERROR, QUEUE_LIST, QUEUE_REMOVE, QUEUE_RESULT, QUEUE_RETRY, QUEUE_UPDATE,
   SETTINGS_CHOOSE_SAVE_DIR, SETTINGS_CLEAR, SETTINGS_GET, SETTINGS_OPEN_SAVE_DIR, SETTINGS_RESET_SAVE_DIR,
   SETTINGS_SAVE, SETTINGS_TEST,
   TEMPLATES_DELETE, TEMPLATES_LIST, TEMPLATES_SAVE,
@@ -1242,6 +1242,8 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle(QUEUE_CANCEL, async (_e, id: string) => { const items = await queueStore.read(); const job = items.find(value => value.id === id); if (!job || !["queued", "running"].includes(job.status)) return { ok: false, error: "任务不可取消" }; const errorInfo: GenerationErrorInfo = cancelledErrorInfo(); const next = { ...job, status: "cancelled" as const, error: errorInfoMessage(errorInfo), errorInfo, updatedAt: nowISO() }; await queueStore.save(next); if (job.status === "running") { cancelledRequests.add(job.requestId); controllers.get(job.requestId)?.abort(); } broadcast(QUEUE_UPDATE, await queueStore.read()); return { ok: true, job: next }; });
   ipcMain.handle(QUEUE_REMOVE, async (_e, id: string) => { const items = await queueStore.read(); const job = items.find(value => value.id === id); if (!job || job.status === "running") return { ok: false, error: "运行中的任务不可移除" }; await queueStore.remove(id); broadcast(QUEUE_UPDATE, await queueStore.read()); return { ok: true }; });
+  // 一键清空历史：只移除非活跃任务（completed/failed/cancelled/interrupted），queued/running 一律保留。
+  ipcMain.handle(QUEUE_CLEAR, async () => { try { const removed = await queueStore.clear(); broadcast(QUEUE_UPDATE, await queueStore.read()); return { ok: true, removed }; } catch (error) { return { ok: false, error: errorMessage(error, "清空历史失败") }; } });
   ipcMain.handle(CLIPBOARD_COPY_TEXT, async (_e, value: string) => { clipboard.writeText(String(value || "")); return { ok: true }; });
   ipcMain.handle(CLIPBOARD_COPY_IMAGE, async (_e, b64: string) => { const image = nativeImage.createFromBuffer(Buffer.from(stripDataUrlPrefix(String(b64 || "")), "base64")); if (image.isEmpty()) return { ok: false, error: "图片数据无效" }; const png = image.toPNG(); const pngArrayBuffer = png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) as ArrayBuffer; await clipboard.write([new ClipboardItem({ "image/png": new Blob([pngArrayBuffer], { type: "image/png" }) })]); return { ok: true }; });
   ipcMain.handle(CLIPBOARD_READ_IMAGE, async () => {

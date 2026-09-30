@@ -58,7 +58,8 @@ contextBridge.exposeInMainWorld("imageStudio", {
     enqueue: (input: { kind: "generate" | "edit"; payload: unknown }) => ipcRenderer.invoke("queue:enqueue", input),
     retry: (id: string, options?: { useCurrentBinding?: boolean }) => ipcRenderer.invoke("queue:retry", id, options),
     cancel: (id: string) => ipcRenderer.invoke("queue:cancel", id),
-    remove: (id: string) => ipcRenderer.invoke("queue:remove", id)
+    remove: (id: string) => ipcRenderer.invoke("queue:remove", id),
+    clear: () => ipcRenderer.invoke("queue:clear")
   },
   clipboard: {
     copyText: (value: string) => ipcRenderer.invoke("clipboard:copyText", value),

@@ -47,7 +47,17 @@ export function createQueueStore(baseDir: string) {
   }
   async function removeAssets(item: QueueJob) { for (const attachment of Object.values(item.attachments || {})) { if (attachment) await fs.rm(attachment.path, { force: true }); } }
   async function remove(id: string) { const items = await read(); const item = items.find(value => value.id === id); if (item) await removeAssets(item); await write(items.filter(value => value.id !== id)); }
+  // 一键清空历史：仅移除「非活跃」任务（completed/failed/cancelled/interrupted）并回收其附件；
+  // queued/running 一律保留——正在排队或花钱的任务绝不能被批量删除。返回清除条数。
+  async function clear() {
+    const items = await read();
+    const kept = items.filter((item) => ACTIVE_STATUSES.has(item.status));
+    const removed = items.filter((item) => !ACTIVE_STATUSES.has(item.status));
+    for (const item of removed) await removeAssets(item);
+    await write(kept);
+    return removed.length;
+  }
   async function recover() { return read(true); }
-  return { queuePath, read, write, save, enqueue, materialize, remove, removeAssets, recover };
+  return { queuePath, read, write, save, enqueue, materialize, remove, removeAssets, clear, recover };
 }
 export type QueueStore = ReturnType<typeof createQueueStore>;

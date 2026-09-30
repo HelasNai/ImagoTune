@@ -51,6 +51,7 @@ declare global {
         retry: (id: string, options?: QueueRetryOptions) => Promise<{ ok: boolean; job?: QueueJob; error?: string }>;
         cancel: (id: string) => Promise<{ ok: boolean; job?: QueueJob; error?: string }>;
         remove: (id: string) => Promise<{ ok: boolean; error?: string }>;
+        clear: () => Promise<{ ok: boolean; removed?: number; error?: string }>;
       };
       clipboard: {
         copyText: (value: string) => Promise<{ ok: boolean; error?: string }>;

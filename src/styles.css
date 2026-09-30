@@ -1846,6 +1846,12 @@ textarea {
 .queue-panel {
   max-width: 1040px;
 }
+.queue-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
 .queue-list {
   display: flex;
   flex-direction: column;
