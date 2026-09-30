@@ -156,7 +156,7 @@ export function ComposerPanel({
   const handleImportLayoutCode = async () => {
     const code = await requestText({
       title: "导入布局分享码",
-      message: "粘贴以 ITL1: 开头的布局码。导入只替换通用模块的位置与隐藏状态，专属模块保持不动。",
+      message: "粘贴布局分享码（ITL2；ITL1 旧码将按当前窗口近似换算）。导入只替换通用模块的位置与隐藏状态，专属模块保持不动。",
       confirmLabel: "导入",
     });
     if (!code?.trim()) return;
@@ -220,39 +220,52 @@ export function ComposerPanel({
 
       {layout.editing && (
         <div className="layout-editor-bar">
-          <span className="layout-edit-hint">拖动模块调整位置与大小：松手自动吸附网格，重叠自动避让；点模块右上角「×」可隐藏。</span>
+          <span className="layout-edit-hint">
+            <NavIcon name="move" size={14} /> 拖动移动 · 边角缩放 · × 隐藏
+          </span>
           <div className="layout-editor-actions">
-            <button type="button" className="layout-tool-btn" onClick={layout.undo} disabled={!layout.canUndo} title="撤销（Ctrl+Z）" aria-label="撤销">
-              <NavIcon name="undo" size={16} />
-            </button>
-            <button type="button" className="layout-tool-btn" onClick={layout.redo} disabled={!layout.canRedo} title="重做（Ctrl+Shift+Z / Ctrl+Y）" aria-label="重做">
-              <NavIcon name="redo" size={16} />
-            </button>
-            <span className="layout-tool-sep" aria-hidden="true" />
-            <label className="layout-preset-select">
-              方案
-              <select value={layout.activePresetId} onChange={(event) => layout.switchPreset(event.target.value)}>
-                {layout.presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
-              </select>
-            </label>
-            <button type="button" className="layout-tool-btn" onClick={() => void handleCreatePreset()}>另存为</button>
-            <button type="button" className="layout-tool-btn" onClick={() => void handleRenamePreset()}>重命名</button>
-            <button type="button" className="layout-tool-btn danger" disabled={layout.activePresetId === "default"} onClick={() => void handleDeletePreset()}>删除</button>
-            <span className="layout-tool-sep" aria-hidden="true" />
-            <button type="button" className="layout-tool-btn" onClick={() => void handleCopyLayoutCode()}>复制分享码</button>
-            <button type="button" className="layout-tool-btn" onClick={() => void handleImportLayoutCode()}>导入分享码</button>
-            <span className="layout-tool-sep" aria-hidden="true" />
+            <div className="layout-editor-group">
+              <label className="layout-preset-select">
+                方案
+                <select value={layout.activePresetId} onChange={(event) => layout.switchPreset(event.target.value)}>
+                  {layout.presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+                </select>
+              </label>
+              <button type="button" className="layout-tool-btn" title="将当前布局另存为新方案" onClick={() => void handleCreatePreset()}>
+                <NavIcon name="plus" size={14} />另存为
+              </button>
+              <button type="button" className="layout-tool-btn" title="重命名当前方案" onClick={() => void handleRenamePreset()}>
+                <NavIcon name="pen-line" size={14} />重命名
+              </button>
+              <button type="button" className="layout-tool-btn danger" disabled={layout.activePresetId === "default"} title="删除当前方案（默认方案不可删除）" onClick={() => void handleDeletePreset()}>
+                <NavIcon name="trash" size={14} />删除
+              </button>
+            </div>
+            <div className="layout-editor-group">
+              <button type="button" className="layout-tool-btn" onClick={layout.undo} disabled={!layout.canUndo} title="撤销（Ctrl+Z）" aria-label="撤销">
+                <NavIcon name="undo" size={16} />
+              </button>
+              <button type="button" className="layout-tool-btn" onClick={layout.redo} disabled={!layout.canRedo} title="重做（Ctrl+Shift+Z / Ctrl+Y）" aria-label="重做">
+                <NavIcon name="redo" size={16} />
+              </button>
+              <button type="button" className="layout-tool-btn" title="复制当前布局的分享码" onClick={() => void handleCopyLayoutCode()}>
+                <NavIcon name="copy" size={14} />复制分享码
+              </button>
+              <button type="button" className="layout-tool-btn" title="粘贴布局分享码并导入" onClick={() => void handleImportLayoutCode()}>
+                <NavIcon name="download" size={14} />导入分享码
+              </button>
+            </div>
             {layout.hiddenIds.length > 0 && (
-              <div className="layout-hidden-panel">
+              <div className="layout-editor-group layout-hidden-panel">
                 <span>已隐藏 {layout.hiddenIds.length} 个：</span>
                 {layout.hiddenIds.map((id) => (
-                  <button key={id} type="button" className="layout-hidden-restore" onClick={() => layout.showModule(id)} title="恢复显示">
+                  <button key={id} type="button" className="layout-hidden-restore" onClick={() => layout.showModule(id)} title="恢复显示该模块">
                     {moduleDef(id).label} ↺
                   </button>
                 ))}
               </div>
             )}
-            <button type="button" className="layout-reset" onClick={() => void handleResetLayout()}>恢复默认布局</button>
+            <button type="button" className="layout-reset" title="清除自定义布局并恢复默认排列（需确认）" onClick={() => void handleResetLayout()}>恢复默认布局</button>
           </div>
         </div>
       )}

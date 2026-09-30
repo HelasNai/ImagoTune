@@ -16,6 +16,7 @@ export type NavIconName =
   | "graduation-cap"
   // 通用备用池
   | "x"
+  | "move"
   | "plus"
   | "minus"
   | "square"
@@ -136,6 +137,17 @@ const paths: Record<NavIconName, ReactNode> = {
   check: <path d="M20 6L9 17l-5-5" />,
 
   // ---------- 方向 ----------
+  // 移动：四向箭头
+  move: (
+    <>
+      <path d="M12 2v20" />
+      <path d="m15 19-3 3-3-3" />
+      <path d="m19 9 3 3-3 3" />
+      <path d="M2 12h20" />
+      <path d="m5 9-3 3 3 3" />
+      <path d="m9 5 3-3 3 3" />
+    </>
+  ),
   // 向左箭头
   "arrow-left": <path d="m12 19l-7-7l7-7m7 7H5" />,
   // 向右箭头
