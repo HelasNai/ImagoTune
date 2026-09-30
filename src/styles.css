@@ -738,11 +738,18 @@ aside {
   /* .app 是滚动容器且顶部已让出 header：sticky 贴 .app 滚动端口顶部（= header 下方）。 */
   top: 0;
   align-self: flex-start;
+  /* v3.3：侧栏改为纵向弹性列——导航等固定内容在上，项目树（.sidebar-projects）占满
+     剩余高度（flex:1 + min-height:0）并在侧栏内部滚动，长项目列表不再顶出视口。 */
+  display: flex;
+  flex-direction: column;
   padding: 26px 18px;
   /* v2.3 修复：侧栏须与 .app 滚动端口等高（= 100vh - --header-h），
      背景色/渐变与右边框才能延伸到窗口底；旧值额外减 70px 会让侧栏底边
-     悬停在窗口底上方 70px、下方露出页面背景（"侧栏未到底"）。 */
-  min-height: calc(100vh - var(--header-h));
+     悬停在窗口底上方 70px、下方露出页面背景（"侧栏未到底"）。
+     v3.6：min-height 没有高度上界——内容（项目树）超过视口时侧栏被撑高，
+     flex:1 的项目树拿不到「剩余高度」、内部滚动永不生效，帮助按钮被挤出视口；
+     改为 height 约束高度后内部滚动生效，取值不变、v2.3 语义不变。 */
+  height: calc(100vh - var(--header-h));
   width: var(--aside-width);
   background: linear-gradient(
     180deg,
@@ -913,6 +920,8 @@ textarea {
   aside {
     padding: 16px 24px;
     width: auto;
+    /* v3.6：横条布局退回内容自然高度，覆盖基础规则的固定 height。 */
+    height: auto;
   }
 }
 @media (max-width: 700px) {
@@ -1652,6 +1661,39 @@ textarea {
   border-radius: 50%;
   background: #6a78d3;
   color: #fff;
+}
+/* v3.6 队列 chip 增强：活跃任务脉冲点 + 运行中进度（reduced-motion 组已登记 animation: none） */
+.queue-chip-active {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.queue-chip-active strong {
+  margin-left: 0;
+}
+.queue-chip-pulse {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #78c8f2, #ee9fc2);
+  animation: queue-pulse 1.6s ease-out infinite;
+}
+@keyframes queue-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(120, 160, 224, 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(120, 160, 224, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(120, 160, 224, 0);
+  }
+}
+.queue-chip-percent {
+  font-size: 11px;
+  font-weight: 700;
+  color: #6a78d3;
 }
 .project-strip {
   display: grid;
@@ -2641,6 +2683,10 @@ main:has(.composer) {
   --motion-fast: 160ms;
   --motion-base: 240ms;
   --motion-slow: 420ms;
+  /* v3.4：模块切换过渡时长（序列式：旧页先淡出、新页再淡入，两页不重叠）。
+     两者独立可调，总时长 = 二者之和（当前 350ms）。 */
+  --motion-page-out: 100ms;
+  --motion-page-in: 250ms;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -2653,7 +2699,13 @@ html {
      窗口未达上限时内容占满 main 内容盒，窄窗口行为与旧版一致。 */
   max-width: calc(var(--layout-max-width) - var(--aside-width) - 2 * var(--main-pad-x));
   margin-inline: auto;
-  animation: page-enter var(--motion-slow) var(--ease-out) both;
+  /* v3.4：刻意不在此命名 view-transition-name——本元素是 .run-row / .settings-dock 这些
+     position:fixed 后代的祖先，命名其祖先有破坏包含块语义的风险（与 v1.5.2 红线同源）。
+     模块切换过渡改由 header / aside 命名静止 + root 组淡化承担，见下方 page-enter 区。 */
+}
+/* v3.4：不支持 View Transitions 时退化为单向淡入（类名由 main.tsx 的 supportsViewTransition 决定）。 */
+.page-transition.page-fallback {
+  animation: page-enter var(--motion-page-in) var(--ease-out) both;
 }
 .card,
 .local-ai-guide button,
@@ -2798,13 +2850,54 @@ select:focus-visible {
 /* v1.5.2 修复：.page-transition 不得使用 transform 动画。
    任何非 none 的 transform（含 fill:both 残留的 identity matrix）都会让它成为
    position:fixed 后代（如 .run-row 浮动操作栏）的包含块，使其 left/width 百分比
-   相对该容器而非视口，导致浮动条错位/溢出。故页面切换仅保留淡入。 */
+   相对该容器而非视口，导致浮动条错位/溢出。故页面切换一律不用位移。
+   v3.4 模块切换过渡（View Transitions）：旧页快照先 page-leave 淡出，新页快照经 animation-delay
+   在其完全消失后才 page-enter 淡入（序列式，两页不重叠）。实现上让 header / aside 单独命名并禁用其动画
+   （保持在原位不动），其余（主区 + 页面背景）由 root 组承担淡出/淡入。
+   刻意不给 .page-transition 命名：它是 .run-row / .settings-dock 的祖先，命名祖先会使其成为
+   固定后代的快照组，有破坏包含块语义的风险（同 v1.5.2 红线）；header / aside 不在这些
+   fixed 元素的祖先链（main → .layout → .app）上，故命名安全。 */
+.app > header {
+  view-transition-name: app-header;
+}
+.layout > aside {
+  view-transition-name: app-sidebar;
+}
+::view-transition-old(app-header),
+::view-transition-new(app-header),
+::view-transition-group(app-header),
+::view-transition-old(app-sidebar),
+::view-transition-new(app-sidebar),
+::view-transition-group(app-sidebar) {
+  animation: none;
+}
+::view-transition-group(root) {
+  animation-duration: calc(var(--motion-page-out) + var(--motion-page-in));
+}
+::view-transition-old(root) {
+  /* 序列式（不交叉）：旧页先淡出到 0，新页经 animation-delay 在其完全消失后才开始淡入，
+     两页内容永不重叠 → 无重影；代价是交界处会短暂露出页面底色。 */
+  animation: page-leave var(--motion-page-out) var(--ease-soft) both;
+}
+::view-transition-new(root) {
+  animation: page-enter var(--motion-page-in) var(--ease-out) both;
+  /* delay = 旧页淡出时长：即"先分开、再淡入"。 */
+  animation-delay: var(--motion-page-out);
+}
 @keyframes page-enter {
   from {
     opacity: 0;
   }
   to {
     opacity: 1;
+  }
+}
+@keyframes page-leave {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
   }
 }
 @keyframes feedback-in {
@@ -2874,6 +2967,15 @@ select:focus-visible {
     scroll-behavior: auto;
   }
   .page-transition,
+  ::view-transition-old(root),
+  ::view-transition-new(root),
+  ::view-transition-group(root),
+  ::view-transition-old(app-header),
+  ::view-transition-new(app-header),
+  ::view-transition-group(app-header),
+  ::view-transition-old(app-sidebar),
+  ::view-transition-new(app-sidebar),
+  ::view-transition-group(app-sidebar),
   .feedback-toast,
   .feedback-toast.feedback-error,
   .lightbox,
@@ -2892,6 +2994,7 @@ select:focus-visible {
   .combobox-list,
   .quick-switch,
   .archive-card.archive-card-flash,
+  .queue-chip-pulse,
   .progress-track div:not([style*="width: 0"]),
   .progress-track.indeterminate {
     animation: none !important;
@@ -2906,7 +3009,13 @@ select:focus-visible {
   .upload,
   .nav,
   .queue-chip,
-  .select-page {
+  .select-page,
+  .sidebar-project-item,
+  .sidebar-project-caret,
+  .sidebar-project-actions,
+  .sidebar-project-body,
+  .sidebar-help,
+  .queue-thumb {
     transition: none !important;
   }
   .card:hover,
@@ -3655,20 +3764,38 @@ select:focus-visible {
   }
 }
 
+/* v3.5 侧栏底部帮助入口（新手教程）：由原第 8 个导航项改为项目树之下的纯图标按钮。
+   DOM 位置在 .sidebar-projects（flex:1）之后 → 项目树吸收剩余高度、本按钮自然贴侧栏底。
+   低键外观：muted 图标 + 透明底/描边；悬停才出现浅背景与描边。语义由 title 原生 tooltip 提供。 */
+.sidebar-help {
+  display: grid;
+  place-items: center;
+  align-self: flex-start;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  margin-top: 12px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: none;
+  color: #8b96ad;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease;
+}
+.sidebar-help:hover {
+  border-color: rgba(151, 180, 220, 0.35);
+  background: rgba(255, 255, 255, 0.85);
+  color: #5c6f9c;
+}
+.sidebar-help:focus-visible {
+  outline: 2px solid rgba(120, 160, 224, 0.6);
+  outline-offset: 1px;
+}
+
 /* v1.5 onboarding and learning center */
-.tutorial-nav {
-  margin-top: 8px;
-  border-top: 1px solid rgba(144, 169, 210, 0.18);
-  border-radius: 0 0 12px 12px;
-  color: #6279b5;
-}
-.tutorial-nav:hover {
-  background: linear-gradient(
-    100deg,
-    rgba(228, 247, 255, 0.95),
-    rgba(255, 239, 248, 0.92)
-  );
-}
 .tutorial-modal {
   position: fixed;
   z-index: 130;
@@ -5227,4 +5354,370 @@ main:has(.card.settings) {
   50% {
     background: #eaf7ff;
   }
+}
+
+/* ============================================================================
+   v3.3 侧栏项目树与队列成果缩略图
+   - .sidebar-projects：aside（v3.3 起为纵向弹性列）内的项目列表滚动容器，flex:1 + min-height:0 +
+     overflow-y:auto 让长项目列表在侧栏内部滚动；收件箱固定第一行且不提供重命名/删除；
+     不渲染「全部图库」行（那是图库页内视图）。
+   - v3.6.1：头部行与新建输入行已移出本滚动容器（直接挂在 aside 下、位于容器之前），
+     项目列表滚动时头部保持固定；原 margin-top / padding-top / border-top（分割线）一并移除。
+   - 项目行：折角（.sidebar-project-caret，展开旋转 90°）+ 名称（单行省略）+ 图片数；
+     悬停 / 键盘聚焦（:focus-within）时才显示重命名与删除。
+   - 展开区：该项目最新 5 张图片的行式列表（v3.6；GalleryThumb 根元素=.sidebar-project-item-thumb，
+     图片/占位基础样式见 v3.2 分区）+「查看全部 (N)」。
+   - v3.6：头部「项目」标题改为「任务队列」入口（.sidebar-queue-nav 复用 .nav 视觉 + 活跃数徽章）
+     与新建按钮同行；展开区由 4 列缩略图网格改为行式列表（缩略图 + 标题 + 紧凑时间）。
+   - .queue-thumb / .queue-thumb-count：已完成队列任务的成果缩略图与多图角标
+     （位于 .queue-actions 内、「移除」按钮左侧；悬空 id 的占位由 GalleryThumb 自理）。
+   动效只走 transform/opacity/背景过渡，并已登记进 v1.5.1 分区的 reduced-motion 组。
+   ============================================================================ */
+.sidebar-projects {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.sidebar-projects-head {
+  /* v3.6.2：单列 grid 叠层——队列按钮占满整行（选中高亮与其余导航按键同宽、且包含右端 [+]）；
+     [+] 与队列按钮叠放于同一网格单元、靠右垂直居中。左缘对齐契约不变：容器无左内边距
+     （.nav 的 1px 透明边框 + 14px 内边距在 aside 18px 上自带 33px 图标基线）。 */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  flex: none;
+  /* v3.6.2：上间距归零——队列按钮自带 .nav 的 margin:2px 0，与「设置」的下边距合成 4px，
+     与相邻导航项之间的间距完全一致（原 12px 独立间距取消）。 */
+  margin-top: 0;
+  padding: 0 0 8px 0;
+}
+/* .sidebar-queue-nav 复用 .nav 的完整视觉（padding/border/圆角/gap/悬停/激活态），
+   占满整行并保持与导航图标同一左基线（33px）。 */
+.sidebar-queue-nav {
+  grid-area: 1 / 1;
+  min-width: 0;
+  /* v3.6.2：右内边距让出 [+] 的叠加区——19px（[+] 距行右缘）+ 22px（[+] 宽）+ 8px（间隙）= 49px，
+     避免徽章与 [+] 重叠。 */
+  padding-right: 49px;
+}
+.sidebar-queue-nav-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.sidebar-queue-nav-badge {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #6a78d3;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  margin-left: auto;
+}
+.sidebar-projects-add {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid rgba(151, 180, 220, 0.35);
+  border-radius: 7px;
+  background: rgba(249, 252, 255, 0.9);
+  color: #5879a9;
+  /* v3.6.2：与队列按钮叠放在同一网格单元；右缘对齐契约（v3.6.1 的滚动条槽补偿）随迁至此。 */
+  grid-area: 1 / 1;
+  justify-self: end;
+  align-self: center;
+  z-index: 1;
+  margin-right: calc(7px + var(--scrollbar-w));
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease;
+}
+.sidebar-projects-add:hover {
+  border-color: rgba(144, 183, 223, 0.6);
+  background: #edf7ff;
+  color: #4b6a99;
+}
+.sidebar-projects-add:focus-visible,
+.sidebar-project-actions button:focus-visible {
+  outline: 2px solid rgba(120, 160, 224, 0.6);
+  outline-offset: 1px;
+}
+/* v3.6.2：队列按钮与 [+] 作为整体随动——任一方悬停时两者同步右移 3px
+   （[+] 是叠层网格项，不会自动跟随 .nav:hover 的位移；.nav 自身的位移保持不变）。 */
+.sidebar-projects-head:has(.sidebar-queue-nav:hover, .sidebar-projects-add:hover) .sidebar-projects-add,
+.sidebar-projects-head:has(.sidebar-projects-add:hover) .sidebar-queue-nav {
+  transform: translateX(3px);
+}
+/* 新建项目行：镜像图库页 .new-project 的「输入 + 按钮」形态，收窄适配 238px 侧栏；
+   左缘 33px 与导航图标同基线，右内边距补偿滚动条槽（v3.6.1，理由同 .sidebar-projects-add）。 */
+.sidebar-projects-new {
+  display: flex;
+  gap: 6px;
+  padding: 0 calc(2px + var(--scrollbar-w)) 8px 15px;
+}
+.sidebar-projects-new input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 9px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+.sidebar-projects-new button {
+  flex: none;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: #edf7ff;
+  color: #5879a9;
+  font-size: 11px;
+  font-weight: 700;
+}
+.sidebar-project-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sidebar-project-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 10px;
+}
+.sidebar-project-row:hover {
+  background: rgba(255, 255, 255, 0.72);
+}
+.sidebar-project-toggle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  /* 左内边距 14px：折角左缘 = 18 + 1px 透明边框 + 14 = 33px，与导航图标同基线。 */
+  padding: 7px 6px 7px 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: none;
+  color: #687180;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+}
+.sidebar-project-caret {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  color: #8a91a0;
+  transition: transform 0.16s ease;
+}
+.sidebar-project-caret.open {
+  transform: rotate(90deg);
+}
+.sidebar-project-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.sidebar-project-count {
+  flex: none;
+  color: #91a0b4;
+  font-size: 11px;
+  font-weight: 600;
+}
+/* 操作按钮默认隐藏、悬停/键盘聚焦才显示；键盘用户经 :focus-within 同样可达。
+   非选中态收为 0 宽不占布局（margin-left -4px 抵消 .sidebar-project-row 的 gap:4px，净间距 0），
+   数字与收件箱行右对齐；悬停/聚焦时宽度 / 间距 / 透明度同步过渡（width 0 → 51px 为可插值长度，
+   勿改回 auto——auto 无法过渡，会造成数字与按钮瞬跳），两按钮平滑展开到行尾原有位置、数字同步让位。
+   pointer-events:none 只作用于未选中态（宽度为 0 的按钮不可误点；键盘聚焦仍可经 :focus-within 触发展开）。 */
+.sidebar-project-actions {
+  flex: none;
+  display: flex;
+  gap: 3px;
+  width: 0;
+  margin-left: -4px;
+  padding-right: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    width 0.18s ease,
+    margin-left 0.18s ease,
+    padding-right 0.18s ease,
+    opacity 0.18s ease;
+}
+.sidebar-project-row:hover .sidebar-project-actions,
+.sidebar-project-row:focus-within .sidebar-project-actions {
+  /* 51px = 2×22px 按钮 + 3px 间隔 + 4px 右内边距（终端布局精确值，改动按钮尺寸须同步）。 */
+  width: 51px;
+  margin-left: 0;
+  padding-right: 4px;
+  opacity: 1;
+  pointer-events: auto;
+}
+.sidebar-project-actions button {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 7px;
+  background: rgba(237, 247, 255, 0.9);
+  color: #5879a9;
+}
+.sidebar-project-actions button:hover {
+  background: #e2f1fd;
+  color: #46698f;
+}
+.sidebar-project-body {
+  /* v3.4：展开/收起平滑——grid-template-rows 0fr↔1fr 可插值（内容不重挂载），
+     visibility 延迟到收起动画结束后才隐藏（收起态内部按钮不可 Tab 聚焦）。 */
+  display: grid;
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  transition:
+    grid-template-rows var(--motion-base) var(--ease-out),
+    visibility 0s linear var(--motion-base);
+}
+.sidebar-project-body.open {
+  grid-template-rows: 1fr;
+  visibility: visible;
+  transition:
+    grid-template-rows var(--motion-base) var(--ease-out),
+    visibility 0s;
+}
+.sidebar-project-body > .sidebar-project-body-inner {
+  min-height: 0;
+  overflow: hidden;
+  /* 左内边距 15px：缩略图网格左缘与「项目」标题、折角同基线（33px）。
+     **纵向内边距必须为 0**：grid-template-rows:0fr 折叠的是轨道高度，内层的
+     padding 属于盒本身、无法被压缩，会给每个收起项残留 6+8=14px 幽灵高度
+     （表现为项目行之间多出一大段空白）。纵向间距改由子元素 margin 承担——
+     inner 有 overflow:hidden（BFC），子元素 margin 会计入其高度、且随折叠被裁掉；
+     收成 0fr 时 inner 高度严格为 0，展开高度与改动前逐像素一致。 */
+  padding: 0 6px 0 15px;
+}
+.sidebar-project-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* 展开区上间距：原为 .sidebar-project-body-inner 的 padding-top（见该处注释）。 */
+  margin-top: 6px;
+}
+.sidebar-project-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.16s ease;
+}
+.sidebar-project-item:hover {
+  background: rgba(255, 255, 255, 0.72);
+}
+/* GalleryThumb 根元素：36px 方形圆角容器；图片与占位均铺满。 */
+.sidebar-project-item-thumb {
+  flex: none;
+  display: block;
+  width: 36px;
+  height: 36px;
+  overflow: hidden;
+  border: 1px solid rgba(151, 176, 215, 0.2);
+  border-radius: 8px;
+  background: #f2f7fc;
+}
+.sidebar-project-item-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+.sidebar-project-item-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #5a6779;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sidebar-project-item-time {
+  font-size: 10px;
+  font-weight: 500;
+  color: #91a0b4;
+}
+.sidebar-project-empty {
+  /* 空态文字与展开区行列表同左缘缩进；上间距同 .sidebar-project-items（原 inner padding-top）。 */
+  margin: 6px 2px 0 15px;
+  color: #91a0b4;
+  font-size: 11px;
+}
+.sidebar-project-more {
+  width: 100%;
+  /* 上间距=与上方内容（列表/空态）的间隔；下间距=原 inner padding-bottom，展开高度不变。 */
+  margin: 6px 0 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(237, 247, 255, 0.85);
+  color: #5879a9;
+  font-size: 11px;
+  font-weight: 700;
+}
+.sidebar-project-more:hover {
+  background: #e2f1fd;
+}
+/* —— 队列成果缩略图（.queue-actions 内、「移除」按钮左侧）—— */
+.queue-thumb-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+.queue-thumb {
+  display: block;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  border: 1px solid rgba(151, 176, 215, 0.3);
+  border-radius: 9px;
+  background: #f2f7fc;
+  cursor: pointer;
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease;
+}
+.queue-thumb:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(91, 108, 170, 0.16);
+}
+.queue-thumb-count {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #78c8f2, #ee9fc2);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  box-shadow: 0 2px 6px rgba(102, 126, 171, 0.25);
 }

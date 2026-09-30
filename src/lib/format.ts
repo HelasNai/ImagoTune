@@ -41,6 +41,16 @@ export function formatDateTime(value: string | number | Date): string {
   return new Date(value).toLocaleString();
 }
 
+/** 侧栏紧凑时间：今天 → "14:22"；今年 → "9/28"；更早 → "2025/12/1"（now 参数可注入便于测试）。 */
+export function formatShortDate(value: string | number | Date, now: Date = new Date()): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const sameDay = date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate();
+  if (sameDay) return `${date.getHours()}:${String(date.getMinutes()).padStart(2, "0")}`;
+  if (date.getFullYear() === now.getFullYear()) return `${date.getMonth() + 1}/${date.getDate()}`;
+  return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
+}
+
 /** modeLabel 的可选开关。 */
 export type ModeLabelOptions = { referenceAware?: boolean; fallback?: string };
 

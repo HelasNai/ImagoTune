@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { flushSync } from "react-dom";
 import "./styles.css";
 import { ComposerPanel } from "./components/ComposerPanel";
 import { DialogProvider, useDialog } from "./components/Dialogs";
@@ -7,9 +8,10 @@ import { GalleryWorkspace } from "./components/GalleryWorkspace";
 import { LocalAIAction, LocalAISource, LocalAIToolbox } from "./components/LocalAIToolbox";
 import { initialTutorialView, TutorialExperience, TutorialView } from "./components/TutorialExperience";
 import { NavIcon } from "./components/icons";
+import { QueueChip } from "./components/QueueChip";
 import { QueuePanel } from "./components/QueuePanel";
-import { QuickModelSwitcher } from "./components/QuickModelSwitcher";
 import { ResultPanel } from "./components/ResultPanel";
+import { SidebarProjects } from "./components/SidebarProjects";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { StudioProvider, type StudioNotify } from "./components/StudioContext";
 import { ProgressProvider } from "./components/ProgressContext";
@@ -36,10 +38,25 @@ import {
 const NOTICE_TOAST_MS = 5000;
 const ERROR_TOAST_MS = 12000;
 
+// v3.4：模块切换交叉过渡是否可用——决定 .page-transition 走 View Transitions 还是单向淡入兜底。
+const supportsViewTransition = typeof (document as Document & { startViewTransition?: unknown }).startViewTransition === "function";
+
 function App() {
   const initialTutorial = useMemo(() => parseTutorialState(window.localStorage.getItem(TUTORIAL_STORAGE_KEY)), []);
   const appRef = useRef<HTMLDivElement | null>(null);
-  const [mode, setMode] = useState<Mode>("generate");
+  const [mode, setModeState] = useState<Mode>("generate");
+  // v3.4 模块切换交叉过渡：模式切换统一经此包装走 View Transitions——旧页快照淡出 +
+  // 新页快照淡入同时进行，消除 key={mode} 硬卸载造成的「旧页消失 → 新页从空白淡入」闪空。
+  // 快照位于顶层 ::view-transition 伪元素、不改动文档内布局，故不违反 v1.5.2
+  // 「.page-transition 禁用 transform」红线（fixed 底栏 .run-row / .settings-dock 不受影响）。
+  // 保持 Dispatch 签名 → main.tsx 与 useComposer 的全部既有 setMode 调用点无需改动。
+  const setMode = useCallback<React.Dispatch<React.SetStateAction<Mode>>>((next) => {
+    const apply = () => setModeState((current) => (typeof next === "function" ? next(current) : next));
+    const doc = document as Document & { startViewTransition?: (callback: () => void) => unknown };
+    if (typeof doc.startViewTransition !== "function") { apply(); return; }
+    // 回调内必须同步完成 DOM 提交（flushSync），否则新状态快照会早于更新被截取。
+    doc.startViewTransition(() => { flushSync(apply); });
+  }, []);
   const [tutorialState, setTutorialState] = useState<TutorialState>(initialTutorial);
   const [tutorialView, setTutorialView] = useState<TutorialView>(() => initialTutorialView(initialTutorial));
   const [tutorialReturnMode, setTutorialReturnMode] = useState<Mode>("generate");
@@ -52,6 +69,8 @@ function App() {
   const [autoArchive, setAutoArchive] = useState(true);
   const [appVersion, setAppVersion] = useState("");
   const [projects, setProjects] = useState<GalleryProject[]>([]);
+  // 侧栏项目树用的全量图片快照（refreshWorkspace 填充；与 projects 同源同批更新）。
+  const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
   const [projectId, setProjectId] = useState(INBOX_PROJECT_ID);
   const [tagsText, setTagsText] = useState("");
   const [queueItems, setQueueItems] = useState<QueueJob[]>([]);
@@ -91,6 +110,7 @@ function App() {
     try {
       const workspace = await callIpc(() => window.imageStudio.gallery.workspace(), { fallbackError: "本地图库读取失败" });
       setProjects(workspace.projects || []);
+      setGalleryItems(workspace.items || []);
       if (!workspace.projects.some((project) => project.id === projectId)) {
         setProjectId(INBOX_PROJECT_ID);
       }
@@ -369,6 +389,12 @@ function App() {
     setMode("gallery");
   }
 
+  /** 项目级跳转：打开图库并筛选到指定项目（GalleryWorkspace 经 initialProjectId 选中项目后消费意图）。 */
+  function openGalleryProject(projectId: string) {
+    setGalleryTarget({ projectId });
+    setMode("gallery");
+  }
+
   return (
     <StudioProvider
       value={{
@@ -394,7 +420,7 @@ function App() {
           </div>
           <div className="header-stack">
             <div className="status"><i className={configured ? "ok" : "off"}></i>{configured ? "已配置" : "未配置密钥"}</div>
-            <button className="queue-chip" onClick={() => setMode("queue")}>任务队列 <strong>{runningCount}</strong></button>
+            <QueueChip queueItems={queueItems} onOpen={() => setMode("queue")} />
           </div>
         </header>
         {(error || notice || errorInfo) && (
@@ -421,13 +447,24 @@ function App() {
             <button className={mode === "outpaint" ? "nav active" : "nav"} onClick={() => setMode("outpaint")}><NavIcon name="expand" />智能扩图</button>
             <button className={mode === "gallery" ? "nav active" : "nav"} onClick={() => setMode("gallery")}><NavIcon name="images" />项目图库</button>
             <button className={mode === "local-ai" ? "nav active" : "nav"} onClick={() => setMode("local-ai")}><NavIcon name="package" />本地工具箱</button>
-            <button className={mode === "queue" ? "nav active" : "nav"} onClick={() => setMode("queue")}><NavIcon name="list-todo" />任务队列</button>
             <button className={mode === "settings" ? "nav active" : "nav"} onClick={() => setMode("settings")}><NavIcon name="settings" />设置</button>
-            <button className="nav tutorial-nav" onClick={() => setTutorialView("center")}><NavIcon name="graduation-cap" />新手教程</button>
-            <QuickModelSwitcher onOpenSettings={() => setMode("settings")} />
+            {/* 项目树（v3.6 起头部含任务队列入口）：不渲染「全部图库」行；「查看全部」经 openGalleryProject 落到对应项目的图库视图。 */}
+            <SidebarProjects
+              projects={projects}
+              items={galleryItems}
+              onOpenProject={openGalleryProject}
+              onOpenImage={openGalleryAt}
+              onChanged={refreshWorkspace}
+              onOpenQueue={() => setMode("queue")}
+              queueActive={mode === "queue"}
+              queueCount={runningCount}
+            />
+            <button className="sidebar-help" aria-label="新手教程" title="新手教程" onClick={() => setTutorialView("center")}>
+              <NavIcon name="graduation-cap" size={18} />
+            </button>
           </aside>
           <main>
-            <div className="page-transition" key={mode}>
+            <div className={supportsViewTransition ? "page-transition" : "page-transition page-fallback"} key={mode}>
             {mode === "settings" ? <SettingsPanel onSaveDirChanged={handleSaveDirChanged} onOpenTutorial={() => setTutorialView("center")} /> : mode === "gallery" ? (
               <GalleryWorkspace
                 onOpen={galleryOpen}
@@ -435,7 +472,9 @@ function App() {
                 onLocalAI={openGalleryLocalAI}
                 onNotice={notify}
                 focusImageId={galleryTarget?.imageId}
+                initialProjectId={galleryTarget?.projectId}
                 onFocusConsumed={() => setGalleryTarget(null)}
+                onChanged={refreshWorkspace}
               />
             ) : mode === "local-ai" ? (
               <LocalAIToolbox
@@ -452,7 +491,7 @@ function App() {
                 }, ...current])}
                 onNotice={notify}
               />
-            ) : mode === "queue" ? <QueuePanel queueItems={queueItems} onRefresh={refreshQueue} /> : <><ComposerPanel mode={mode} projects={projects} activeJobId={studioComposer.activeJobId} isEnqueueing={studioComposer.isEnqueueing} progress={studioComposer.progress} composerState={studioComposer.state} composerActions={studioComposer.actions} onOpenSettings={() => setMode("settings")} /><ResultPanel outputs={outputs} onRegenerate={regenerate} onContinueEdit={continueEdit} onStartOutpaint={startOutpaint} onOpenLocalAI={openLocalAI} onCreateVariation={createVariation} onOpenPreview={setPreview} /></>}
+            ) : mode === "queue" ? <QueuePanel queueItems={queueItems} onRefresh={refreshQueue} onOpenGalleryAt={openGalleryAt} /> : <><ComposerPanel mode={mode} projects={projects} activeJobId={studioComposer.activeJobId} isEnqueueing={studioComposer.isEnqueueing} progress={studioComposer.progress} composerState={studioComposer.state} composerActions={studioComposer.actions} onOpenSettings={() => setMode("settings")} /><ResultPanel outputs={outputs} onRegenerate={regenerate} onContinueEdit={continueEdit} onStartOutpaint={startOutpaint} onOpenLocalAI={openLocalAI} onCreateVariation={createVariation} onOpenPreview={setPreview} /></>}
             </div>
           </main>
         </div>

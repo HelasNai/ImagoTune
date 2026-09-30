@@ -6,6 +6,7 @@ import {
   formatDateTime,
   formatDurationSeconds,
   formatPixelSize,
+  formatShortDate,
   formatTags,
   modeLabel,
   nowISO,
@@ -129,6 +130,36 @@ describe("format helpers", () => {
       const ms = Date.UTC(2024, 0, 2, 3, 4, 5);
       expect(formatDateTime(ms)).toBe(new Date(ms).toLocaleString());
       expect(formatDateTime(ms)).toContain("2024");
+    });
+  });
+
+  describe("formatShortDate", () => {
+    it("今天显示为 H:mm，分钟补零、小时不补零", () => {
+      const now = new Date(2025, 8, 30, 20, 5);
+      expect(formatShortDate(new Date(2025, 8, 30, 14, 7), now)).toBe("14:07");
+      expect(formatShortDate(new Date(2025, 8, 30, 9, 5), now)).toBe("9:05");
+    });
+
+    it("今年其他日期显示为 M/D", () => {
+      const now = new Date(2025, 8, 30, 20, 5);
+      expect(formatShortDate(new Date(2025, 8, 28), now)).toBe("9/28");
+      expect(formatShortDate(new Date(2025, 11, 30), now)).toBe("12/30");
+    });
+
+    it("更早年份显示为 Y/M/D", () => {
+      const now = new Date(2026, 0, 15);
+      expect(formatShortDate(new Date(2025, 11, 1), now)).toBe("2025/12/1");
+    });
+
+    it("无效输入返回空串", () => {
+      expect(formatShortDate("not-a-date")).toBe("");
+    });
+
+    it("接受 ISO 字符串与时间戳", () => {
+      const now = new Date(2025, 8, 30, 20, 5);
+      const target = new Date(2025, 8, 30, 14, 22);
+      expect(formatShortDate(target.toISOString(), now)).toBe("14:22");
+      expect(formatShortDate(target.getTime(), now)).toBe("14:22");
     });
   });
 

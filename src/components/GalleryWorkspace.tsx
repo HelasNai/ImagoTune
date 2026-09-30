@@ -26,7 +26,9 @@ export function GalleryWorkspace({
   onLocalAI,
   onNotice,
   focusImageId,
+  initialProjectId,
   onFocusConsumed,
+  onChanged,
 }: {
   onOpen: (item: GalleryItem, b64: string, action: OpenAction) => void;
   onVariation: (item: GalleryItem) => void;
@@ -34,8 +36,12 @@ export function GalleryWorkspace({
   onNotice: StudioNotify;
   /** 跨页跳转目标：定位到该图片（切项目 → 翻页 → 滚动并短暂高亮）。 */
   focusImageId?: string;
+  /** 项目级跳转目标：打开图库并筛选到该项目（无 focusImageId 时生效；选中项目后消费意图）。 */
+  initialProjectId?: string;
   /** 跳转意图消费回调：定位完成或目标失效后调用一次，父级据此清空目标（图片级 / 项目级共用）。 */
   onFocusConsumed?: () => void;
+  /** 图库数据变更回调（项目增删改 / 批量移动删除标签成功后）：父级据此刷新侧栏项目树。 */
+  onChanged?: () => void;
 }) {
   const [projects, setProjects] = useState<GalleryProject[]>([]);
   const [items, setItems] = useState<GalleryItem[]>([]);
@@ -44,7 +50,8 @@ export function GalleryWorkspace({
   const [tag, setTag] = useState("");
   /** 导出 ZIP 的进度事件（主进程逐张推送；导出为单例操作，id 固定）。 */
   const exportProgress = useProgressEvent("gallery-export");
-  const [activeProject, setActiveProject] = useState("all");
+  // 带项目级跳转意图挂载时直接以目标项目启动（避免先拉「全部图库」再切换的中间态）；无意图时维持 "all"。
+  const [activeProject, setActiveProject] = useState(initialProjectId ?? "all");
   const [favoriteOnly, setFavoriteOnly] = useState(false);
   const [resolutionFilter, setResolutionFilter] = useState("");
   const [sizeFilter, setSizeFilter] = useState("");
@@ -70,6 +77,8 @@ export function GalleryWorkspace({
   const focusLandingRef = useRef(false);
   /** 已消费的聚焦 id：同一跳转意图只驱动一次；prop 清空时复位。 */
   const processedFocusRef = useRef<string | null>(null);
+  /** 已消费的项目级跳转 id（与图片级独立）：同一项目意图只消费一次；prop 清空时复位。 */
+  const processedProjectRef = useRef<string | null>(null);
   const flashTimerRef = useRef<number | null>(null);
   /** 聚焦流程要读取的最新值（不进入 effect 依赖，避免父级重渲染重启流程）。 */
   const focusEnvRef = useRef({ sort, onNotice, onFocusConsumed });
@@ -215,6 +224,22 @@ export function GalleryWorkspace({
     if (flashTimerRef.current !== null) window.clearTimeout(flashTimerRef.current);
   }, []);
 
+  // ——————————————— 项目级跳转（initialProjectId 驱动） ———————————————
+  // 「查看全部」等入口写入项目级意图；无 focusImageId 时生效（图片级意图优先，其所属项目由 resolveFocusLocation 决定）。
+  // 选中项目即消费意图（与图片级共用 onFocusConsumed）；prop 清空后复位标记，
+  // 既防 StrictMode 双执行重复消费，也保证已挂载时对同一项目的再次跳转仍生效。
+  useEffect(() => {
+    if (focusImageId) return;
+    if (!initialProjectId) {
+      processedProjectRef.current = null;
+      return;
+    }
+    if (processedProjectRef.current === initialProjectId) return;
+    processedProjectRef.current = initialProjectId;
+    setActiveProject(initialProjectId);
+    onFocusConsumed?.();
+  }, [focusImageId, initialProjectId, onFocusConsumed]);
+
   useEffect(() => {
     let active = true;
     const missing = items.filter((item) => !thumbs[item.id]);
@@ -279,13 +304,17 @@ export function GalleryWorkspace({
     setNewProject("");
     await refresh(0);
     onNotice("项目已创建");
+    onChanged?.();
   };
 
   const renameProject = async (project: GalleryProject) => {
     const name = await requestText({ title: "重命名项目", message: "输入新的项目名称", defaultValue: project.name, confirmLabel: "重命名" });
     if (!name?.trim()) return;
     const response = await callIpc(() => window.imageStudio.projects.rename(project.id, name), { fallbackError: "重命名失败", onError: (message) => onNotice(message, true) });
-    if (response.ok) onNotice("项目已重命名");
+    if (response.ok) {
+      onNotice("项目已重命名");
+      onChanged?.();
+    }
     await refresh(0);
   };
 
@@ -293,7 +322,10 @@ export function GalleryWorkspace({
     if (!(await requestConfirm({ title: "删除项目", message: "删除项目后，其中图片会回到收件箱，确定继续吗？", confirmLabel: "删除", danger: true }))) return;
     const response = await callIpc(() => window.imageStudio.projects.delete(project.id), { fallbackError: "删除失败", onError: (message) => onNotice(message, true) });
     if (activeProject === project.id) setActiveProject("all");
-    if (response.ok) onNotice("项目已删除，图片已移回收件箱");
+    if (response.ok) {
+      onNotice("项目已删除，图片已移回收件箱");
+      onChanged?.();
+    }
     await refresh(0);
   };
 
@@ -323,6 +355,8 @@ export function GalleryWorkspace({
     if (response.ok) {
       onNotice("已处理 " + String(response.count || ids.length) + " 张图片");
       setSelected(new Set());
+      // 收藏不改项目归属；移动/删除/批量标签会改变侧栏计数或缩略图，需刷新侧栏项目树。
+      if (action !== "favorite") onChanged?.();
     }
     await refresh(0);
   };

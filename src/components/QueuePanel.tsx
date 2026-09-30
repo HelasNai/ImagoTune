@@ -5,11 +5,16 @@ import { recipeFromQueueInput, recipeModeLabel } from "./queue-utils";
 import { NavIcon } from "./icons";
 import { useIpcAction } from "./ipc";
 import { useDialog } from "./Dialogs";
+import { GalleryThumb } from "./GalleryThumb";
 import { ProgressBar } from "./ProgressBar";
 import { useProgressEvents } from "./ProgressContext";
 import { useStudio } from "./StudioContext";
 
-export function QueuePanel({ queueItems, onRefresh }: { queueItems: QueueJob[]; onRefresh: () => Promise<void> }) {
+export function QueuePanel({ queueItems, onRefresh, onOpenGalleryAt }: {
+  queueItems: QueueJob[];
+  onRefresh: () => Promise<void>;
+  onOpenGalleryAt: (imageId: string) => void;
+}) {
   const { setError, roles, providers } = useStudio();
   const { pending, run } = useIpcAction(setError);
   const { requestConfirm } = useDialog();
@@ -74,6 +79,10 @@ export function QueuePanel({ queueItems, onRefresh }: { queueItems: QueueJob[]; 
           {ordered.map((job) => {
             const live = job.status === "running" ? progressEvents[job.requestId] : undefined;
             const waiting = waitingAheadCount(queueItems, job);
+            // 已完成任务的成果缩略图：只取第一张跳转（点击回传 id 给 openGalleryAt），
+            // 多图时角标显示总数；悬空 id（图片已删）由 GalleryThumb 渲染占位、跳转后由图库提示不存在。
+            const resultId = job.status === "completed" ? job.resultGalleryIds?.[0] : undefined;
+            const resultCount = job.status === "completed" ? job.resultGalleryIds?.length ?? 0 : 0;
             return (
             <article key={job.id}>
               <div>
@@ -89,6 +98,12 @@ export function QueuePanel({ queueItems, onRefresh }: { queueItems: QueueJob[]; 
                 )}
                 {["queued", "running"].includes(job.status) && (
                   <button disabled={pending} onClick={() => void mutate(() => window.imageStudio.queue.cancel(job.id), "取消失败")}>取消</button>
+                )}
+                {resultId && (
+                  <span className="queue-thumb-wrap">
+                    <GalleryThumb id={resultId} className="queue-thumb" onClick={onOpenGalleryAt} alt="生成结果" />
+                    {resultCount > 1 && <span className="queue-thumb-count">{resultCount}</span>}
+                  </span>
                 )}
                 {job.status !== "running" && (
                   <button disabled={pending} onClick={() => void mutate(() => window.imageStudio.queue.remove(job.id), "移除失败")}>移除</button>
