@@ -2999,6 +2999,7 @@ select:focus-visible {
   .quick-switch,
   .archive-card.archive-card-flash,
   .queue-chip-pulse,
+  .layout-editor-bar,
   .progress-track div:not([style*="width: 0"]),
   .progress-track.indeterminate {
     animation: none !important;
@@ -3021,7 +3022,12 @@ select:focus-visible {
   .sidebar-help,
   .queue-thumb,
   .layout-toggle,
-  .layout-handle {
+  .layout-handle,
+  .layout-handle-hide,
+  .layout-handle-resize,
+  .layout-tool-btn,
+  .layout-hidden-restore,
+  .layout-reset {
     transition: none !important;
   }
   .card:hover,
@@ -5866,11 +5872,6 @@ main:has(.card.settings) {
 .layout-tool-btn.danger:hover:not(:disabled) {
   background: #fdeef3;
 }
-.layout-tool-sep {
-  width: 1px;
-  height: 16px;
-  background: rgba(151, 180, 220, 0.35);
-}
 .layout-handle-hide {
   position: absolute;
   top: -10px;
@@ -5897,12 +5898,13 @@ main:has(.card.settings) {
   position: relative;
   min-height: 40px;
 }
-/* 比例单位网格线背景（--layout-unit 由 useComposerLayout 注入，随窗口缩放与吸附单位同步）：
+/* 比例单位网格线背景（双变量由 useComposerLayout 注入：--layout-col-unit = 横向列宽
+   （卡片内容宽 / 64，随窗口缩放），--layout-row-unit = 纵向行高（固定 GRID_PX）；
    仅编辑模式显示（视觉辅助对齐），退出编辑后不保留 */
 .composer-editing .composer-modules.layout-grid {
   background-image:
-    repeating-linear-gradient(to right, rgba(121, 141, 190, 0.07) 0 1px, transparent 1px var(--layout-unit, 16px)),
-    repeating-linear-gradient(to bottom, rgba(121, 141, 190, 0.07) 0 1px, transparent 1px var(--layout-unit, 16px));
+    repeating-linear-gradient(to right, rgba(91, 142, 214, 0.08) 0 1px, transparent 1px var(--layout-col-unit, 16px)),
+    repeating-linear-gradient(to bottom, rgba(91, 142, 214, 0.08) 0 1px, transparent 1px var(--layout-row-unit, 16px));
   background-position: 0 0;
 }
 /* 网格定位下模块外边距清零：绝对定位的 top/left 以 margin box 为原点，若保留自身 margin
@@ -5929,23 +5931,24 @@ main:has(.card.settings) {
   position: absolute;
   pointer-events: auto;
   cursor: grab;
-  border: 1px dashed rgba(121, 109, 228, 0.5);
+  border: 1px dashed var(--layout-accent-line);
   border-radius: 12px;
-  background: rgba(121, 109, 228, 0.04);
+  background: var(--layout-accent-soft);
   transition:
     background 0.16s ease,
-    border-color 0.16s ease;
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
   touch-action: none;
 }
 .layout-handle:hover {
-  background: rgba(121, 109, 228, 0.1);
-  border-color: rgba(121, 109, 228, 0.8);
+  background: rgba(91, 142, 214, 0.16);
+  border-color: rgba(91, 142, 214, 0.75);
 }
 .layout-handle.dragging {
   cursor: grabbing;
-  background: rgba(121, 109, 228, 0.14);
+  background: rgba(91, 142, 214, 0.2);
   border-style: solid;
-  border-color: rgba(102, 90, 214, 0.9);
+  border-color: rgba(72, 120, 196, 0.9);
 }
 .layout-handle-label {
   position: absolute;
@@ -5953,7 +5956,7 @@ main:has(.card.settings) {
   left: 8px;
   padding: 1px 7px;
   border-radius: 999px;
-  background: #6a78d3;
+  background: var(--layout-accent);
   color: #fff;
   font-size: 10px;
   font-weight: 700;
@@ -5961,22 +5964,21 @@ main:has(.card.settings) {
   pointer-events: none;
   white-space: nowrap;
 }
+/* 缩放把手：位置 / 方向（top/left/right/bottom/transform/cursor）由 T9 内联样式承载，
+   这里只保留绝对定位与基础外观；尺寸 / 配色 / 描边由 v3.10 分区统一。 */
 .layout-handle-resize {
   position: absolute;
-  right: -6px;
-  bottom: -6px;
   width: 14px;
   height: 14px;
   border-radius: 4px;
   border: 1px solid #fff;
-  background: #6a78d3;
+  background: var(--layout-accent);
   box-shadow: 0 1px 4px rgba(91, 108, 170, 0.35);
-  cursor: nwse-resize;
   touch-action: none;
 }
 /* 编辑态：模块虚线描边提示可拖动（内容交互由覆盖层接管） */
 .composer-editing .composer-modules.layout-grid > [data-layout-id] {
-  outline: 1px dashed rgba(121, 109, 228, 0.3);
+  outline: 1px dashed var(--layout-accent-line);
   outline-offset: 2px;
   border-radius: 12px;
 }
@@ -6218,4 +6220,214 @@ main:has(.card.settings) {
 }
 .composer-modules.layout-grid .prompt-assistant[data-layout-narrow="true"] strong {
   width: 100%;
+}
+
+/* ============================================================================
+   v3.10 编辑态视觉重做
+   - 配色对齐产品蓝粉语言：主色 --layout-accent = #5b8ed6（蓝），次色
+     --layout-accent-rose = #ee9fc2（与 .run-row / .queue-thumb-count 同一渐变粉），
+     深玫瑰 --layout-accent-rose-strong = #a2587a（沿用既有 .layout-reset /
+     .layout-handle-hide:hover 的文字色）。v3.7 的独立紫色系（#6a78d3 /
+     rgba(121, 109, 228) / rgba(102, 90, 214)）全部退役。
+   - 令牌作用域 = 工具条（.layout-editor-bar，位于 .composer-modules 之外）+
+     画布容器（.composer-modules，覆盖 handle / ghost / resize 等后代）。
+   - 新增动效（工具条入场 + 各 hover 过渡）已同步登记进 v1.5.1 分区的
+     reduced-motion 组；本分区只改视觉，不改任何交互语义（.layout-toggle 不动）。
+   - 旧 .layout-tool-sep 规则随 T14 移除（JSX 已不再渲染分隔条）。
+   ============================================================================ */
+.layout-editor-bar,
+.composer-modules {
+  --layout-accent: #5b8ed6;
+  --layout-accent-soft: rgba(91, 142, 214, 0.1);
+  --layout-accent-line: rgba(91, 142, 214, 0.45);
+  --layout-accent-rose: #ee9fc2;
+  --layout-accent-rose-soft: rgba(238, 159, 194, 0.16);
+  --layout-accent-rose-line: rgba(238, 159, 194, 0.42);
+  --layout-accent-rose-strong: #a2587a;
+}
+
+/* —— 工具条：产品卡片观感（对齐 .run-row 的白底 / 圆角 / 柔和阴影）—— */
+@keyframes layout-editor-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.layout-editor-bar {
+  padding: 10px 14px;
+  border: 1px solid rgba(151, 180, 220, 0.3);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 10px 26px rgba(60, 82, 133, 0.1);
+  animation: layout-editor-in 0.22s ease;
+}
+.layout-edit-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* —— 分组块：预设 / 编辑 / 已隐藏三组各自成块（可换行防窄窗溢出）—— */
+.layout-editor-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border: 1px solid rgba(151, 180, 220, 0.28);
+  border-radius: 10px;
+  background: rgba(238, 247, 255, 0.55);
+}
+/* 已隐藏组用软玫瑰区分（次要色的克制用法） */
+.layout-editor-group.layout-hidden-panel {
+  border-color: var(--layout-accent-rose-line);
+  background: var(--layout-accent-rose-soft);
+}
+
+/* —— 工具按钮：统一 26px 高 + 蓝调 hover / accent focus-visible；禁用观感不变 —— */
+.layout-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid rgba(151, 180, 220, 0.4);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #5879a9;
+  font-size: 11px;
+  font-weight: 700;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+.layout-tool-btn:hover:not(:disabled) {
+  border-color: var(--layout-accent-line);
+  background: var(--layout-accent-soft);
+  color: #3f6ea8;
+}
+.layout-tool-btn:active:not(:disabled) {
+  box-shadow: inset 0 1px 3px rgba(60, 82, 133, 0.16);
+}
+.layout-tool-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.layout-tool-btn.danger {
+  border-color: rgba(214, 158, 177, 0.45);
+  color: #a2587a;
+}
+.layout-tool-btn.danger:hover:not(:disabled) {
+  border-color: rgba(214, 158, 177, 0.65);
+  background: #fdeef3;
+}
+.layout-tool-btn:focus-visible,
+.layout-hidden-restore:focus-visible,
+.layout-reset:focus-visible {
+  outline: 2px solid var(--layout-accent);
+  outline-offset: 2px;
+}
+
+/* —— 次要按钮（恢复显示 / 恢复默认）：与工具按钮同高、同轴 —— */
+.layout-hidden-restore,
+.layout-reset {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+}
+.layout-hidden-restore {
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease;
+}
+.layout-hidden-restore:hover {
+  border-color: var(--layout-accent-line);
+  background: var(--layout-accent-soft);
+}
+.layout-reset {
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease;
+}
+.layout-reset:hover {
+  border-color: rgba(214, 158, 177, 0.65);
+  background: #fdeef3;
+}
+
+/* —— 拖拽热区：实线描边（替换虚线）+ 悬停加深 + dragging 抬升 —— */
+.layout-handle {
+  border: 1.5px solid var(--layout-accent-line);
+  border-radius: 14px;
+  background: var(--layout-accent-soft);
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+.layout-handle:hover {
+  border-color: rgba(91, 142, 214, 0.75);
+  background: rgba(91, 142, 214, 0.16);
+}
+.layout-handle.dragging {
+  z-index: 10; /* 相邻 handle 叠压时保证拖拽中的一块在最上层 */
+  border-color: rgba(72, 120, 196, 0.9);
+  background: rgba(91, 142, 214, 0.2);
+  box-shadow: 0 12px 28px rgba(60, 82, 133, 0.22);
+}
+
+/* —— 附属控件：标签 / 隐藏 / 缩放把手统一为「白描边小圆 + 主色点缀」——
+   三个缩放把手 .e/.s/.se（T9 修改符）的位置与方向由内联样式承载，这里只设尺寸 / 配色。 */
+.layout-handle-label {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--layout-accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  box-shadow: 0 1px 4px rgba(60, 82, 133, 0.25);
+}
+.layout-handle-hide {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1.5px solid #fff;
+  border-radius: 50%;
+  background: #b587a6;
+  color: #fff;
+  box-shadow: 0 1px 4px rgba(60, 82, 133, 0.28);
+  transition: background 0.16s ease;
+}
+.layout-handle-hide:hover {
+  background: var(--layout-accent-rose-strong);
+}
+.layout-handle-resize,
+.layout-handle-resize.e,
+.layout-handle-resize.s,
+.layout-handle-resize.se {
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid #fff;
+  border-radius: 50%;
+  background: var(--layout-accent);
+  box-shadow: 0 1px 4px rgba(60, 82, 133, 0.3);
+  transition: box-shadow 0.16s ease;
+}
+.layout-handle-resize:hover {
+  box-shadow: 0 0 0 3px var(--layout-accent-line);
+}
+
+/* —— 吸附预览 ghost：虚线描边 + 主色淡填充（位置 / 尺寸 / pointer-events 由 T7 内联）—— */
+.layout-ghost {
+  border: 1px dashed var(--layout-accent-line);
+  border-radius: 12px;
+  background: var(--layout-accent-soft);
 }
