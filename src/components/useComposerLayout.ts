@@ -23,37 +23,37 @@ import {
   type LayoutSnapshot,
   type PlacementMap,
 } from "../lib/layout";
+import {
+  emptyLayoutStore,
+  migrateV3ToV4,
+  parseStoredLayout,
+  serializeLayoutStore,
+  type LayoutPreset,
+  type LayoutStore,
+  type LegacyLayoutStoreV3,
+} from "../lib/layout-store";
 
 const STORAGE_KEY = "imagotune:layout:v1";
 
-/** 一套命名方案（default = 基础方案；snapshot 为 null 表示尚未自定义 / 已恢复默认）。 */
-type LayoutPreset = { id: string; name: string; snapshot: LayoutSnapshot | null };
-/** 持久化结构（version 3：坐标语义为「比例单位」——水平列与垂直格共用同一单位（= 卡宽/64），整层随窗口等比缩放；v1/v2 旧数据直接丢弃重建）。 */
-type LayoutStore = { version: 3; activePresetId: string; presets: LayoutPreset[] };
-
 const DEFAULT_PRESET: LayoutPreset = { id: "default", name: "默认", snapshot: null };
 
-function emptyStore(): LayoutStore {
-  return { version: 3, activePresetId: DEFAULT_PRESET.id, presets: [{ ...DEFAULT_PRESET }] };
-}
-
-function loadStore(): LayoutStore {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return emptyStore();
-    const parsed = JSON.parse(raw) as LayoutStore;
-    if (!parsed || parsed.version !== 3 || !Array.isArray(parsed.presets) || !parsed.presets.length) return emptyStore();
-    // 容错：补回 default 方案（方案管理与分享都假定它存在）。
-    if (!parsed.presets.some((item) => item.id === DEFAULT_PRESET.id)) parsed.presets.unshift({ ...DEFAULT_PRESET });
-    return parsed;
-  } catch {
-    return emptyStore();
+/**
+ * 从 localStorage 读取布局：v4 直接使用；v3 暂存到 legacyRef（本次以空 store 流式渲染，待列宽就绪后一次性迁移）；
+ * 空 / 坏 JSON / 未知版本 → 空 store。
+ */
+function loadStore(legacyRef: { current: LegacyLayoutStoreV3 | null }): LayoutStore {
+  const parsed = parseStoredLayout(window.localStorage.getItem(STORAGE_KEY));
+  if (parsed.kind === "v4") return parsed.store;
+  if (parsed.kind === "v3") {
+    legacyRef.current = parsed.store;
+    return emptyLayoutStore();
   }
+  return emptyLayoutStore();
 }
 
 function writeStore(store: LayoutStore) {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+    window.localStorage.setItem(STORAGE_KEY, serializeLayoutStore(store));
   } catch {
     /* 本地布局保存失败不影响创作（下次改动会重试） */
   }
@@ -141,7 +141,8 @@ export function useComposerLayout({ mode, containerRef }: {
   mode: LayoutMode;
   containerRef: React.RefObject<HTMLDivElement | null>;
 }) {
-  const [store, setStore] = useState<LayoutStore>(() => loadStore());
+  const legacyRef = useRef<LegacyLayoutStoreV3 | null>(null);
+  const [store, setStore] = useState<LayoutStore>(() => loadStore(legacyRef));
   const activePreset = store.presets.find((item) => item.id === store.activePresetId) ?? store.presets[0];
   /** 当前激活方案的快照（null = 流式渲染，与现状零差异）。 */
   const snapshot = activePreset?.snapshot ?? null;
@@ -186,6 +187,24 @@ export function useComposerLayout({ mode, containerRef }: {
 
   /** 布局水平列宽（px = 卡片内容宽 / LAYOUT_COLS）：仅用于水平量（left/width/x/w）；垂直量一律走 GRID_PX 固定行。 */
   const colWidth = cardWidth > 0 ? cardWidth / LAYOUT_COLS : GRID_PX;
+
+  // v3 → v4 一次性迁移：必须等卡片宽度就绪（colWidth 为真实列宽）才迁移，绝不用回退值换算
+  // （错误列宽会以约 16x 偏差写坏布局）。迁移后清空 legacyRef —— StrictMode 的重复 effect
+  // 与 state 初始化器的二次调用因 ref 为空而成为空操作，保证只落盘一次（幂等）。
+  useEffect(() => {
+    const legacy = legacyRef.current;
+    if (!legacy || cardWidth <= 0) return;
+    let migrated: LayoutStore;
+    try {
+      migrated = migrateV3ToV4(legacy, cardWidth / LAYOUT_COLS);
+    } catch {
+      legacyRef.current = null; // 换算失败：放弃迁移并保持流式，避免用错误列宽产出畸形布局
+      return;
+    }
+    legacyRef.current = null;
+    setStore(migrated);
+    writeStore(migrated);
+  }, [cardWidth]);
 
   // 卡片内容宽监测（display:contents 容器自身无盒，用父级 .composer 的内宽）
   useEffect(() => {

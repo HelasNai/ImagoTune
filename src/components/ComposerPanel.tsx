@@ -160,12 +160,16 @@ export function ComposerPanel({
       confirmLabel: "导入",
     });
     if (!code?.trim()) return;
-    const decoded = decodeLayoutCode(code);
+    const decoded = decodeLayoutCode(code, layout.colWidth);
     if (!decoded) {
       notify("分享码无效或已损坏", true);
       return;
     }
     layout.importSharedLayout(decoded);
+    if (decoded.legacy) {
+      notify("旧版分享码已按当前窗口换算，可能需要微调", true);
+      return;
+    }
     notify("布局已导入（通用模块已更新）");
   };
 
