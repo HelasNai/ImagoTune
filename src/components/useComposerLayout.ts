@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   applySharedLayout,
+  compactCollapsedItems,
   createEmptySnapshot,
   effectivePlacement,
   ensureModePlacements,
@@ -125,34 +126,50 @@ function occupiedWithMeasured(
   return result;
 }
 
-/** 首次进入编辑模式：测量当前流式排布（以第一个模块左上角为原点），生成初始快照（水平换算为列、垂直换算为 GRID_PX 行；minW/minH 为 px 语义，须换算为列/行后作下限，绝不直接当坐标单位）。 */
+/**
+ * 首次进入编辑模式：测量当前流式排布（以第一个模块左上角为原点），生成初始快照（水平换算为列、垂直换算为 GRID_PX 行；minW/minH 为 px 语义，须换算为列/行后作下限，绝不直接当坐标单位）。
+ * details 类模块（图反推）一律按「折叠态」测量：展开是临时交互状态，若把展开高度写进快照，
+ * 折叠后会被快照 h 撑出大块空白、下方模块的位置也会带上展开高度的偏差；测完立即恢复原展开状态。
+ */
 function measureInitial(container: HTMLElement | null, mode: LayoutMode, cardWidth: number): LayoutSnapshot | null {
   if (!container) return null;
   const nodes = [...container.querySelectorAll<HTMLElement>("[data-layout-id]")];
   if (!nodes.length) return null;
-  const colWidth = cardWidth > 0 ? cardWidth / LAYOUT_COLS : GRID_PX;
-  let originX = Infinity;
-  let originY = Infinity;
-  const rects = nodes.map((node) => {
-    const rect = node.getBoundingClientRect();
-    originX = Math.min(originX, rect.left);
-    originY = Math.min(originY, rect.top);
-    return { node, rect };
-  });
-  let snapshot = createEmptySnapshot();
-  for (const { node, rect } of rects) {
-    const id = node.dataset.layoutId;
-    if (!id || !isKnownModuleId(id)) continue;
-    const def = moduleDef(id);
-    const placement: LayoutPlacement = {
-      x: Math.floor((rect.left - originX) / colWidth),
-      y: Math.floor((rect.top - originY) / GRID_PX),
-      w: Math.max(Math.round(rect.width / colWidth), Math.ceil(def.minW / colWidth)),
-      h: Math.max(Math.round(rect.height / GRID_PX), Math.ceil(def.minH / GRID_PX)),
-    };
-    snapshot = setPlacement(snapshot, mode, id, placement);
+  // 临时折叠仍处于展开状态的 details（同步测量不渲染中间态，finally 兜底恢复）。
+  const reopened: HTMLDetailsElement[] = [];
+  for (const node of nodes) {
+    if (node instanceof HTMLDetailsElement && node.open) {
+      node.open = false;
+      reopened.push(node);
+    }
   }
-  return ensureModePlacements(snapshot, mode);
+  try {
+    const colWidth = cardWidth > 0 ? cardWidth / LAYOUT_COLS : GRID_PX;
+    let originX = Infinity;
+    let originY = Infinity;
+    const rects = nodes.map((node) => {
+      const rect = node.getBoundingClientRect();
+      originX = Math.min(originX, rect.left);
+      originY = Math.min(originY, rect.top);
+      return { node, rect };
+    });
+    let snapshot = createEmptySnapshot();
+    for (const { node, rect } of rects) {
+      const id = node.dataset.layoutId;
+      if (!id || !isKnownModuleId(id)) continue;
+      const def = moduleDef(id);
+      const placement: LayoutPlacement = {
+        x: Math.floor((rect.left - originX) / colWidth),
+        y: Math.floor((rect.top - originY) / GRID_PX),
+        w: Math.max(Math.round(rect.width / colWidth), Math.ceil(def.minW / colWidth)),
+        h: Math.max(Math.round(rect.height / GRID_PX), Math.ceil(def.minH / GRID_PX)),
+      };
+      snapshot = setPlacement(snapshot, mode, id, placement);
+    }
+    return ensureModePlacements(snapshot, mode);
+  } finally {
+    for (const node of reopened) node.open = true;
+  }
 }
 
 /**
@@ -174,6 +191,12 @@ export function useComposerLayout({ mode, containerRef }: {
   /** 当前激活方案的快照（null = 流式渲染，与现状零差异）。 */
   const snapshot = activePreset?.snapshot ?? null;
   const [editing, setEditing] = useState(false);
+  /**
+   * 折叠模块（内容高度随交互剧变的 details 类，目前仅 reverse-prompt 图反推）：
+   * 非编辑态收缩为内容自然高度（避免快照 h 撑出大块空白），编辑态显示布局真相（快照 h）。
+   * 初始值与 ComposerPanel 的 details 默认闭合一致（无 open 属性）；用户在面板上切换时经 setModuleCollapsed 同步。
+   */
+  const [collapsedIds, setCollapsedIds] = useState<ReadonlySet<LayoutModuleId>>(() => new Set<LayoutModuleId>(["reverse-prompt"]));
   /** 模块实测高度（px；id → 高度）。 */
   const [measured, setMeasured] = useState<Record<string, number>>({});
   /** 模块实测宽度（px；id → 宽度），驱动网格态尺寸档位属性（与高度同一套 ResizeObserver）。 */
@@ -379,25 +402,71 @@ export function useComposerLayout({ mode, containerRef }: {
     [flagsOf],
   );
 
+  /** 同步 details 类模块的折叠状态（ComposerPanel 的 onToggle 调用）。 */
+  const setModuleCollapsed = useCallback((id: LayoutModuleId, collapsed: boolean) => {
+    setCollapsedIds((current) => {
+      if (current.has(id) === collapsed) return current;
+      const next = new Set(current);
+      if (collapsed) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+
+  /** 非编辑态的折叠视图：模块高度回归内容（编辑态恒 false，显示布局真相）。 */
+  const isCollapsedView = useCallback(
+    (id: LayoutModuleId) => !editing && collapsedIds.has(id),
+    [editing, collapsedIds],
+  );
+
+  /** 折叠模块的收缩高度（行）：实测内容高度取整，未测量时用 minH 换算兜底。 */
+  const collapsedHeightRows = useCallback(
+    (id: LayoutModuleId): number =>
+      measured[id]
+        ? Math.max(1, Math.round(measured[id] / GRID_PX))
+        : Math.max(1, Math.ceil(moduleDef(id).minH / GRID_PX)),
+    [measured],
+  );
+
+  /**
+   * 折叠模块的显示收缩（非编辑态）：details 类模块折叠时内容高度远小于快照 h，若仍按快照 h 注入
+   * min-height 会留出大块空白——且此时实测高度恒被 min-height 撑住、ResizeObserver 永不回调，
+   * 无法靠实测自愈（必须先真正收缩、让尺寸变化发生）。因此渲染上折叠模块不注入 min-height
+   * （高度完全交给内容），布局解算（推挤 / 容器高度）改用实测高度换算的收缩值；
+   * 编辑态恒返回原值：编辑视图显示布局真相，拖拽 / 缩放热区与快照一致。
+   */
+  const displayPlacementOf = useCallback(
+    (id: LayoutModuleId, placement: LayoutPlacement): LayoutPlacement => {
+      if (!isCollapsedView(id)) return placement;
+      const height = collapsedHeightRows(id);
+      return placement.h === height ? placement : { ...placement, h: height };
+    },
+    [isCollapsedView, collapsedHeightRows],
+  );
+
   // 渲染用快照：补齐当前模式下缺失的模块（不改写持久化，等下次进入编辑时落盘）
   const resolved = useMemo<LayoutSnapshot | null>(
     () => (snapshot ? ensureModePlacements(snapshot, mode) : null),
     [snapshot, mode],
   );
 
-  const layoutItems = useMemo(
-    () =>
-      resolved
-        ? visibleModuleIds(mode)
-            .filter((id) => !isHidden(resolved, mode, id))
-            .map((id) => {
-              const placement = effectivePlacement(resolved, mode, id)!;
-              const measuredH = measured[id] ? measured[id] / GRID_PX : undefined;
-              return { id, placement, measuredH };
-            })
-        : [],
-    [resolved, mode, measured],
-  );
+  const layoutItems = useMemo(() => {
+    if (!resolved) return [];
+    const base = visibleModuleIds(mode)
+      .filter((id) => !isHidden(resolved, mode, id))
+      .map((id) => {
+        const placement = effectivePlacement(resolved, mode, id)!;
+        const measuredH = measured[id] ? measured[id] / GRID_PX : undefined;
+        return { id, placement, measuredH };
+      });
+    // 折叠视图：收缩模块高度，并把当年被「展开高度」推下去的模块同步上移——
+    // 消除快照里遗留的空白（测量于展开态的下方模块位置会带上展开高度的偏差）。
+    const collapsedHeights: Partial<Record<LayoutModuleId, number>> = {};
+    for (const item of base) {
+      if (isCollapsedView(item.id)) collapsedHeights[item.id] = collapsedHeightRows(item.id);
+    }
+    return compactCollapsedItems(base, collapsedHeights);
+  }, [resolved, mode, measured, isCollapsedView, collapsedHeightRows]);
 
   const displayTops = useMemo(() => resolveVerticalLayout(layoutItems), [layoutItems]);
 
@@ -411,17 +480,19 @@ export function useComposerLayout({ mode, containerRef }: {
       if (live?.id === id) {
         return { position: "absolute", left: live.x, top: live.y, width: live.w, minHeight: live.h, zIndex: 5 };
       }
+      const shown = displayPlacementOf(id, placement);
       // 拖动中优先用全场推挤预览（被推模块实时下移）；否则用渲染解算 top。
-      const top = pushTops?.[id] ?? displayTops[id] ?? placement.y;
+      const top = pushTops?.[id] ?? displayTops[id] ?? shown.y;
       return {
         position: "absolute",
-        left: displayLeft(placement) * colWidth,
+        left: displayLeft(shown) * colWidth,
         top: top * GRID_PX,
-        width: Math.min(placement.w, LAYOUT_COLS) * colWidth,
-        minHeight: placement.h * GRID_PX,
+        width: Math.min(shown.w, LAYOUT_COLS) * colWidth,
+        // 折叠（非编辑态）不注入 min-height：高度完全由内容决定，避免快照 h 撑出空白。
+        minHeight: isCollapsedView(id) ? undefined : shown.h * GRID_PX,
       };
     },
-    [resolved, mode, colWidth, live, displayTops, pushTops],
+    [resolved, mode, colWidth, live, displayTops, pushTops, displayPlacementOf, isCollapsedView],
   );
 
   /** 模块容器高度（网格模式下显式撑开，流式下由文档流决定）。 */
@@ -860,6 +931,8 @@ export function useComposerLayout({ mode, containerRef }: {
     hiddenIds,
     hideModule,
     showModule,
+    /** 同步 details 类模块的折叠状态（非编辑态收缩为内容高度，编辑态显示布局真相） */
+    setModuleCollapsed,
     resetLayout,
     beginDrag,
     moveDrag,

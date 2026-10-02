@@ -54,7 +54,11 @@ export type NavIconName =
   | "cpu"
   | "hard-drive"
   | "clock"
-  | "panel-left";
+  | "panel-left"
+  // 自定义尺寸：尺子
+  | "ruler"
+  // 悬浮提示：问号圆圈
+  | "circle-question-mark";
 
 const paths: Record<NavIconName, ReactNode> = {
   // 创作生成：星芒（AI 生成）
@@ -238,6 +242,14 @@ const paths: Record<NavIconName, ReactNode> = {
       <path d="M12 16v-4m0-4h.01" />
     </>
   ),
+  // 悬浮提示：问号圆圈（Lucide circle-question-mark）
+  "circle-question-mark": (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+      <path d="M12 17h.01" />
+    </>
+  ),
   // 警告：三角叹号
   "triangle-alert": (
     <path d="m21.73 18l-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3M12 9v4m0 4h.01" />
@@ -324,6 +336,16 @@ const paths: Record<NavIconName, ReactNode> = {
     <>
       <rect width="18" height="18" x="3" y="3" rx="2" />
       <path d="M9 3v18" />
+    </>
+  ),
+  // 自定义尺寸：尺子
+  ruler: (
+    <>
+      <path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z" />
+      <path d="m14.5 12.5 2-2" />
+      <path d="m11.5 9.5 2-2" />
+      <path d="m8.5 6.5 2-2" />
+      <path d="m17.5 15.5 2-2" />
     </>
   ),
 };

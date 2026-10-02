@@ -11,6 +11,7 @@ import { ProgressBar } from "./ProgressBar";
 import { useCopyImage } from "./useCopy";
 import { useSaveImage } from "./useSaveImage";
 import { ImageDropInput } from "./ImageDropInput";
+import { Tooltip, InfoHint } from "./Tooltip";
 import { NavIcon } from "./icons";
 import type { StudioNotify } from "./StudioContext";
 
@@ -343,22 +344,22 @@ export function LocalAIToolbox({
 
   return <section className="local-ai-workbench" data-tutorial="local-ai-toolbox">
     <div className="local-ai-heading">
-      <div><span className="eyebrow">LOCAL AI TOOLBOX</span><h2>本地 AI 后期工具箱</h2><p>图片只在本机处理，不读取 API 密钥，也不会上传到任何服务。</p></div>
+      <div><span className="eyebrow">LOCAL AI TOOLBOX</span><h2>本地 AI 后期工具箱</h2><p>图片只在本机处理（可离线运行），不读取 API 密钥，也不会上传到任何服务。</p></div>
       <span className={webgpuAvailable ? "device-chip webgpu" : "device-chip"}>{webgpuAvailable ? "WebGPU 优先" : "WASM / CPU"}</span>
     </div>
 
     <div className="local-ai-guide" aria-label="本地工具箱能力说明">
       {(Object.keys(actionGuides) as LocalAIAction[]).map((value) => {
         const guide = actionGuides[value];
-        return <button key={value} className={action === value ? "active" : ""} onClick={() => setAction(value)}>
-          <span>{guide.badge}</span>
-          <strong>{guide.title}</strong>
-          <p>{guide.summary}</p>
-          <small>{guide.output}</small>
-        </button>;
+        return <Tooltip key={value} content={guide.output}>
+          <button className={action === value ? "active" : ""} onClick={() => setAction(value)}>
+            <span>{guide.badge}</span>
+            <strong>{guide.title}</strong>
+            <p>{guide.summary}</p>
+          </button>
+        </Tooltip>;
       })}
     </div>
-    <p className="local-privacy-note"><strong>完全本地：</strong>模型安装完成后可离线运行；处理图片不读取 API 密钥，也不会上传到图片服务。</p>
 
     <div className="local-ai-grid">
       <section className="local-ai-source card">
@@ -379,12 +380,11 @@ export function LocalAIToolbox({
           <small>{actionGuides[action].output}</small>
         </div>
 
-        {action === "upscale" && <div className="local-options"><label>放大倍率<select value={scale} onChange={(event) => setScale(Number(event.target.value) as 2 | 4)}><option value={2}>2× 原生模型</option><option value={4}>4× 原生模型</option></select></label><p>自动分块并保留透明通道；输出最长边不超过 8192 px。</p></div>}
+        {action === "upscale" && <Tooltip content="自动分块并保留透明通道；输出最长边不超过 8192 px。"><div className="local-options"><label>放大倍率<select value={scale} onChange={(event) => setScale(Number(event.target.value) as 2 | 4)}><option value={2}>2× 原生模型</option><option value={4}>4× 原生模型</option></select></label></div></Tooltip>}
         {action === "remove-background" && <div className="local-options"><label className="range-label">边缘羽化 <strong>{feather}px</strong><input type="range" min="0" max="8" value={feather} onChange={(event) => setFeather(Number(event.target.value))} /></label><label className="check"><input type="checkbox" checked={edgeRefine} onChange={(event) => setEdgeRefine(event.target.checked)} />轻度边缘优化</label></div>}
-        {(action === "face-restore" || action === "pipeline") && <div className="local-options"><label className="range-label">修复强度 <strong>{strength}%</strong><input type="range" min="10" max="100" value={strength} onChange={(event) => setStrength(Number(event.target.value))} /></label><label className="check"><input type="checkbox" checked={allFaces} onChange={(event) => setAllFaces(event.target.checked)} />处理全部人脸（最多 10 张）</label><p>Beta：侧脸、遮挡和过小人脸可能无法处理；默认混合原脸以降低身份漂移。</p></div>}
-        {action === "pipeline" && <p className="pipeline-order">处理顺序：人脸优化 → 2× 超分 → 智能抠图。任一步失败即停止，不保存中间结果。</p>}
+        {(action === "face-restore" || action === "pipeline") && <Tooltip content="Beta：侧脸、遮挡和过小人脸可能无法处理；默认混合原脸以降低身份漂移。"><div className="local-options"><label className="range-label">修复强度 <strong>{strength}%</strong><input type="range" min="10" max="100" value={strength} onChange={(event) => setStrength(Number(event.target.value))} /></label><label className="check"><input type="checkbox" checked={allFaces} onChange={(event) => setAllFaces(event.target.checked)} />处理全部人脸（最多 10 张）</label></div></Tooltip>}
 
-        <div className="local-run-row"><button className="primary" disabled={!source || busy} onClick={() => void run()}>{busy ? "正在本地处理…" : actionLabels[action]}</button>{busy && <button className="secondary" onClick={cancel}>取消</button>}</div>
+        <div className="local-run-row"><Tooltip content="处理顺序：人脸优化 → 2× 超分 → 智能抠图。任一步失败即停止，不保存中间结果。"><button className="primary" disabled={!source || busy} onClick={() => void run()}>{busy ? "正在本地处理…" : actionLabels[action]}</button></Tooltip>{busy && <button className="secondary" onClick={cancel}>取消</button>}</div>
         {busy && progress.totalStages > 1 ? (
           <div className="stage-indicator">
             {["人脸优化", "高清放大", "智能抠图"].map((label, index) => (
@@ -412,8 +412,7 @@ export function LocalAIToolbox({
     </div>
 
     <section className="model-manager card">
-      <div className="section-head"><div><span className="eyebrow">MODEL MANAGER</span><h3>本地模型管理</h3><small>{capabilities?.modelsDir}</small></div><div className="model-directory-actions"><button className="secondary" onClick={() => void chooseModelDir()}>更换位置</button><button className="secondary" onClick={() => void openModelDir()}>打开目录</button><button className="secondary" onClick={() => void resetModelDir()}>恢复默认</button><button className="secondary" onClick={() => void refreshModels()}>刷新状态</button></div></div>
-      <p className="model-directory-note">模型目录与软件安装位置、图库位置相互独立。更换目录时会复制已安装模型和未完成下载；原目录会保留，确认新目录可用后可自行清理。</p>
+      <div className="section-head"><div><span className="eyebrow">MODEL MANAGER</span><h3>本地模型管理<InfoHint content="模型目录与软件安装位置、图库位置相互独立。更换目录时会复制已安装模型和未完成下载；原目录会保留。" /></h3><small>{capabilities?.modelsDir}</small></div><div className="model-directory-actions"><button className="secondary" onClick={() => void chooseModelDir()}>更换位置</button><button className="secondary" onClick={() => void openModelDir()}>打开目录</button><button className="secondary" onClick={() => void resetModelDir()}>恢复默认</button><button className="secondary" onClick={() => void refreshModels()}>刷新状态</button></div></div>
       <div className="model-list">{models.map((model) => <article key={model.id}><div><strong>{model.name}{model.beta ? " · Beta" : ""}</strong><span>{model.version} · {formatBytes(model.size)} · {model.license}</span><a href={model.sourceUrl} target="_blank" rel="noreferrer">来源与许可证</a></div><div className="model-state"><span>{model.installed ? "已安装" : model.state === "partial" ? `已下载 ${model.progress}%` : model.state === "downloading" ? `下载中 ${model.progress}%` : model.state === "verifying" ? "校验中" : "未安装"}</span>{model.state === "downloading" ? <button onClick={() => void pauseDownload(model.id)}>暂停</button> : !model.installed ? <button disabled={Boolean(downloadBusy)} onClick={() => void downloadModel(model.id)}>{model.state === "partial" ? "继续" : "下载"}</button> : <button onClick={() => void deleteModel(model.id)}>删除</button>}</div></article>)}</div>
     </section>
   </section>;

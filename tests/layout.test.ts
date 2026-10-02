@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applySharedLayout,
   clearPlacement,
+  compactCollapsedItems,
   createEmptySnapshot,
   decodeLayoutCode,
   effectivePlacement,
@@ -242,6 +243,79 @@ describe("layout vertical resolve (push-down)", () => {
       { id: "controls", placement: { x: 0, y: 6, w: 40, h: 4 } },
     ]);
     expect(tops.controls).toBe(10);
+  });
+});
+
+describe("layout compact collapsed (fold shrink)", () => {
+  it("折叠模块收缩后，快照底边之下且横向重叠的模块上移差额行数", () => {
+    const next = compactCollapsedItems(
+      [
+        { id: "reverse-prompt", placement: { x: 0, y: 35, w: 64, h: 7 } },
+        { id: "references", placement: { x: 0, y: 42, w: 64, h: 8 } },
+      ],
+      { "reverse-prompt": 3 },
+    );
+    expect(next.find((item) => item.id === "reverse-prompt")!.placement.h).toBe(3);
+    expect(next.find((item) => item.id === "references")!.placement.y).toBe(38);
+  });
+
+  it("横向不重叠的模块不受影响", () => {
+    const next = compactCollapsedItems(
+      [
+        { id: "reverse-prompt", placement: { x: 0, y: 35, w: 30, h: 7 } },
+        { id: "references", placement: { x: 40, y: 42, w: 24, h: 8 } },
+      ],
+      { "reverse-prompt": 3 },
+    );
+    expect(next.find((item) => item.id === "references")!.placement.y).toBe(42);
+  });
+
+  it("位于快照底边之上的模块不动（含悬挂重叠者）", () => {
+    const next = compactCollapsedItems(
+      [
+        { id: "reverse-prompt", placement: { x: 0, y: 35, w: 64, h: 7 } },
+        { id: "prompt", placement: { x: 0, y: 20, w: 64, h: 4 } },
+        { id: "negative-prompt", placement: { x: 0, y: 41, w: 64, h: 3 } },
+      ],
+      { "reverse-prompt": 3 },
+    );
+    expect(next.find((item) => item.id === "prompt")!.placement.y).toBe(20);
+    expect(next.find((item) => item.id === "negative-prompt")!.placement.y).toBe(41);
+  });
+
+  it("目标高度不小于快照 h 时不压缩（gap ≤ 0）", () => {
+    const next = compactCollapsedItems(
+      [
+        { id: "reverse-prompt", placement: { x: 0, y: 35, w: 64, h: 7 } },
+        { id: "references", placement: { x: 0, y: 42, w: 64, h: 8 } },
+      ],
+      { "reverse-prompt": 7 },
+    );
+    expect(next.find((item) => item.id === "reverse-prompt")!.placement.h).toBe(7);
+    expect(next.find((item) => item.id === "references")!.placement.y).toBe(42);
+  });
+
+  it("空映射返回等值新数组，且不改动入参对象", () => {
+    const items = [{ id: "prompt" as const, placement: { x: 0, y: 0, w: 64, h: 5 } }];
+    const next = compactCollapsedItems(items, {});
+    expect(next).toEqual(items);
+    expect(next).not.toBe(items);
+    expect(next[0].placement).not.toBe(items[0].placement);
+  });
+
+  it("多个折叠模块按传入顺序逐一压缩（各自释放自己的差额）", () => {
+    const next = compactCollapsedItems(
+      [
+        { id: "reverse-prompt", placement: { x: 0, y: 10, w: 64, h: 7 } },
+        { id: "references", placement: { x: 0, y: 17, w: 64, h: 6 } },
+        { id: "controls", placement: { x: 0, y: 23, w: 64, h: 5 } },
+      ],
+      { "reverse-prompt": 3, references: 4 },
+    );
+    expect(next.find((item) => item.id === "reverse-prompt")!.placement.h).toBe(3);
+    expect(next.find((item) => item.id === "references")!.placement.y).toBe(13);
+    expect(next.find((item) => item.id === "references")!.placement.h).toBe(4);
+    expect(next.find((item) => item.id === "controls")!.placement.y).toBe(17);
   });
 });
 

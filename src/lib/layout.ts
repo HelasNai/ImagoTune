@@ -285,6 +285,37 @@ function overlapsHorizontally(a: LayoutResolveItem, b: LayoutResolveItem): boole
   return a.placement.x < b.placement.x + b.placement.w && b.placement.x < a.placement.x + a.placement.w;
 }
 
+/**
+ * 折叠收缩的布局压缩（渲染用）：折叠模块（details 类）由快照 h 收缩为内容高度后，
+ * 把「原本位于其快照底边之下、且与其横向重叠」的模块上移相同差额的行数——
+ * 它们当年的位置是被展开高度推出来的，随折叠释放回紧凑；横向无关的模块与
+ * 位于折叠模块上方的模块不动。折叠模块自身的 h 替换为 collapsedHeights[id]。
+ * 输入 / 输出均为「快照意图坐标」的副本（不改原对象）；多个折叠模块按传入顺序逐一压缩。
+ */
+export function compactCollapsedItems(
+  items: readonly LayoutResolveItem[],
+  collapsedHeights: Partial<Record<LayoutModuleId, number>>,
+): LayoutResolveItem[] {
+  const ids = Object.keys(collapsedHeights) as LayoutModuleId[];
+  const result = items.map((item) => ({ ...item, placement: { ...item.placement } }));
+  if (!ids.length) return result;
+  for (const id of ids) {
+    const target = collapsedHeights[id];
+    const collapsing = result.find((item) => item.id === id);
+    if (!collapsing || target === undefined) continue;
+    const gap = collapsing.placement.h - target;
+    if (gap <= 0) continue;
+    const bottom = collapsing.placement.y + collapsing.placement.h;
+    for (const other of result) {
+      if (other.id === id || other.placement.y < bottom) continue;
+      if (!overlapsHorizontally(collapsing, other)) continue;
+      other.placement = { ...other.placement, y: other.placement.y - gap };
+    }
+    collapsing.placement = { ...collapsing.placement, h: target };
+  }
+  return result;
+}
+
 /** 解算用高度（行）：快照 h 与实测高度取大（与 resolveVerticalLayout 同一规则）。 */
 function resolveItemHeight(item: LayoutResolveItem): number {
   return Math.max(item.placement.h, item.measuredH ?? 0);

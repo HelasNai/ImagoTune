@@ -14,6 +14,7 @@ import { ResultPanel } from "./components/ResultPanel";
 import { SidebarProjects } from "./components/SidebarProjects";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { StudioProvider, type StudioNotify } from "./components/StudioContext";
+import { Tooltip } from "./components/Tooltip";
 import { ProgressProvider } from "./components/ProgressContext";
 import { useComposer } from "./components/useComposer";
 import { recipeFromQueueInput } from "./components/queue-utils";
@@ -459,9 +460,11 @@ function App() {
               queueActive={mode === "queue"}
               queueCount={runningCount}
             />
-            <button className="sidebar-help" aria-label="新手教程" title="新手教程" onClick={() => setTutorialView("center")}>
-              <NavIcon name="graduation-cap" size={18} />
-            </button>
+            <Tooltip content="新手教程">
+              <button className="sidebar-help" aria-label="新手教程" onClick={() => setTutorialView("center")}>
+                <NavIcon name="graduation-cap" size={18} />
+              </button>
+            </Tooltip>
           </aside>
           <main>
             <div className={supportsViewTransition ? "page-transition" : "page-transition page-fallback"} key={mode}>
@@ -509,7 +512,9 @@ function App() {
 
         {preview && (
           <div className="lightbox" onClick={() => { setPreviewContextMenu(null); setPreview(null); }}>
-            <button className="lightbox-close" onClick={() => { setPreviewContextMenu(null); setPreview(null); }} aria-label="关闭预览"><NavIcon name="x" size={20} /></button>
+            <Tooltip content="点击空白处或右上角关闭">
+              <button className="lightbox-close" onClick={() => { setPreviewContextMenu(null); setPreview(null); }} aria-label="关闭预览"><NavIcon name="x" size={20} /></button>
+            </Tooltip>
             <img
               src={dataUrlFor(preview)}
               onClick={(event) => { event.stopPropagation(); setPreviewContextMenu(null); }}
@@ -553,7 +558,7 @@ function App() {
                 <button onClick={() => openLocalAI(preview, "pipeline")}>本地组合处理</button>
               </div>
             )}
-            <span>右键点击图片可复制；点击空白处或右上角关闭</span>
+            <span>右键点击图片可复制</span>
           </div>
         )}
       </div>

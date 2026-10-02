@@ -6,6 +6,7 @@ import { GalleryThumb } from "./GalleryThumb";
 import { NavIcon } from "./icons";
 import { useIpcAction } from "./ipc";
 import { useStudio } from "./StudioContext";
+import { Tooltip } from "./Tooltip";
 
 /** 展开区最多展示的行数（缩略图 + 标题 + 时间；其余经「查看全部」进入图库查看）。 */
 const PREVIEW_LIMIT = 5;
@@ -112,24 +113,26 @@ export function SidebarProjects({
   return (
     <>
       <div className="sidebar-projects-head">
-        <button
-          className={queueActive ? "nav sidebar-queue-nav active" : "nav sidebar-queue-nav"}
-          onClick={onOpenQueue}
-          title="任务队列"
-        >
-          <NavIcon name="list-todo" size={18} />
-          <span className="sidebar-queue-nav-label">任务队列</span>
-          {queueCount > 0 && <span className="sidebar-queue-nav-badge">{queueCount}</span>}
-        </button>
-        <button
-          className="sidebar-projects-add"
-          aria-label="新建项目"
-          title="新建项目"
-          disabled={pending}
-          onClick={() => setCreating((current) => !current)}
-        >
-          <NavIcon name="plus" size={14} />
-        </button>
+        <Tooltip content="任务队列">
+          <button
+            className={queueActive ? "nav sidebar-queue-nav active" : "nav sidebar-queue-nav"}
+            onClick={onOpenQueue}
+          >
+            <NavIcon name="list-todo" size={18} />
+            <span className="sidebar-queue-nav-label">任务队列</span>
+            {queueCount > 0 && <span className="sidebar-queue-nav-badge">{queueCount}</span>}
+          </button>
+        </Tooltip>
+        <Tooltip content="新建项目">
+          <button
+            className="sidebar-projects-add"
+            aria-label="新建项目"
+            disabled={pending}
+            onClick={() => setCreating((current) => !current)}
+          >
+            <NavIcon name="plus" size={14} />
+          </button>
+        </Tooltip>
       </div>
       {creating && (
         <div className="sidebar-projects-new">
@@ -164,17 +167,23 @@ export function SidebarProjects({
                     <span className={open ? "sidebar-project-caret open" : "sidebar-project-caret"}>
                       <NavIcon name="chevron-right" size={12} />
                     </span>
-                    <span className="sidebar-project-name" title={project.name}>{project.name}</span>
+                    <Tooltip content={project.name}>
+                      <span className="sidebar-project-name">{project.name}</span>
+                    </Tooltip>
                     <span className="sidebar-project-count">{list.length}</span>
                   </button>
                   {project.id !== INBOX_PROJECT_ID && (
                     <span className="sidebar-project-actions">
-                      <button aria-label="重命名项目" title="重命名" disabled={pending} onClick={() => void renameProject(project)}>
-                        <NavIcon name="pen-line" size={12} />
-                      </button>
-                      <button aria-label="删除项目" title="删除" disabled={pending} onClick={() => void deleteProject(project)}>
-                        <NavIcon name="trash" size={12} />
-                      </button>
+                      <Tooltip content="重命名">
+                        <button aria-label="重命名项目" disabled={pending} onClick={() => void renameProject(project)}>
+                          <NavIcon name="pen-line" size={12} />
+                        </button>
+                      </Tooltip>
+                      <Tooltip content="删除">
+                        <button aria-label="删除项目" disabled={pending} onClick={() => void deleteProject(project)}>
+                          <NavIcon name="trash" size={12} />
+                        </button>
+                      </Tooltip>
                     </span>
                   )}
                 </div>
@@ -188,18 +197,18 @@ export function SidebarProjects({
                     ) : (
                       <div className="sidebar-project-items">
                         {list.slice(0, PREVIEW_LIMIT).map((item) => (
-                          <button
-                            key={item.id}
-                            className="sidebar-project-item"
-                            title={item.title}
-                            onClick={() => onOpenImage(item.id)}
-                          >
-                            <GalleryThumb id={item.id} className="sidebar-project-item-thumb" alt={item.title} />
-                            <span className="sidebar-project-item-text">
-                              <span className="sidebar-project-item-title">{item.title || "未命名图片"}</span>
-                              <span className="sidebar-project-item-time">{formatShortDate(item.createdAt)}</span>
-                            </span>
-                          </button>
+                          <Tooltip key={item.id} content={item.title}>
+                            <button
+                              className="sidebar-project-item"
+                              onClick={() => onOpenImage(item.id)}
+                            >
+                              <GalleryThumb id={item.id} className="sidebar-project-item-thumb" alt={item.title} />
+                              <span className="sidebar-project-item-text">
+                                <span className="sidebar-project-item-title">{item.title || "未命名图片"}</span>
+                                <span className="sidebar-project-item-time">{formatShortDate(item.createdAt)}</span>
+                              </span>
+                            </button>
+                          </Tooltip>
                         ))}
                       </div>
                     )}

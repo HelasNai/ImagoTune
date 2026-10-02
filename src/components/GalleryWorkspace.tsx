@@ -7,6 +7,7 @@ import { b64ToDataUrl } from "../lib/media";
 import type { LocalAIAction } from "./LocalAIToolbox";
 import { useDialog } from "./Dialogs";
 import { callIpc } from "./ipc";
+import { Tooltip } from "./Tooltip";
 import { NavIcon } from "./icons";
 import { ProgressBar } from "./ProgressBar";
 import { useProgressEvent } from "./ProgressContext";
@@ -473,8 +474,7 @@ export function GalleryWorkspace({
 
           <div className="bulk-toolbar">
             <div className="bulk-summary">
-              <strong>已选择 {selected.size} 张</strong>
-              <span>可批量归类、标注和导出</span>
+              <Tooltip content="可批量归类、标注和导出"><strong>已选择 {selected.size} 张</strong></Tooltip>
               <button className="select-page" onClick={togglePageSelection} disabled={!items.length}>
                 {items.length > 0 && items.every((item) => selected.has(item.id)) ? "取消全选本页" : "全选本页"}
               </button>

@@ -6,6 +6,7 @@ import { NavIcon } from "./icons";
 import { useIpcAction } from "./ipc";
 import { useDialog } from "./Dialogs";
 import { GalleryThumb } from "./GalleryThumb";
+import { InfoHint } from "./Tooltip";
 import { ProgressBar } from "./ProgressBar";
 import { useProgressEvents } from "./ProgressContext";
 import { useStudio } from "./StudioContext";
@@ -62,8 +63,7 @@ export function QueuePanel({ queueItems, onRefresh, onOpenGalleryAt }: {
       <div className="section-head">
         <div>
           <span className="eyebrow">TASK QUEUE</span>
-          <h2>生成任务队列</h2>
-          <small>所有任务按顺序提交，避免并发限流和意外重复计费。</small>
+          <h2>生成任务队列<InfoHint content="所有任务按顺序提交，避免并发限流和意外重复计费。" /></h2>
         </div>
         <div className="queue-head-actions">
           {historyCount > 0 && (

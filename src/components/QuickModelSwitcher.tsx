@@ -4,6 +4,7 @@ import { Combobox } from "./Combobox";
 import { NavIcon } from "./icons";
 import { callIpc } from "./ipc";
 import { useStudio } from "./StudioContext";
+import { Tooltip } from "./Tooltip";
 import {
   MODEL_ROLES,
   MODEL_ROLE_LABELS,
@@ -183,19 +184,20 @@ export function QuickModelSwitcher({
   return (
     <>
       {variant === "dock" ? (
-        <button
-          type="button"
-          ref={triggerRef}
-          className="dock-model-trigger"
-          aria-haspopup="dialog"
-          aria-expanded={open}
-          title={`当前生图模型：${imageCard.title}（点击快捷切换）`}
-          onClick={togglePanel}
-        >
-          <i>生图</i>
-          <strong>{imageCard.text}</strong>
-          <NavIcon name="chevron-down" size={13} />
-        </button>
+        <Tooltip content={`当前生图模型：${imageCard.title}（点击快捷切换）`}>
+          <button
+            type="button"
+            ref={triggerRef}
+            className="dock-model-trigger"
+            aria-haspopup="dialog"
+            aria-expanded={open}
+            onClick={togglePanel}
+          >
+            <i>生图</i>
+            <strong>{imageCard.text}</strong>
+            <NavIcon name="chevron-down" size={13} />
+          </button>
+        </Tooltip>
       ) : (
         <button
           type="button"
@@ -211,7 +213,9 @@ export function QuickModelSwitcher({
             return (
               <span className="aside-tip-role" key={role}>
                 <i>{MODEL_ROLE_LABELS[role]}</i>
-                <strong title={card.title}>{card.text}</strong>
+                <Tooltip content={card.title}>
+                  <strong>{card.text}</strong>
+                </Tooltip>
               </span>
             );
           })}

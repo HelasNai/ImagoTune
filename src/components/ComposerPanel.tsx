@@ -5,6 +5,7 @@ import { QuickModelSwitcher } from "./QuickModelSwitcher";
 import { ProgressBar } from "./ProgressBar";
 import { useProgressEvent } from "./ProgressContext";
 import { NavIcon } from "./icons";
+import { Tooltip, InfoHint } from "./Tooltip";
 import { ImageDropInput } from "./ImageDropInput";
 import { qualities } from "./useComposer";
 import type { ComposerActions, ComposerState } from "./useComposer";
@@ -31,7 +32,7 @@ function ReferenceThumbnail({
   const src = useObjectUrl(file);
   return <div className="reference-item">
     <img src={src} alt={`参考图 ${index + 1}`} />
-    <div><strong>参考图 {index + 1}</strong><span title={file.name}>{file.name}</span></div>
+    <div><strong>参考图 {index + 1}</strong><Tooltip content={file.name}><span>{file.name}</span></Tooltip></div>
     <button type="button" onClick={() => onCopy(file)}>复制</button>
     <button type="button" className="remove-reference" onClick={onRemove} aria-label={`移除参考图 ${index + 1}`}><NavIcon name="x" size={14} /></button>
   </div>;
@@ -208,13 +209,16 @@ export function ComposerPanel({
       <div className="mode-title">
         <div>
           <span className="eyebrow">{mode === "outpaint" ? "SMART OUTPAINT" : mode === "edit" ? "IMAGE EDIT" : "CREATE STUDIO"}</span>
-          <h2>{mode === "outpaint" ? "智能扩展画面" : mode === "edit" ? "编辑与局部重绘" : "描述你想要的画面"}</h2>
+          <Tooltip content={mode === "outpaint" ? "透明画布 + 自动蒙版" : mode === "edit" ? "原图 + 蒙版 + 参考图" : "提示词 + 参考图 + 队列"}>
+            <h2>{mode === "outpaint" ? "智能扩展画面" : mode === "edit" ? "编辑与局部重绘" : "描述你想要的画面"}</h2>
+          </Tooltip>
         </div>
         <div className="mode-title-side">
-          <span className="pill">{mode === "outpaint" ? "透明画布 + 自动蒙版" : mode === "edit" ? "原图 + 蒙版 + 参考图" : "提示词 + 参考图 + 队列"}</span>
-          <button type="button" className={layout.editing ? "layout-toggle active" : "layout-toggle"} onClick={layout.toggleEditing} title="自定义各模块的位置与大小">
-            {layout.editing ? "完成布局" : "调整布局"}
-          </button>
+          <Tooltip content="自定义各模块的位置与大小">
+            <button type="button" className={layout.editing ? "layout-toggle active" : "layout-toggle"} onClick={layout.toggleEditing}>
+              {layout.editing ? "完成布局" : "调整布局"}
+            </button>
+          </Tooltip>
         </div>
       </div>
 
@@ -231,41 +235,59 @@ export function ComposerPanel({
                   {layout.presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
                 </select>
               </label>
-              <button type="button" className="layout-tool-btn" title="将当前布局另存为新方案" onClick={() => void handleCreatePreset()}>
-                <NavIcon name="plus" size={14} />另存为
-              </button>
-              <button type="button" className="layout-tool-btn" title="重命名当前方案" onClick={() => void handleRenamePreset()}>
-                <NavIcon name="pen-line" size={14} />重命名
-              </button>
-              <button type="button" className="layout-tool-btn danger" disabled={layout.activePresetId === "default"} title="删除当前方案（默认方案不可删除）" onClick={() => void handleDeletePreset()}>
-                <NavIcon name="trash" size={14} />删除
-              </button>
+              <Tooltip content="将当前布局另存为新方案">
+                <button type="button" className="layout-tool-btn" onClick={() => void handleCreatePreset()}>
+                  <NavIcon name="plus" size={14} />另存为
+                </button>
+              </Tooltip>
+              <Tooltip content="重命名当前方案">
+                <button type="button" className="layout-tool-btn" onClick={() => void handleRenamePreset()}>
+                  <NavIcon name="pen-line" size={14} />重命名
+                </button>
+              </Tooltip>
+              <Tooltip content="删除当前方案（默认方案不可删除）">
+                <button type="button" className="layout-tool-btn danger" disabled={layout.activePresetId === "default"} onClick={() => void handleDeletePreset()}>
+                  <NavIcon name="trash" size={14} />删除
+                </button>
+              </Tooltip>
             </div>
             <div className="layout-editor-group">
-              <button type="button" className="layout-tool-btn" onClick={layout.undo} disabled={!layout.canUndo} title="撤销（Ctrl+Z）" aria-label="撤销">
-                <NavIcon name="undo" size={16} />
-              </button>
-              <button type="button" className="layout-tool-btn" onClick={layout.redo} disabled={!layout.canRedo} title="重做（Ctrl+Shift+Z / Ctrl+Y）" aria-label="重做">
-                <NavIcon name="redo" size={16} />
-              </button>
-              <button type="button" className="layout-tool-btn" title="复制当前布局的分享码" onClick={() => void handleCopyLayoutCode()}>
-                <NavIcon name="copy" size={14} />复制分享码
-              </button>
-              <button type="button" className="layout-tool-btn" title="粘贴布局分享码并导入" onClick={() => void handleImportLayoutCode()}>
-                <NavIcon name="download" size={14} />导入分享码
-              </button>
+              <Tooltip content="撤销（Ctrl+Z）">
+                <button type="button" className="layout-tool-btn" onClick={layout.undo} disabled={!layout.canUndo} aria-label="撤销">
+                  <NavIcon name="undo" size={16} />
+                </button>
+              </Tooltip>
+              <Tooltip content="重做（Ctrl+Shift+Z / Ctrl+Y）">
+                <button type="button" className="layout-tool-btn" onClick={layout.redo} disabled={!layout.canRedo} aria-label="重做">
+                  <NavIcon name="redo" size={16} />
+                </button>
+              </Tooltip>
+              <Tooltip content="复制当前布局的分享码">
+                <button type="button" className="layout-tool-btn" onClick={() => void handleCopyLayoutCode()}>
+                  <NavIcon name="copy" size={14} />复制分享码
+                </button>
+              </Tooltip>
+              <Tooltip content="粘贴布局分享码并导入">
+                <button type="button" className="layout-tool-btn" onClick={() => void handleImportLayoutCode()}>
+                  <NavIcon name="download" size={14} />导入分享码
+                </button>
+              </Tooltip>
             </div>
             {layout.hiddenIds.length > 0 && (
               <div className="layout-editor-group layout-hidden-panel">
                 <span>已隐藏 {layout.hiddenIds.length} 个：</span>
                 {layout.hiddenIds.map((id) => (
-                  <button key={id} type="button" className="layout-hidden-restore" onClick={() => layout.showModule(id)} title="恢复显示该模块">
-                    {moduleDef(id).label} ↺
-                  </button>
+                  <Tooltip key={id} content="恢复显示该模块">
+                    <button type="button" className="layout-hidden-restore" onClick={() => layout.showModule(id)}>
+                      {moduleDef(id).label} ↺
+                    </button>
+                  </Tooltip>
                 ))}
               </div>
             )}
-            <button type="button" className="layout-reset" title="清除自定义布局并恢复默认排列（需确认）" onClick={() => void handleResetLayout()}>恢复默认布局</button>
+            <Tooltip content="清除自定义布局并恢复默认排列（需确认）">
+              <button type="button" className="layout-reset" onClick={() => void handleResetLayout()}>恢复默认布局</button>
+            </Tooltip>
           </div>
         </div>
       )}
@@ -273,19 +295,20 @@ export function ComposerPanel({
       <div ref={modulesRef} className={layout.modulesClassName} style={layout.modulesStyle}>
       <div className="project-strip" data-layout-id="project-strip" {...layout.dataFlagsOf("project-strip")} style={layout.styleOf("project-strip")}>
         <label>归属项目
-          <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>
-            {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-          </select>
+          <Tooltip content="默认归档到收件箱，可随时批量移动。">
+            <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>
+              {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+            </select>
+          </Tooltip>
         </label>
         <label>标签
           <input value={tagsText} onChange={(event) => setTagsText(event.target.value)} placeholder="例如：海报，蓝粉，产品" />
         </label>
-        <span>默认归档到收件箱，可随时批量移动。</span>
       </div>
 
       <section className="prompt-panel" data-layout-id="prompt" {...layout.dataFlagsOf("prompt")} style={layout.styleOf("prompt")}>
         <div className="prompt-head">
-          <strong>提示词</strong>
+          <strong>提示词 <InfoHint content="正向描述画面；可保存为模板复用。" /></strong>
           <div className="prompt-template-actions">
             <select value={selectedTemplate} onChange={(event) => applyTemplate(event.target.value)}>
               <option value="">选择模板…</option>
@@ -300,7 +323,6 @@ export function ComposerPanel({
             )}
           </div>
         </div>
-        <small className="panel-hint">正向描述画面；可保存为模板复用。</small>
         <div className="prompt-assistant">
           <button onClick={() => optimizeLocal("refine")}>精炼主体</button>
           <button onClick={() => optimizeLocal("detail")}>强化细节</button>
@@ -326,22 +348,27 @@ export function ComposerPanel({
 
       <section className="negative-prompt" data-layout-id="negative-prompt" {...layout.dataFlagsOf("negative-prompt")} style={layout.styleOf("negative-prompt")}>
         <div className="negative-head">
-          <strong>负面提示词</strong>
+          <strong>负面提示词 <InfoHint content="独立保存；提交时转换为「必须避免」的自然语言约束。" /></strong>
           <div className="negative-template-actions">
             <select value={selectedNegativeTemplate} onChange={(event) => applyNegativeTemplate(event.target.value)}>
               <option value="">选择负面词模板…</option>
               {templates.filter((item) => item.kind === "negative").map((item) => <option key={item.id} value={item.id}>[{item.category}] {item.title}</option>)}
             </select>
-            <button onClick={() => void saveTemplate("negative")}>保存</button>
-            {selectedNegativeTemplate && !templates.find((item) => item.id === selectedNegativeTemplate)?.builtin && <button onClick={() => void saveTemplate("negative", true)}>更新</button>}
-            {selectedNegativeTemplate && !templates.find((item) => item.id === selectedNegativeTemplate)?.builtin && <button onClick={() => void deleteTemplate("negative")}>删除</button>}
+            <button onClick={() => void saveTemplate("negative")}>保存为模板</button>
+            {selectedNegativeTemplate && !templates.find((item) => item.id === selectedNegativeTemplate)?.builtin && <button onClick={() => void saveTemplate("negative", true)}>更新模板</button>}
+            {selectedNegativeTemplate && !templates.find((item) => item.id === selectedNegativeTemplate)?.builtin && <button onClick={() => void deleteTemplate("negative")}>删除模板</button>}
           </div>
         </div>
-        <small className="panel-hint">独立保存；提交时转换为“必须避免”的自然语言约束。</small>
         <textarea value={negativePrompt} onChange={(event) => setNegativePrompt(event.target.value)} rows={3} placeholder="例如：水印、乱码文字、重复元素、肢体畸形、塑料质感" />
       </section>
 
-      <details className="reverse-prompt" data-layout-id="reverse-prompt" {...layout.dataFlagsOf("reverse-prompt")} style={layout.styleOf("reverse-prompt")}>
+      <details
+        className="reverse-prompt"
+        data-layout-id="reverse-prompt"
+        {...layout.dataFlagsOf("reverse-prompt")}
+        style={layout.styleOf("reverse-prompt")}
+        onToggle={(event) => layout.setModuleCollapsed("reverse-prompt", !event.currentTarget.open)}
+      >
         <summary>图反推提示词 · {roles.reverse?.model ?? "未配置"}</summary>
         <div className="reverse-upload-row">
           <ImageDropInput accept="image/*" onFiles={(files) => { setReverseImage(files[0] ?? null); setReverseResult(null); }}>
@@ -389,8 +416,7 @@ export function ComposerPanel({
       {(mode === "generate" || mode === "edit") && <section className="reference-panel" data-tutorial="reference-images" data-layout-id="references" {...layout.dataFlagsOf("references")} style={layout.styleOf("references")}>
         <div className="reference-head">
           <div>
-            <strong>参考图片 <span>{references.length}/3</span></strong>
-            <small>{mode === "generate" ? "可参考构图、风格、配色或主体特征生成新画面" : "与原图合成参考画板，帮助模型理解风格和元素"}</small>
+            <strong>参考图片 <span>{references.length}/3</span> <InfoHint content={mode === "generate" ? "可参考构图、风格、配色或主体特征生成新画面。添加参考图后会自动使用兼容图片编辑接口，一次生成 1 张；不添加时仍使用普通文生图接口。" : "与原图合成参考画板，帮助模型理解风格和元素。局部蒙版与多参考图不能同时提交；需要局部修改时请先移除参考图。"} /></strong>
           </div>
           <div className="reference-actions">
             <ImageDropInput accept="image/*" multiple onFiles={addReferenceFiles}>
@@ -413,9 +439,6 @@ export function ComposerPanel({
         </div> : <button type="button" className="reference-empty" onClick={() => void pasteReferenceImage()}>
           剪贴板中已有图片时，可直接点击这里粘贴
         </button>}
-        <p>{mode === "generate"
-          ? "添加参考图后会自动使用兼容图片编辑接口，一次生成 1 张；不添加时仍使用普通文生图接口。"
-          : "局部蒙版与多参考图不能同时提交；需要局部修改时请先移除参考图。"}</p>
       </section>}
 
       {mode === "outpaint" && <section className="outpaint-panel" data-layout-id="outpaint-panel" {...layout.dataFlagsOf("outpaint-panel")} style={layout.styleOf("outpaint-panel")}>
@@ -447,18 +470,22 @@ export function ComposerPanel({
           </select>
         </label>
         <label>清晰度
-          <select value={resolution} onChange={(event) => setResolution(event.target.value)} disabled={customSizeEnabled}>
-            {resolutionOptions.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
-          </select>
+          <Tooltip content="推荐配置：1K、自动细节、1 张，通常响应更快、失败率更低。">
+            <select value={resolution} onChange={(event) => setResolution(event.target.value)} disabled={customSizeEnabled}>
+              {resolutionOptions.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
+            </select>
+          </Tooltip>
         </label>
         <label>画面比例
           {customSizeEnabled && mode !== "outpaint" ? (
             <>
               <span className="ratio-custom">
                 <input value={customSize} onChange={(event) => setCustomSize(event.target.value)} placeholder="例如 1536x1024" />
-                <button type="button" className="ratio-custom-back" title="返回预设比例" aria-label="返回预设比例" onClick={() => setCustomSizeEnabled(false)}><NavIcon name="undo" size={14} /></button>
+                <Tooltip content="返回预设比例">
+                  <button type="button" className="ratio-custom-back" aria-label="返回预设比例" onClick={() => setCustomSizeEnabled(false)}><NavIcon name="undo" size={16} /></button>
+                </Tooltip>
               </span>
-              <small className={customCheck.ok ? "valid" : "invalid"}>{customCheck.message}</small>
+              {customSize.trim() ? <small className={customCheck.ok ? "valid" : "invalid"}>{customCheck.message}</small> : null}
             </>
           ) : (
             <span className="ratio-select">
@@ -466,9 +493,11 @@ export function ComposerPanel({
                 {ratioOptions.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
               </select>
               {mode !== "outpaint" && (
-                <button type="button" className="ratio-custom-enter" title="自定义尺寸" aria-label="自定义尺寸" onClick={() => setCustomSizeEnabled(true)}>
-                  <NavIcon name="expand" size={14} />
-                </button>
+                <Tooltip content="自定义尺寸">
+                  <button type="button" className="ratio-custom-enter" aria-label="自定义尺寸" onClick={() => setCustomSizeEnabled(true)}>
+                    <NavIcon name="ruler" size={16} />
+                  </button>
+                </Tooltip>
               )}
             </span>
           )}
@@ -493,14 +522,15 @@ export function ComposerPanel({
               onPointerCancel={layout.endDrag}
             >
               <span className="layout-handle-label" style={{ top: 6, left: 8 }}>{handle.label}</span>
-              <button
-                type="button"
-                className="layout-handle-hide"
-                style={{ top: 6, right: 8 }}
-                title="隐藏该模块（可从「已隐藏」列表恢复）"
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => { event.stopPropagation(); layout.hideModule(handle.id); }}
-              >×</button>
+              <Tooltip content="隐藏该模块（可从「已隐藏」列表恢复）">
+                <button
+                  type="button"
+                  className="layout-handle-hide"
+                  style={{ top: 6, right: 8 }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => { event.stopPropagation(); layout.hideModule(handle.id); }}
+                >×</button>
+              </Tooltip>
               {/* 三向缩放把手：位置由本 todo 内联保证「全部落在 handle 盒内」；尺寸/配色归 todo 11 的 CSS。
                   各把手自带 kind → 只改对应维度（e 改宽、s 改高、se 改宽高），x/y 恒不变。 */}
               <span
@@ -530,13 +560,9 @@ export function ComposerPanel({
         当前输出：{displaySize} · {mode === "outpaint" ? outpaintPreset || "扩展画布" : ratio + " 比例"} · {resolution.toUpperCase()} 清晰度 · 项目：
         {projects.find((project) => project.id === projectId)?.name || "收件箱"}
       </p>
-      {heavyRequest ? (
+      {heavyRequest && (
         <p className="performance-warning">
           当前组合需要更长等待时间，也更容易遇到接口限制。建议先用 1K、自动细节、1 张确定构图。
-        </p>
-      ) : (
-        <p className="performance-note">
-          推荐配置：1K、自动细节、1 张，通常响应更快、失败率更低。
         </p>
       )}
       <div className="run-row" data-tutorial="generation-actions">

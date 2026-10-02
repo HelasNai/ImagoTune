@@ -3,6 +3,7 @@ import { callIpc } from "./ipc";
 import { useDialog } from "./Dialogs";
 import { useStudio } from "./StudioContext";
 import { Combobox } from "./Combobox";
+import { Tooltip, InfoHint } from "./Tooltip";
 import { formatDateTime } from "../lib/format";
 import { isSettingsDirty } from "../lib/settings-dirty";
 import { presetToProviderDraft } from "../lib/provider-preset";
@@ -438,7 +439,6 @@ export function SettingsPanel({
           <div>
             <span className="eyebrow">PROVIDERS</span>
             <h3>供应商</h3>
-            <p className="muted">测试连接与刷新模型不会保存任何数据：未保存的新密钥只用于当次请求，不写入凭据库。</p>
           </div>
           <button type="button" className="secondary" onClick={beginAdd}>+ 添加供应商</button>
         </div>
@@ -513,7 +513,9 @@ export function SettingsPanel({
                 </div>
                 <div className="provider-card-actions">
                   <button type="button" className="secondary" onClick={() => beginEdit(draft)}>编辑</button>
-                  <button type="button" className="secondary" onClick={() => void runProviderCheck(draft, "test")}>测试连接</button>
+                  <Tooltip content="测试连接与刷新模型不会保存任何数据：未保存的新密钥只用于当次请求，不写入凭据库。">
+                    <button type="button" className="secondary" onClick={() => void runProviderCheck(draft, "test")}>测试连接</button>
+                  </Tooltip>
                   <button type="button" className="secondary" onClick={() => void runProviderCheck(draft, "refresh")}>刷新模型</button>
                   <button type="button" className="secondary" onClick={() => setExpandedModelsId((current) => (current === draft.id ? null : draft.id))}>模型</button>
                   <button type="button" className="secondary" onClick={() => void removeProvider(draft)}>删除</button>
@@ -593,8 +595,7 @@ export function SettingsPanel({
       <section className="role-binding-block">
         <div>
           <span className="eyebrow">MODEL ASSIGNMENT</span>
-          <h3>模型分配</h3>
-          <p className="muted">为生图、图反推、提示词增强分别选择供应商与模型；只显示已标注该角色的模型。</p>
+          <h3>模型分配<InfoHint content="为生图、图反推、提示词增强分别选择供应商与模型；只显示已标注该角色的模型。" /></h3>
         </div>
         {MODEL_ROLES.map((role) => (
           <div className="role-binding-row" key={role}>
@@ -628,19 +629,20 @@ export function SettingsPanel({
         <div className="storage-head">
           <strong>本地保存位置</strong>
           <div className="storage-actions">
-            <button type="button" onClick={() => void chooseSaveDirectory()}>选择文件夹</button>
+            <Tooltip content="新图片、自动图库和导出文件将使用此位置；切换目录不会移动或删除原目录中的文件。">
+              <button type="button" onClick={() => void chooseSaveDirectory()}>选择文件夹</button>
+            </Tooltip>
             <button type="button" onClick={() => void openSaveDirectory()}>打开目录</button>
             <button type="button" onClick={() => void resetSaveDirectory()}>恢复默认</button>
           </div>
         </div>
         <code>{saveDir}</code>
-        <small>新图片、自动图库和导出文件将使用此位置；切换目录不会移动或删除原目录中的文件。</small>
       </div>}
       <section className="update-settings">
         <div>
           <span className="eyebrow">APPLICATION UPDATE</span>
           <h3>软件更新</h3>
-          <p onClick={handleVersionClick}>当前版本：v{appVersion || "—"}。开启自动更新后会在后台检查并下载新版本，安装前仍会询问，不会强制重启；关闭后仅在你手动检查时提示下载。</p>
+          <p onClick={handleVersionClick}>当前版本：v{appVersion || "—"}。</p>
         </div>
         <div className="update-channel">
           <span className="update-channel-label">更新渠道</span>
@@ -651,10 +653,12 @@ export function SettingsPanel({
           </div>
           {alphaUnlocked && <button type="button" className="update-alpha-exit" onClick={() => void exitAlphaChannel()}>退出内测</button>}
         </div>
-        <label className="archive-toggle">
-          <input type="checkbox" checked={autoUpdate} onChange={(event) => void setAutoUpdatePreference(event.target.checked)} />
-          自动检查并在后台下载更新（安装前询问）
-        </label>
+        <Tooltip content="开启自动更新后会在后台检查并下载新版本，安装前仍会询问，不会强制重启；关闭后仅在你手动检查时提示下载。">
+          <label className="archive-toggle">
+            <input type="checkbox" checked={autoUpdate} onChange={(event) => void setAutoUpdatePreference(event.target.checked)} />
+            自动检查并在后台下载更新（安装前询问）
+          </label>
+        </Tooltip>
         <div className="update-actions">
           <button className="secondary" onClick={() => void checkUpdates()} disabled={updateStatus.phase === "checking"}>
             {updateStatus.phase === "checking" ? "检查中…" : "检查更新"}
@@ -669,13 +673,15 @@ export function SettingsPanel({
         <div>
           <span className="eyebrow">INTERFACE ZOOM</span>
           <h3>界面缩放</h3>
-          <p>调整整个界面的缩放比例，当前缩放：{Math.round(zoomFactor * 100)}%。范围为 50%–200%。</p>
+          <p>当前缩放：{Math.round(zoomFactor * 100)}%。</p>
         </div>
-        <div className="update-actions">
-          <button type="button" className="secondary" onClick={() => applyZoom(Math.max(0.5, Number((zoomFactor - 0.1).toFixed(2))))}>缩小</button>
-          <button type="button" className="secondary" onClick={() => applyZoom(1)}>重置</button>
-          <button type="button" className="secondary" onClick={() => applyZoom(Math.min(2, Number((zoomFactor + 0.1).toFixed(2))))}>放大</button>
-        </div>
+        <Tooltip content="调整整个界面的缩放比例，范围为 50%–200%。">
+          <div className="update-actions">
+            <button type="button" className="secondary" onClick={() => applyZoom(Math.max(0.5, Number((zoomFactor - 0.1).toFixed(2))))}>缩小</button>
+            <button type="button" className="secondary" onClick={() => applyZoom(1)}>重置</button>
+            <button type="button" className="secondary" onClick={() => applyZoom(Math.min(2, Number((zoomFactor + 0.1).toFixed(2))))}>放大</button>
+          </div>
+        </Tooltip>
       </section>
       <section className="update-settings">
         <div>
