@@ -18,11 +18,15 @@
  *   ① 尺寸矩阵 1920/1452/1280/1050/901/900/800/701/700/560 上：
  *      a) 每个可见模块根与 .app / documentElement 无横向溢出；
  *      b) 模块 min-height == 快照行数 × 16（垂直行单位与窗口无关）；
- *         两个内容稳定模块（prompt / presets，无尺寸档位）的 top 不随 colWidth 成比例缩小；
+ *         内容稳定模块（prompt，无尺寸档位）的 top 不随 colWidth 成比例缩小；
  *      c) .layout-handle 矩形与对应模块矩形差 ≤1px；
  *      d) .controls 按「模块自身宽度」切换 grid-template-columns（<680 → 2 列、<560 → 1 列），
  *         并用 CDP Input 真实拖拽 .layout-handle-resize.e 复核（退路：写 v4 快照 + Page.reload）；
- *      e) 901/900 与 701/700 的卡片宽跳变被记录，且该点无溢出 / 无重叠。
+ *      e) 901/900 与 701/700 的卡片宽跳变被记录，且该点无溢出 / 无重叠；
+ *      f) 垂直缩放真实拖拽（.layout-handle-resize.s）：先拉高 +160px 再拉矮 -260px，
+ *         高度必须能变小（回归「只能拉高不能拉矮」：实测撑开值曾把拉矮永久钳住）并回到初始附近。
+ *      g) 纵向推挤回流真实 move 拖拽（references → controls）：拖动中目标模块渲染 top 实时增大（live 预览）；
+ *         松手后 A 快照 y == ghost 落点、B 快照 y 持久化且渲染 top 无跳变；Ctrl+Z 单步撤销还原 A/B 坐标。
  *
  * 退出码：全部 PASS = 0；任一 FAIL 或清理失败 = 1。
  */
@@ -46,9 +50,10 @@ const MATRIX = [1920, 1452, 1280, 1050, 901, 900, 800, 701, 700, 560];
 /** 视口高度（水平验收与高度无关，取一固定值即可）。 */
 const VIEWPORT_H = 900;
 
-/** 两个「内容稳定」模块：LAYOUT_SIZE_THRESHOLDS 为空对象——模块内不随宽度重排，
- *  自身实测高度与宽度无关；用于反证垂直 top 只由行坐标决定（不随 colWidth 比例缩放）。 */
-const STABLE_TOPS = ["prompt", "presets"];
+/** 「内容稳定」模块：LAYOUT_SIZE_THRESHOLDS 为空对象——模块内不随宽度重排，
+ *  自身实测高度与宽度无关；用于反证垂直 top 只由行坐标决定（不随 colWidth 比例缩放）。
+ *  （v3.8.4：presets 已并入 controls，stable 池仅剩 prompt。） */
+const STABLE_TOPS = ["prompt"];
 
 /**
  * 模块表镜像 src/lib/layout.ts 的 LAYOUT_MODULES（id / 可见模式 / minW / minH）与
@@ -57,22 +62,24 @@ const STABLE_TOPS = ["prompt", "presets"];
  */
 const MODULES = [
   { id: "project-strip", modes: ["generate", "edit", "outpaint"], minW: 400, minH: 64 },
-  { id: "prompt-tools", modes: ["generate", "edit", "outpaint"], minW: 320, minH: 48 },
-  { id: "prompt", modes: ["generate", "edit", "outpaint"], minW: 320, minH: 128 },
+  { id: "prompt", modes: ["generate", "edit", "outpaint"], minW: 360, minH: 160 },
   { id: "negative-prompt", modes: ["generate", "edit", "outpaint"], minW: 360, minH: 112 },
-  { id: "prompt-assistant", modes: ["generate", "edit", "outpaint"], minW: 280, minH: 48 },
   { id: "reverse-prompt", modes: ["generate", "edit", "outpaint"], minW: 320, minH: 48 },
   { id: "upload", modes: ["edit", "outpaint"], minW: 320, minH: 48 },
   { id: "mask", modes: ["edit"], minW: 360, minH: 240 },
   { id: "references", modes: ["generate", "edit"], minW: 320, minH: 120 },
   { id: "outpaint-panel", modes: ["outpaint"], minW: 360, minH: 160 },
-  { id: "presets", modes: ["generate", "edit", "outpaint"], minW: 300, minH: 48 },
-  { id: "controls", modes: ["generate", "edit", "outpaint"], minW: 480, minH: 48 },
-  { id: "custom-size", modes: ["generate", "edit"], minW: 280, minH: 48 },
+  { id: "controls", modes: ["generate", "edit", "outpaint"], minW: 480, minH: 144 },
 ];
 const CONTROLS = { compact: 680, narrow: 560 };
 
 const MODE = "generate";
+
+/** 推挤回流验收：A（被拖动）落到 B（目标）上时 B 实时下推，松手后二者坐标持久化；Ctrl+Z 单步还原。
+ *  A/B 均在 generate 模式下可见且横向重叠（x=0 全宽），且 A 在 B 上方；handle 标签用于定位 A 的拖动热区。 */
+const PUSH_A = "references";
+const PUSH_B = "controls";
+const PUSH_LABEL_A = "参考图";
 
 let child = null;
 let wsRef = null;
@@ -251,13 +258,15 @@ async function enterLayoutEdit(cdp) {
   await cdp.evaluate(
     `(function(){var bs=document.querySelectorAll('.nav');for(var i=0;i<bs.length;i++){if(bs[i].textContent.indexOf('创作生成')>=0){bs[i].click();return true;}}return false;})()`
   );
-  // 等待 ComposerPanel 挂载 + 卡片宽度就绪，然后点击「调整布局」直到进入网格态
+  // 等待 ComposerPanel 挂载 + 卡片宽度就绪，然后点击「调整布局」直到进入编辑态。
+  // 注意：快照已存在时 .composer-modules.layout-grid 恒存在（网格渲染 ≠ 编辑态），不能以 grid 判定，
+  // 必须等 .composer-editing + .layout-handle 就绪；编辑态已开但把手未渲染时只等待、不再点击（防误退出）。
   for (let i = 0; i < 30; i++) {
     const state = JSON.parse(
-      await cdp.evaluate(`(function(){var c=document.querySelector('.composer');var t=document.querySelector('.layout-toggle');return JSON.stringify({composer:!!c,card:c?c.clientWidth:0,toggle:t?t.textContent:'',grid:!!document.querySelector('.composer-modules.layout-grid')});})()`)
+      await cdp.evaluate(`(function(){var c=document.querySelector('.composer');var t=document.querySelector('.layout-toggle');return JSON.stringify({composer:!!c,card:c?c.clientWidth:0,toggle:t?t.textContent:'',editing:!!document.querySelector('.composer-editing'),handles:document.querySelectorAll('.layout-handle').length});})()`)
     );
-    if (state.grid) return true;
-    if (state.composer && state.toggle && state.card > 0) {
+    if (state.editing && state.handles > 0) return true;
+    if (!state.editing && state.composer && state.toggle && state.card > 0) {
       await cdp.evaluate(`(function(){var t=document.querySelector('.layout-toggle');if(t)t.click();return true;})()`);
     }
     await sleep(300);
@@ -387,6 +396,207 @@ async function readControls(cdp) {
   };
 }
 
+/** 读 localStorage 中当前激活方案的快照（供拖动前后坐标对比；无则 null）。 */
+async function readSnapshotValue(cdp) {
+  const parsed = parseSnapshot(await cdp.evaluate(`window.localStorage.getItem(${JSON.stringify(STORAGE_KEY)})`));
+  return parsed ? parsed.snapshot : null;
+}
+
+/** 读某模块相对 .composer-modules 顶部的渲染 top（px）；模块缺失返回 null。 */
+async function readModuleRelTop(cdp, id) {
+  const value = await cdp.evaluate(
+    `(function(){var grid=document.querySelector('.composer-modules');var el=document.querySelector('.composer-modules [data-layout-id=${JSON.stringify(id)}]');if(!grid||!el)return null;return el.getBoundingClientRect().top-grid.getBoundingClientRect().top;})()`
+  );
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/** 读拖动中吸附落点预览 .layout-ghost 的内联 top（px；即 ghost.y × GRID_PX）；无预览返回 null。 */
+async function readGhostTopPx(cdp) {
+  const value = await cdp.evaluate(`(function(){var g=document.querySelector('.layout-ghost');if(!g)return null;var v=parseFloat(g.style.top);return isNaN(v)?null:v;})()`);
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * 推挤回流验收（真实 move 拖动）：
+ *   A 落到 B 的落点上 → B 渲染 top 实时增大（live 预览）→ 松手后 A 快照 y == ghost 落点、B 快照 y 持久化
+ *   且渲染 top 无跳变 → Ctrl+Z 单步撤销把 A/B 坐标还原。
+ */
+async function runPushReflow(cdp) {
+  log("");
+  log("--- PUSH REFLOW (move drag pushes overlapping module down) ---");
+
+  // 固定视口并确保处于编辑态（已是则快速返回）。
+  await setViewport(cdp, 1920);
+  const editState = JSON.parse(
+    await cdp.evaluate(`JSON.stringify({editing:!!document.querySelector('.composer-editing'),handles:document.querySelectorAll('.layout-handle').length})`)
+  );
+  if (!editState.editing || editState.handles === 0) {
+    const entered = await enterLayoutEdit(cdp);
+    if (!entered) {
+      check("PUSH edit mode available", false, JSON.stringify(editState));
+      return;
+    }
+  }
+
+  const defA = MODULES.find((m) => m.id === PUSH_A);
+  const defB = MODULES.find((m) => m.id === PUSH_B);
+  const snapshot = await readSnapshotValue(cdp);
+  const a0 = snapshot ? placementOf(snapshot, defA) : null;
+  const b0 = snapshot ? placementOf(snapshot, defB) : null;
+  const overlapX = !!(a0 && b0 && a0.x < b0.x + b0.w && b0.x < a0.x + a0.w);
+  const pairOk = !!(a0 && b0 && overlapX && a0.y < b0.y);
+  check(
+    "PUSH A/B snapshot present, horizontally overlapping, A above B",
+    pairOk,
+    JSON.stringify({ A: PUSH_A, a0, B: PUSH_B, b0, overlapX })
+  );
+  if (!pairOk) return;
+
+  // 目标落点行：A 与 B 纵向重叠 1..3 行（A 底边落在 B 内），因而 B 被推到 A 底边之下；A 只下移、x/w 不变。
+  const overlapRows = Math.max(1, Math.min(3, b0.h));
+  const targetAY = Math.max(0, b0.y - a0.h + overlapRows);
+  const deltaRows = targetAY - a0.y;
+
+  // A 的 handle 滚入视口中央（CDP Input 事件只命中所见元素）。
+  const scrolled = await cdp.evaluate(`(function(){
+    var hs=document.querySelectorAll('.layout-handle');
+    for(var i=0;i<hs.length;i++){
+      var lab=hs[i].querySelector('.layout-handle-label');
+      if(lab && lab.textContent===${JSON.stringify(PUSH_LABEL_A)}){hs[i].scrollIntoView({block:'center',inline:'nearest'});return true;}
+    }
+    return false;
+  })()`);
+  if (!scrolled) {
+    check("PUSH A handle found (label)", false, JSON.stringify({ label: PUSH_LABEL_A }));
+    return;
+  }
+  await sleep(400);
+
+  const handleRaw = await cdp.evaluate(`(function(){
+    var hs=document.querySelectorAll('.layout-handle');
+    for(var i=0;i<hs.length;i++){
+      var lab=hs[i].querySelector('.layout-handle-label');
+      if(lab && lab.textContent===${JSON.stringify(PUSH_LABEL_A)}){
+        var r=hs[i].getBoundingClientRect();
+        return JSON.stringify({found:true,x:r.left+r.width/2,y:r.top+r.height/2,top:parseFloat(hs[i].style.top),visible:(r.top+r.height/2)>0&&(r.top+r.height/2)<window.innerHeight});
+      }
+    }
+    return JSON.stringify({found:false});
+  })()`);
+  const handle = JSON.parse(handleRaw);
+  if (!handle.found || !handle.visible) {
+    check("PUSH A handle visible rect", false, handleRaw);
+    return;
+  }
+
+  const bBefore = await readModuleRelTop(cdp, PUSH_B);
+  const aBefore = await readModuleRelTop(cdp, PUSH_A);
+  const fromX = handle.x;
+  const fromY = handle.y;
+  // 初次估算位移：目标行像素 − handle 当前行像素（handle.top == displayTops × GRID_PX，与 beginDrag 基准一致）。
+  const estimatePx = targetAY * GRID_PX - handle.top;
+  let pointerY = fromY;
+
+  // 关闭滚动锚定：拖动引起内容重排时 Chromium 会做补偿式滚动，干扰「指针位移 → 行坐标」换算（仅运行时调整验证实例，不改应用源码）。
+  await cdp.evaluate(`(function(){var a=document.querySelector('.app');if(a)a.style.overflowAnchor='none';return true;})()`);
+  await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: fromX, y: fromY, button: "left", buttons: 1, clickCount: 1 });
+  const steps = 10;
+  const firstTarget = fromY + estimatePx;
+  for (let i = 1; i <= steps; i++) {
+    pointerY = fromY + ((firstTarget - fromY) * i) / steps;
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: fromX, y: pointerY, button: "left", buttons: 1 });
+    await sleep(16);
+  }
+  // 以「B 的实时渲染 top」为反馈闭环：一旦被推下（top 增大）即证 A 落点已与 B 重叠，立即停止。
+  // （指针↔行换算受滚动补偿 / 实测高度影响，故不直接依赖 ghost 目标行，改观测被推模块。）
+  let pushedMid = false;
+  for (let i = 0; i < 48 && !pushedMid; i++) {
+    const bNow = await readModuleRelTop(cdp, PUSH_B);
+    if (typeof bNow === "number" && typeof bBefore === "number" && bNow > bBefore + 0.5) {
+      pushedMid = true;
+      break;
+    }
+    pointerY += 10;
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: fromX, y: pointerY, button: "left", buttons: 1 });
+    await cdp.evaluate(`new Promise(function(res){requestAnimationFrame(function(){requestAnimationFrame(function(){res(1);});});})`);
+    await sleep(30);
+  }
+  // 指针仍按住：等待 React 提交推挤预览，再读「拖动中」几何。
+  await cdp.evaluate(`new Promise(function(res){requestAnimationFrame(function(){requestAnimationFrame(function(){res(1);});});})`);
+  await sleep(80);
+  const bMid = await readModuleRelTop(cdp, PUSH_B);
+  const ghostTopPx = await readGhostTopPx(cdp);
+  log(
+    `[PUSH] mid-drag: pushed=${pushedMid}, A live top=${aBefore}->(ghost ${typeof ghostTopPx === "number" ? ghostTopPx : "n/a"}), B top ${bBefore}->${bMid}`
+  );
+
+  check(
+    "PUSH mid-drag: target B rendered top increased (live push preview)",
+    typeof bBefore === "number" && typeof bMid === "number" && bMid > bBefore + 0.5,
+    JSON.stringify({ bBefore, bMid, delta: typeof bBefore === "number" && typeof bMid === "number" ? +(bMid - bBefore).toFixed(2) : null })
+  );
+  check(
+    "PUSH mid-drag: ghost landing preview visible",
+    typeof ghostTopPx === "number",
+    JSON.stringify({ ghostTopPx, expectedAY: targetAY })
+  );
+
+  // 松手落地。
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: fromX, y: pointerY, button: "left", buttons: 0, clickCount: 1 });
+  await cdp.evaluate(`(function(){var a=document.querySelector('.app');if(a)a.style.overflowAnchor='';return true;})()`);
+  await cdp.evaluate(`new Promise(function(res){requestAnimationFrame(function(){requestAnimationFrame(function(){res(1);});});})`);
+  await sleep(300);
+
+  const after = await readSnapshotValue(cdp);
+  const a1 = after ? placementOf(after, defA) : null;
+  const b1 = after ? placementOf(after, defB) : null;
+  const bAfter = await readModuleRelTop(cdp, PUSH_B);
+  const ghostAfter = await readGhostTopPx(cdp);
+  const ghostY = typeof ghostTopPx === "number" ? ghostTopPx / GRID_PX : null;
+
+  check(
+    "PUSH drop: A snapshot y == ghost landing preview (preview == landing)",
+    !!a1 && ghostY !== null && Math.abs(a1.y - ghostY) <= 0.01,
+    JSON.stringify({ A: PUSH_A, a0y: a0.y, a1y: a1 ? a1.y : null, ghostY, targetAY, deltaRows })
+  );
+  check(
+    "PUSH drop: B snapshot y persisted == its pushed rendered top",
+    !!b1 && typeof bMid === "number" && Math.abs(b1.y * GRID_PX - bMid) <= 1,
+    JSON.stringify({ B: PUSH_B, b0y: b0.y, b1y: b1 ? b1.y : null, pushedRenderedTopPx: bMid, b1yPx: b1 ? +(b1.y * GRID_PX).toFixed(2) : null })
+  );
+  check(
+    "PUSH drop: B rendered top after release == mid-drag pushed top (no jump)",
+    typeof bAfter === "number" && typeof bMid === "number" && Math.abs(bAfter - bMid) <= 1,
+    JSON.stringify({ bMid, bAfter, delta: typeof bAfter === "number" && typeof bMid === "number" ? +(bAfter - bMid).toFixed(2) : null })
+  );
+  check("PUSH drop: ghost preview removed after release", ghostAfter === null, JSON.stringify({ ghostAfter }));
+
+  // Ctrl+Z 单步撤销：一次撤销应把 A 与 B 的坐标都还原到拖动前。
+  await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", modifiers: 2, key: "z", code: "KeyZ", windowsVirtualKeyCode: 90, nativeVirtualKeyCode: 90 });
+  await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", modifiers: 2, key: "z", code: "KeyZ", windowsVirtualKeyCode: 90, nativeVirtualKeyCode: 90 });
+  await cdp.evaluate(`new Promise(function(res){requestAnimationFrame(function(){requestAnimationFrame(function(){res(1);});});})`);
+  await sleep(300);
+  const undone = await readSnapshotValue(cdp);
+  const a2 = undone ? placementOf(undone, defA) : null;
+  const b2 = undone ? placementOf(undone, defB) : null;
+  check(
+    "PUSH undo (Ctrl+Z): A and B snapshot coords restored in one step",
+    !!a2 && !!b2 && Math.abs(a2.y - a0.y) <= 0.01 && Math.abs(b2.y - b0.y) <= 0.01,
+    JSON.stringify({ a0y: a0.y, a2y: a2 ? a2.y : null, b0y: b0.y, b2y: b2 ? b2.y : null })
+  );
+
+  fs.writeFileSync(
+    path.join(evidenceDir, "task-15-layout-push-reflow.json"),
+    JSON.stringify(
+      { A: PUSH_A, B: PUSH_B, a0, b0, targetAY, deltaRows, estimatePx: +estimatePx.toFixed(2), aBefore, bBefore, bMid, ghostTopPx, a1, b1, bAfter, a2, b2 },
+      null,
+      2
+    )
+  );
+  log("EVIDENCE task-15-layout-push-reflow.json written");
+  await cdp.screenshot(path.join(evidenceDir, "task-15-layout-push-reflow.png"));
+}
+
 /** 在 .layout-handle-resize.e 上真实拖拽（controls 模块）。返回是否找得到把手。 */
 async function dragControlsResize(cdp, targetWidth) {
   // controls 模块位于画布下部，需先把它的缩放把手滚入 .app 视口（Input 事件只命中所见元素）。
@@ -438,6 +648,73 @@ async function dragControlsResize(cdp, targetWidth) {
   await cdp.evaluate(`new Promise(function(res){requestAnimationFrame(function(){requestAnimationFrame(function(){res(1);});});})`);
   await sleep(500);
   return { ok: true, fromX: +fromX.toFixed(2), fromY: +fromY.toFixed(2), toX: +toX.toFixed(2), handleVisible: handle.visible, moduleWidthBefore: handle.moduleWidth };
+}
+
+/** 读指定 label 模块当前 .layout-handle 的显示高度（px；-1 = 未找到）。 */
+async function readModuleHandleHeight(cdp, label) {
+  const value = await cdp.evaluate(`(function(){
+    var hs=document.querySelectorAll('.layout-handle');
+    for(var i=0;i<hs.length;i++){
+      var lab=hs[i].querySelector('.layout-handle-label');
+      if(lab && lab.textContent===${JSON.stringify(label)}) return hs[i].getBoundingClientRect().height;
+    }
+    return -1;
+  })()`);
+  return typeof value === "number" ? value : -1;
+}
+
+/**
+ * 在指定 label 模块的 .layout-handle-resize.s 上真实拖拽（垂直缩放：正 deltaY = 拉高、负 = 拉矮）。
+ * 回归用途：修复前下限取实时实测高度（恒 ≥ 当前高度），拉矮会被永久钳住（只能拉高不能拉矮）。
+ */
+async function dragModuleResizeS(cdp, label, deltaY) {
+  const scrolled = await cdp.evaluate(`(function(){
+    var hs=document.querySelectorAll('.layout-handle');
+    for(var i=0;i<hs.length;i++){
+      var lab=hs[i].querySelector('.layout-handle-label');
+      if(lab && lab.textContent===${JSON.stringify(label)}){
+        var e=hs[i].querySelector('.layout-handle-resize.s');
+        if(!e) return false;
+        e.scrollIntoView({block:'center',inline:'nearest'});
+        return true;
+      }
+    }
+    return false;
+  })()`);
+  if (!scrolled) return { ok: false, reason: "no s handle" };
+  await sleep(350);
+
+  const handleRaw = await cdp.evaluate(`(function(){
+    var hs=document.querySelectorAll('.layout-handle');
+    for(var i=0;i<hs.length;i++){
+      var lab=hs[i].querySelector('.layout-handle-label');
+      if(lab && lab.textContent===${JSON.stringify(label)}){
+        var e=hs[i].querySelector('.layout-handle-resize.s');
+        if(!e) return JSON.stringify({found:false});
+        var r=e.getBoundingClientRect();
+        return JSON.stringify({found:true,x:r.left+r.width/2,y:r.top+r.height/2,visible:(r.top+r.height/2)>0&&(r.top+r.height/2)<window.innerHeight});
+      }
+    }
+    return JSON.stringify({found:false});
+  })()`);
+  const handle = JSON.parse(handleRaw);
+  if (!handle.found) return { ok: false, reason: "no s handle rect" };
+
+  const fromX = handle.x;
+  const fromY = handle.y;
+  const toY = fromY + deltaY;
+  await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: fromX, y: fromY, button: "left", buttons: 1, clickCount: 1 });
+  const steps = 12;
+  for (let i = 1; i <= steps; i++) {
+    const y = fromY + ((toY - fromY) * i) / steps;
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: fromX, y, button: "left", buttons: 1 });
+    await sleep(16);
+  }
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: fromX, y: toY, button: "left", buttons: 0, clickCount: 1 });
+  await sleep(120);
+  await cdp.evaluate(`new Promise(function(res){requestAnimationFrame(function(){requestAnimationFrame(function(){res(1);});});})`);
+  await sleep(500);
+  return { ok: true, fromY: +fromY.toFixed(2), toY: +toY.toFixed(2), visible: handle.visible };
 }
 
 /**
@@ -644,7 +921,7 @@ async function main() {
     await setViewport(cdp, 1920);
     const entered = await enterLayoutEdit(cdp);
     if (!entered) {
-      check("EDIT enter custom-snapshot grid layout", false, "layout-grid not established within ~9s");
+      check("EDIT enter custom-snapshot grid layout", false, "edit mode (.composer-editing + handles) not established within ~9s");
       return;
     }
     const storedRaw = await cdp.evaluate(`window.localStorage.getItem(${JSON.stringify(STORAGE_KEY)})`);
@@ -709,6 +986,50 @@ async function main() {
       check("CONTROLS narrow tier (<560px -> 1 column) via fallback", narrow.cols === 1, JSON.stringify({ after: narrow }));
     }
     await cdp.screenshot(path.join(evidenceDir, "task-15-layout-controls-narrow.png"));
+
+    // 步骤 f：垂直缩放——先拉高再拉矮（回归：实测撑开值曾把「拉矮」永久钳住，只能拉高不能拉矮）
+    log("");
+    log("--- VERTICAL RESIZE (grow then shrink) ---");
+    await setViewport(cdp, 1920);
+    const vEditing = JSON.parse(
+      await cdp.evaluate(`JSON.stringify({editing:!!document.querySelector('.composer-editing'),grid:!!document.querySelector('.composer-modules.layout-grid')})`)
+    );
+    if (!vEditing.editing || !vEditing.grid) {
+      const reentered = await enterLayoutEdit(cdp);
+      if (!reentered) {
+        check("VERTICAL resize edit mode available", false, JSON.stringify(vEditing));
+        return;
+      }
+    }
+    const vLabel = "图反推";
+    const vBefore = await readModuleHandleHeight(cdp, vLabel);
+    const vGrow = await dragModuleResizeS(cdp, vLabel, 160);
+    const vGrown = await readModuleHandleHeight(cdp, vLabel);
+    const vShrink = await dragModuleResizeS(cdp, vLabel, -260);
+    const vShrunk = await readModuleHandleHeight(cdp, vLabel);
+    check(
+      "VERTICAL grow: handle drag +160px increases height",
+      vGrow.ok && vBefore > 0 && vGrown > vBefore + 80,
+      JSON.stringify({ vBefore, vGrown, vGrow })
+    );
+    check(
+      "VERTICAL shrink: after growing, handle drag -260px decreases height (regression: was clamped grow-only)",
+      vShrink.ok && vShrunk < vGrown - 100,
+      JSON.stringify({ vGrown, vShrunk, vShrink })
+    );
+    check(
+      "VERTICAL shrink returns near original height",
+      vBefore > 0 && Math.abs(vShrunk - vBefore) <= 40,
+      JSON.stringify({ vBefore, vShrunk, delta: +(vShrunk - vBefore).toFixed(2) })
+    );
+    fs.writeFileSync(
+      path.join(evidenceDir, "task-15-layout-vertical-resize.json"),
+      JSON.stringify({ label: vLabel, vBefore, vGrown, vShrunk, vGrow, vShrink }, null, 2)
+    );
+    await cdp.screenshot(path.join(evidenceDir, "task-15-layout-vertical-resize.png"));
+
+    // 步骤 g：纵向推挤回流（move 拖动推动重叠模块 + 单步撤销）
+    await runPushReflow(cdp);
 
     // 证据落盘（矩阵 + 快照 + 跳变）
     fs.writeFileSync(

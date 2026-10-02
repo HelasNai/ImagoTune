@@ -65,10 +65,10 @@ export const ratioOptions = [
 
 export const sizeMatrix: Record<string, Record<string, string>> = {
   "1k": {
-    "1:1": "1024x1024", "4:3": "1024x768", "3:4": "768x1024",
-    "3:2": "1536x1024", "2:3": "1024x1536", "16:9": "1536x864",
-    "9:16": "864x1536", "4:5": "1024x1280", "5:4": "1280x1024",
-    "21:9": "1536x656",
+    "1:1": "1280x1280", "4:3": "1280x960", "3:4": "960x1280",
+    "3:2": "1280x848", "2:3": "848x1280", "16:9": "1280x720",
+    "9:16": "720x1280", "4:5": "1024x1280", "5:4": "1280x1024",
+    "21:9": "1280x544",
   },
   "2k": {
     "1:1": "2048x2048", "4:3": "2048x1536", "3:4": "1536x2048",
@@ -77,9 +77,9 @@ export const sizeMatrix: Record<string, Record<string, string>> = {
     "21:9": "2048x880",
   },
   "4k": {
-    "1:1": "2880x2880", "4:3": "3328x2480", "3:4": "2480x3328",
-    "3:2": "3520x2352", "2:3": "2352x3520", "16:9": "3840x2160",
-    "9:16": "2160x3840", "4:5": "2560x3200", "5:4": "3200x2560",
+    "1:1": "3840x3840", "4:3": "3840x2880", "3:4": "2880x3840",
+    "3:2": "3840x2560", "2:3": "2560x3840", "16:9": "3840x2160",
+    "9:16": "2160x3840", "4:5": "3072x3840", "5:4": "3840x3072",
     "21:9": "3840x1648",
   },
 };
@@ -105,10 +105,12 @@ export function applyLocalPromptAction(prompt: string, action: PromptAction) {
   return source + "\n\n创作要求：" + promptSuffix[action];
 }
 
-/** 画布尺寸上限（与 electron/outpaint-limits.ts 一致，由跨层一致性测试锁定）。 */
+/** 画布尺寸上限（与 electron/outpaint-limits.ts 一致，由跨层一致性测试锁定）。
+ *  像素上限 = 最长边的平方（3840² = 14,745,600）——允许 3840×3840 方形用满上限；
+ *  4K 档改为「长边口径」后，面积检查退化为边长约束的推论（不再限制形状）。 */
 export const CANVAS_MULTIPLE = 16;
 export const CANVAS_MAX_EDGE = 3840;
-export const CANVAS_MAX_PIXELS = 8_294_400;
+export const CANVAS_MAX_PIXELS = 14_745_600;
 
 export function validateCanvasSize(value: string) {
   const match = /^\s*(\d{2,5})\s*[x×]\s*(\d{2,5})\s*$/i.exec(value);
@@ -122,7 +124,7 @@ export function validateCanvasSize(value: string) {
   if (longEdge > CANVAS_MAX_EDGE) return { ok: false, message: "最长边不能超过 3840 px" } as const;
   if (longEdge / shortEdge > 3) return { ok: false, message: "长宽比不能超过 3:1" } as const;
   if (pixels < 655_360 || pixels > CANVAS_MAX_PIXELS) {
-    return { ok: false, message: "总像素需在 65 万到 829 万之间" } as const;
+    return { ok: false, message: "总像素需在 65 万到 1475 万之间" } as const;
   }
   return {
     ok: true,

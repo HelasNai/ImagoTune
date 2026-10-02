@@ -430,6 +430,10 @@ label {
 .controls {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
+/* v3.8.4：生成速度行并入卡片后跨整行（其余 4 个参数为网格列）。 */
+.controls > .performance-presets {
+  grid-column: 1 / -1;
+}
 .controls label {
   min-width: 0;
 }
@@ -475,15 +479,6 @@ main,
   .gallery {
     grid-template-columns: 1fr;
   }
-}
-.prompt-tools {
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
-  margin: 14px 0;
-}
-.prompt-tools label {
-  flex: 1;
 }
 .result-actions {
   display: flex;
@@ -607,7 +602,8 @@ main,
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  margin: 17px 0 0;
+  /* v3.8.4：并入 .controls 卡片后为卡内首行，间距交由卡片 grid gap，不再自带外边距。 */
+  margin: 0;
   color: #64758c;
   font-size: 12px;
   font-weight: 700;
@@ -847,7 +843,7 @@ main {
   pointer-events: none;
 }
 .mode-title,
-.prompt-tools,
+.prompt-panel,
 textarea,
 .upload-row,
 .performance-presets,
@@ -867,12 +863,6 @@ textarea,
 .card h2 {
   font-size: 24px;
   letter-spacing: -0.55px;
-}
-.prompt-tools {
-  padding: 12px;
-  border-radius: 14px;
-  background: rgba(249, 252, 255, 0.72);
-  border: 1px solid rgba(180, 201, 226, 0.24);
 }
 textarea {
   min-height: 164px;
@@ -949,7 +939,6 @@ textarea {
   .card {
     border-radius: 20px;
   }
-  .prompt-tools,
   .controls {
     padding: 10px;
   }
@@ -1358,6 +1347,7 @@ textarea {
 
 /* v1.2 核心标配 */
 .negative-prompt,
+.prompt-panel,
 .reverse-prompt,
 .outpaint-panel {
   position: relative;
@@ -1373,6 +1363,7 @@ textarea {
   );
 }
 .negative-head,
+.prompt-head,
 .outpaint-head {
   display: flex;
   align-items: center;
@@ -1380,35 +1371,55 @@ textarea {
   gap: 12px;
   margin-bottom: 10px;
 }
-.negative-head > div:first-child,
+/* v3.8.4：标题与工具拆两层——第一行 = 标题 + 工具（工具不拆行，放不下整块换行），
+   说明小字移到 head 之后独立一行（.panel-hint），消除「右侧工具换行 → 标题悬空」错位。 */
+.negative-head,
+.prompt-head {
+  flex-wrap: wrap;
+  row-gap: 8px;
+  margin-bottom: 4px;
+}
 .outpaint-head > div:first-child {
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
 .negative-head strong,
+.prompt-head strong,
 .outpaint-head strong {
   color: #4c638d;
   font-size: 13px;
 }
-.negative-head small,
 .outpaint-head small {
   color: #8899ae;
   font-size: 11px;
   font-weight: 500;
 }
-.negative-template-actions {
+/* 头部说明小字：head 之后的独立行（正/负提示词共用） */
+.panel-hint {
+  display: block;
+  margin: 0 0 10px;
+  color: #8899ae;
+  font-size: 11px;
+  font-weight: 500;
+}
+.negative-template-actions,
+.prompt-template-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  margin-left: auto;
 }
-.negative-template-actions select {
-  min-width: 210px;
+.negative-template-actions select,
+.prompt-template-actions select {
+  min-width: 160px;
+  max-width: 280px;
   padding: 8px 10px;
 }
 .negative-template-actions button,
+.prompt-template-actions button,
 .reverse-results button,
 .outpaint-presets button {
   padding: 8px 10px;
@@ -1419,7 +1430,8 @@ textarea {
   font-size: 11px;
   font-weight: 700;
 }
-.negative-prompt textarea {
+.negative-prompt textarea,
+.prompt-panel textarea {
   min-height: 88px;
   background: rgba(255, 255, 255, 0.9);
 }
@@ -1715,25 +1727,13 @@ textarea {
   color: #8190a5;
   padding-bottom: 7px;
 }
+/* v3.8.3：并入 .prompt-panel 卡片后脱掉独立卡片外壳，成为卡片内工具行（标题同时移除）。 */
 .prompt-assistant {
   display: flex;
   align-items: center;
   gap: 7px;
   flex-wrap: wrap;
-  margin: 12px 0 17px;
-  padding: 11px 12px;
-  border: 1px solid rgba(166, 190, 223, 0.25);
-  border-radius: 14px;
-  background: linear-gradient(
-    100deg,
-    rgba(238, 250, 255, 0.77),
-    rgba(255, 242, 249, 0.66)
-  );
-}
-.prompt-assistant strong {
-  font-size: 12px;
-  color: #5c6f94;
-  margin-right: 2px;
+  margin: 0 0 10px;
 }
 .prompt-assistant button,
 .variation-row button {
@@ -1842,21 +1842,46 @@ textarea {
   box-shadow: 0 8px 20px rgba(102, 125, 167, 0.12);
   touch-action: none;
 }
-.custom-size {
+/* v3.8.5：「自定义安全尺寸」不再是独立行——它是「画面比例」字段的原地替换态：
+   下拉旁「尺寸」按钮一键进入（省去展开下拉的点击），返回按钮复位。 */
+.ratio-select {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 32px;
-  margin: 13px 0 0;
+  gap: 6px;
 }
-.custom-size .check {
-  flex: 0 0 auto;
+.ratio-select select {
+  flex: 1;
+  min-width: 0;
 }
-.custom-size > input {
-  max-width: 210px;
+.ratio-custom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ratio-custom input {
+  flex: 1;
+  min-width: 0;
   padding: 9px 11px;
 }
-.custom-size small {
+.ratio-custom-enter,
+.ratio-custom-back {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  padding: 8px 0;
+  border-radius: 9px;
+  border: 1px solid rgba(153, 180, 217, 0.24);
+  background: #fff;
+  color: #607aab;
+}
+.ratio-custom-enter:hover,
+.ratio-custom-back:hover {
+  border-color: rgba(140, 170, 210, 0.45);
+  color: #4c6a9e;
+}
+.controls label small {
   font-size: 11px;
 }
 .valid {
@@ -2348,20 +2373,6 @@ textarea {
   }
   .project-strip span {
     grid-column: auto;
-  }
-  .prompt-assistant {
-    gap: 5px;
-  }
-  .prompt-assistant strong {
-    width: 100%;
-  }
-  .custom-size {
-    align-items: flex-start;
-    flex-wrap: wrap;
-  }
-  .custom-size > input {
-    width: 100%;
-    max-width: none;
   }
   .queue-list article {
     flex-direction: column;
@@ -5742,8 +5753,7 @@ main:has(.card.settings) {
    - .layout-toggle / .layout-edit-hint：入口按钮与编辑模式提示条。
    - .layout-handle-layer / .layout-handle：编辑模式拖拽热区覆盖层（盖住模块、
      替代内容交互承担拖动 / 缩放），右下角 .layout-handle-resize 为缩放把手。
-   - .layout-flow-host：容器内非模块附属元素（如增强进度条）的宿主——流式下
-     display:contents 零差异；网格下绝对定位、位置内联注入（跟随 prompt-assistant）。
+   - （v3.8.3 已删除 .layout-flow-host：增强进度条现为 .prompt-panel 卡片内的普通流式元素。）
    - 模块内装饰性文字（说明小字 / 上传 label / 摘要 / 校验消息）：网格态强制单行 +
      超出省略（放不下就隐藏），避免窗口或模块变窄时文字换行把模块撑高、破坏等比形状。
    仅用背景 / 边框过渡，并登记进 v1.5.1 分区的 reduced-motion 组。
@@ -5913,14 +5923,6 @@ main:has(.card.settings) {
 .composer-modules.layout-grid > [data-layout-id] {
   margin: 0;
 }
-.layout-flow-host {
-  display: contents;
-}
-.composer-modules.layout-grid .layout-flow-host {
-  display: block;
-  position: absolute;
-  z-index: 1;
-}
 .layout-handle-layer {
   position: absolute;
   inset: 0;
@@ -5985,14 +5987,14 @@ main:has(.card.settings) {
 /* v3.7.1：网格态模块内装饰性文字单行化——窗口 / 模块变窄时文字不换行、放不下就省略隐藏，
    避免换行撑高模块、破坏「整层等比缩放」的布局形状。 */
 .composer-modules.layout-grid .project-strip > span,
-.composer-modules.layout-grid .negative-head small,
+.composer-modules.layout-grid .panel-hint,
 .composer-modules.layout-grid .outpaint-head small,
 .composer-modules.layout-grid .reference-head small,
 .composer-modules.layout-grid .reference-panel > p,
 .composer-modules.layout-grid .reverse-prompt summary,
 .composer-modules.layout-grid .upload,
 .composer-modules.layout-grid .reference-empty,
-.composer-modules.layout-grid .custom-size small,
+.composer-modules.layout-grid .controls label small,
 .composer-modules.layout-grid .outpaint-valid,
 .composer-modules.layout-grid .outpaint-invalid {
   min-width: 0;
@@ -6001,7 +6003,6 @@ main:has(.card.settings) {
   text-overflow: ellipsis;
 }
 /* nowrap 文本的 flex 祖先需要 min-width:0 才能收缩并触发省略（否则被 min-content 顶住） */
-.composer-modules.layout-grid .negative-head > div:first-child,
 .composer-modules.layout-grid .outpaint-head > div:first-child {
   min-width: 0;
 }
@@ -6014,8 +6015,8 @@ main:has(.card.settings) {
      画布宽度撑满模块内容宽；高度仍由 MaskPainter 行内 aspect-ratio（图像比例）
      决定，模块多余高度留白——刻意不做非等比拉伸：pointFromEvent 以 canvas 的
      getBoundingClientRect 映射图像坐标，盒比例 = 图像比例一旦破坏蒙版即错位。
-   - .layout-grid .negative-prompt：纵向 flex，textarea flex:1 1 auto 随模块高度拉伸。
-   - prompt 模块根即 textarea 本体（flex 对自身无效），由内联 min-height 撑开，无需规则。
+   - .layout-grid .negative-prompt / .layout-grid .prompt-panel：纵向 flex，textarea flex:1 1 auto 随模块高度拉伸。
+   - prompt 模块现为 .prompt-panel 卡片（与 negative-prompt 同构），与 negative 同步应用 flex 规则。
    仅网格态生效（流式无 .layout-grid 类，零差异）；无动画、无需登记 reduced-motion。
    ============================================================================ */
 .layout-grid .mask-painter .mask-canvas {
@@ -6023,11 +6024,13 @@ main:has(.card.settings) {
   margin: 0;
   max-height: none;
 }
-.layout-grid .negative-prompt {
+.layout-grid .negative-prompt,
+.layout-grid .prompt-panel {
   display: flex;
   flex-direction: column;
 }
-.layout-grid .negative-prompt textarea {
+.layout-grid .negative-prompt textarea,
+.layout-grid .prompt-panel textarea {
   flex: 1 1 auto;
 }
 
@@ -6062,17 +6065,25 @@ main:has(.card.settings) {
 .composer-modules.layout-grid .upload-row {
   flex-direction: row;
 }
-.composer-modules.layout-grid .negative-head {
+.composer-modules.layout-grid .negative-head,
+.composer-modules.layout-grid .prompt-head {
   flex-direction: row;
   align-items: center;
+  flex-wrap: wrap;
+  row-gap: 8px;
 }
-.composer-modules.layout-grid .negative-template-actions {
+.composer-modules.layout-grid .negative-template-actions,
+.composer-modules.layout-grid .prompt-template-actions {
   justify-content: flex-end;
   width: auto;
+  flex-wrap: nowrap;
+  margin-left: auto;
 }
-.composer-modules.layout-grid .negative-template-actions select {
-  width: 100%;
-  min-width: 210px;
+.composer-modules.layout-grid .negative-template-actions select,
+.composer-modules.layout-grid .prompt-template-actions select {
+  width: auto;
+  min-width: 160px;
+  max-width: 280px;
 }
 .composer-modules.layout-grid .reverse-upload-row {
   flex-direction: row;
@@ -6107,21 +6118,10 @@ main:has(.card.settings) {
 .composer-modules.layout-grid .outpaint-margins {
   grid-template-columns: repeat(4, 1fr);
 }
-.composer-modules.layout-grid .custom-size {
-  align-items: center;
-  flex-wrap: nowrap;
-}
-.composer-modules.layout-grid .custom-size > input {
-  width: 100%;
-  max-width: 210px;
-}
-.composer-modules.layout-grid .prompt-tools {
-  padding: 12px;
-}
-/* 2633 的 ≤700 断点把全局 textarea 提到 128px；负面词模块自身 minH 仅 112，
-   网格态恢复基础 88px（T13 的 flex 拉伸仍在其上生效）。prompt 模块根 textarea
-   由 useComposerLayout 内联 minHeight 撑开，不受该断点影响、无需规则。 */
-.composer-modules.layout-grid .negative-prompt textarea {
+/* 2633 的 ≤700 断点把全局 textarea 提到 128px；正/负提示词模块自身 minH 较小，
+   网格态恢复基础 88px（T13 的 flex 拉伸仍在其上生效）。 */
+.composer-modules.layout-grid .negative-prompt textarea,
+.composer-modules.layout-grid .prompt-panel textarea {
   min-height: 88px;
 }
 
@@ -6144,6 +6144,7 @@ main:has(.card.settings) {
 .composer-modules.layout-grid .negative-prompt[data-layout-compact="true"] .negative-template-actions {
   justify-content: flex-start;
   width: 100%;
+  flex-wrap: wrap;
 }
 .composer-modules.layout-grid
   .negative-prompt[data-layout-compact="true"]
@@ -6151,6 +6152,7 @@ main:has(.card.settings) {
   select {
   width: 100%;
   min-width: 0;
+  max-width: none;
 }
 .composer-modules.layout-grid .reverse-prompt[data-layout-compact="true"] .reverse-upload-row {
   flex-direction: column;
@@ -6178,8 +6180,7 @@ main:has(.card.settings) {
 }
 
 /* ── C narrow：模块宽度低于最窄阈值（project-strip<480 / controls<560 /
-   upload<440 / references<480 / custom-size<440 / prompt-tools<380 /
-   prompt-assistant<440）镜像旧 @media 700 的最窄档 ───────────────────────── */
+   upload<440 / references<480）镜像旧 @media 700 的最窄档 ── */
 .composer-modules.layout-grid .project-strip[data-layout-narrow="true"] {
   grid-template-columns: 1fr;
 }
@@ -6201,25 +6202,6 @@ main:has(.card.settings) {
 .composer-modules.layout-grid .reference-panel[data-layout-narrow="true"] .reference-item img {
   width: 64px;
   height: 54px;
-}
-.composer-modules.layout-grid .custom-size[data-layout-narrow="true"] {
-  align-items: flex-start;
-  flex-wrap: wrap;
-}
-.composer-modules.layout-grid .custom-size[data-layout-narrow="true"] > input {
-  width: 100%;
-  max-width: none;
-}
-.composer-modules.layout-grid .prompt-tools[data-layout-narrow="true"] {
-  flex-wrap: wrap;
-}
-/* 2352 的 ≤700 断点（标题独占整行 + 更紧间距）迁移为模块窄档：
-   T5 已注入 narrow 阈值 440，避免该属性在 CSS 侧无消费者。 */
-.composer-modules.layout-grid .prompt-assistant[data-layout-narrow="true"] {
-  gap: 5px;
-}
-.composer-modules.layout-grid .prompt-assistant[data-layout-narrow="true"] strong {
-  width: 100%;
 }
 
 /* ============================================================================

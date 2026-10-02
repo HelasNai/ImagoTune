@@ -3,4 +3,4 @@
 // 注意：本模块只提供常量，不统一两端的校验函数——creative 侧含最小像素与 3:1 语义，outpaint 侧含“目标≥源”语义。
 export const CANVAS_MULTIPLE = 16;
 export const CANVAS_MAX_EDGE = 3840;
-export const CANVAS_MAX_PIXELS = 8_294_400;
+export const CANVAS_MAX_PIXELS = 14_745_600;

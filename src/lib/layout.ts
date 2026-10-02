@@ -4,7 +4,7 @@
 //   窗口缩放时仅水平方向按比例自适应；y / h 以「行」为单位（1 行 = GRID_PX = 16px，
 //   垂直绝对、与窗口无关，内容高度驱动）。
 //   拖动 / 缩放松手时吸附：水平吸附到列、垂直吸附到行；
-// - 通用模块（三模式都出现的 8 个）坐标只存一份（shared），任一模式里调整 = 三模式同步；
+// - 通用模块（三模式都出现的 5 个）坐标只存一份（shared），任一模式里调整 = 三模式同步；
 // - 专属模块按「出现模式」独立存储（modes[mode]），上传区 / 参考图这类跨两模式的各存一份；
 // - 无钉住 / 覆盖机制；隐藏与坐标同规则（通用藏 = 三模式同藏）；
 // - 放置不允许重叠：冲突时由 findFreeSlot 在期望位置附近找最近空位（自动避让；
@@ -24,18 +24,14 @@ export type LayoutMode = "generate" | "edit" | "outpaint";
 
 export type LayoutModuleId =
   | "project-strip"
-  | "prompt-tools"
   | "prompt"
   | "negative-prompt"
-  | "prompt-assistant"
   | "reverse-prompt"
   | "upload"
   | "mask"
   | "references"
   | "outpaint-panel"
-  | "presets"
-  | "controls"
-  | "custom-size";
+  | "controls";
 
 /** 快照坐标（双单位：x / w 为列（0..LAYOUT_COLS），y / h 为行（1 行 = GRID_PX px）；x / y 为左上角，w / h 为宽高）。 */
 export type LayoutPlacement = { x: number; y: number; w: number; h: number };
@@ -53,35 +49,27 @@ export type LayoutModuleDef = {
 /** 可编辑模块清单（一级颗粒度；顺序 = 未自定义时的默认纵向顺序，供测量兜底）。 */
 export const LAYOUT_MODULES: readonly LayoutModuleDef[] = [
   { id: "project-strip", label: "项目归属", modes: ["generate", "edit", "outpaint"], minW: 400, minH: 64 },
-  { id: "prompt-tools", label: "提示词模板", modes: ["generate", "edit", "outpaint"], minW: 320, minH: 48 },
-  { id: "prompt", label: "提示词", modes: ["generate", "edit", "outpaint"], minW: 320, minH: 128 },
+  { id: "prompt", label: "提示词", modes: ["generate", "edit", "outpaint"], minW: 360, minH: 200 },
   { id: "negative-prompt", label: "负面提示词", modes: ["generate", "edit", "outpaint"], minW: 360, minH: 112 },
-  { id: "prompt-assistant", label: "提示词助手", modes: ["generate", "edit", "outpaint"], minW: 280, minH: 48 },
   { id: "reverse-prompt", label: "图反推", modes: ["generate", "edit", "outpaint"], minW: 320, minH: 48 },
   { id: "upload", label: "上传区", modes: ["edit", "outpaint"], minW: 320, minH: 48 },
   { id: "mask", label: "蒙版绘制", modes: ["edit"], minW: 360, minH: 240 },
   { id: "references", label: "参考图", modes: ["generate", "edit"], minW: 320, minH: 120 },
   { id: "outpaint-panel", label: "扩图画布", modes: ["outpaint"], minW: 360, minH: 160 },
-  { id: "presets", label: "生成速度", modes: ["generate", "edit", "outpaint"], minW: 300, minH: 48 },
-  { id: "controls", label: "输出控制", modes: ["generate", "edit", "outpaint"], minW: 480, minH: 48 },
-  { id: "custom-size", label: "自定义尺寸", modes: ["generate", "edit"], minW: 280, minH: 48 },
+  { id: "controls", label: "输出控制", modes: ["generate", "edit", "outpaint"], minW: 480, minH: 144 },
 ];
 
 /** 模块宽度档位阈值（px，模块自身宽度）：widthPx < 阈值时对应档位生效。空对象 = 无档位（天然弹性）。 */
 export const LAYOUT_SIZE_THRESHOLDS: Record<LayoutModuleId, { compact?: number; narrow?: number }> = {
   "project-strip": { compact: 700, narrow: 480 },
-  "prompt-tools": { narrow: 380 },
   prompt: {},
   "negative-prompt": { compact: 636 },
-  "prompt-assistant": { narrow: 440 },
   "reverse-prompt": { compact: 636 },
   upload: { narrow: 440 },
   mask: {},
   references: { compact: 636, narrow: 480 },
   "outpaint-panel": { compact: 636 },
-  presets: {},
   controls: { compact: 680, narrow: 560 },
-  "custom-size": { narrow: 440 },
 };
 
 /**
@@ -191,6 +179,19 @@ export function snapToGrid(value: number): number {
   return Math.round(value / GRID_PX) * GRID_PX;
 }
 
+/**
+ * 垂直缩放（拉矮）下限（px，GRID_PX 的整数倍、至少 1 行；供 useComposerLayout 的拖动 / 缩放路径调用）。
+ * 网格态模块高度 = max(内容自然高度, minHeight 撑开高度)，ResizeObserver 只能给出「最终高度」：
+ * - measuredPx 明显高于 currentMinHeightPx（> 0.5px）→ 内容顶破撑开高度，实测值即内容自然高度；
+ *   min-height 布局下模块缩不到比内容更矮（视觉无变化），以其为下限；
+ * - 否则 → 内容未顶破撑开高度，下限只看 minHpx。绝不能直接采信 measuredPx：它恒 ≥ 当前撑开高度，
+ *   会把「拉矮」永久钳住（表现为「只能拉高不能拉矮」）。
+ */
+export function minResizeHeightPx(minHpx: number, measuredPx: number, currentMinHeightPx: number): number {
+  const contentPx = measuredPx > currentMinHeightPx + 0.5 ? measuredPx : 0;
+  return Math.max(1, Math.ceil(Math.max(minHpx, contentPx) / GRID_PX)) * GRID_PX;
+}
+
 /** 轴对齐矩形重叠判定（边界相接不算重叠）。 */
 export function rectsOverlap(a: LayoutPlacement, b: LayoutPlacement): boolean {
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
@@ -275,6 +276,82 @@ export function resolveVerticalLayout(items: readonly LayoutResolveItem[]): Reco
     }
     tops[item.id] = top;
     placed.push({ x: item.placement.x, w: item.placement.w, bottom: top + height });
+  }
+  return tops;
+}
+
+/** 两项是否横向区间重叠（与 resolveVerticalLayout 同一公式：边界相接不算重叠）。 */
+function overlapsHorizontally(a: LayoutResolveItem, b: LayoutResolveItem): boolean {
+  return a.placement.x < b.placement.x + b.placement.w && b.placement.x < a.placement.x + a.placement.w;
+}
+
+/** 解算用高度（行）：快照 h 与实测高度取大（与 resolveVerticalLayout 同一规则）。 */
+function resolveItemHeight(item: LayoutResolveItem): number {
+  return Math.max(item.placement.h, item.measuredH ?? 0);
+}
+
+/**
+ * 纵向推挤解算（拖动预览 / 松手落地共用）：movingId 为发起者——期望落点先经「上方压制修正」
+ * （与 moving 横向重叠且顶边高于 moving、底边伸入 moving 的模块，moving 下移到其底边之下；迭代至稳定），
+ * 随后 moving 先行固定，其余模块按 (y, x) 顺序收纳，与已放置者的最终矩形确实纵向重叠时下推到其底边之下；
+ * 收纳时对每个模块迭代扫描至稳定（placed 底边沿检查序并非单调：互不横向重叠的 placed 可先后出现更高底边，
+ * 单遍扫描会把候选项停进更早检查的 placed 区间内而不复查）。
+ * 只调 y、只下推不上拉；返回 id → y（行），moving 的修正值也在返回值中。
+ * 输出保证：考虑实测高度后，任意两个横向重叠的模块纵向不再重叠（落地持久化依赖此不变量）。
+ */
+export function resolvePushLayout(items: readonly LayoutResolveItem[], movingId: LayoutModuleId): Record<string, number> {
+  const compare = (a: LayoutResolveItem, b: LayoutResolveItem) => (a.placement.y - b.placement.y) || (a.placement.x - b.placement.x);
+  const moving = items.find((item) => item.id === movingId);
+  // 降级路径：moving 不在场 → 无优先级、无上方压制修正，仅按 (y, x) 顺序普通收纳（不抛错）。
+  if (!moving) {
+    const placed: Array<{ item: LayoutResolveItem; bottom: number }> = [];
+    const tops: Record<string, number> = {};
+    for (const item of [...items].sort(compare)) {
+      let top = Math.max(0, item.placement.y);
+      for (const other of placed) {
+        if (overlapsHorizontally(item, other.item)) top = Math.max(top, other.bottom);
+      }
+      tops[item.id] = top;
+      placed.push({ item, bottom: top + resolveItemHeight(item) });
+    }
+    return tops;
+  }
+  // Step 1：上方压制修正——mt 严格递增（每次取有限个底边之一），必终止；moving 的横向重叠用其原始坐标判定。
+  let mt = Math.max(0, moving.placement.y);
+  for (;;) {
+    let changed = false;
+    for (const other of items) {
+      if (other.id === movingId) continue;
+      if (overlapsHorizontally(moving, other) && other.placement.y < mt && other.placement.y + resolveItemHeight(other) > mt) {
+        mt = other.placement.y + resolveItemHeight(other);
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+  // Step 2：moving 先行固定，其余按 (y, x) 顺序收纳。仅当模块「最终矩形确实纵向重叠」已放置者时才下推：
+  // 经上方压制修正后，悬挂模块与 moving 只上下相邻（不重叠），绝不能被反向推回 moving 之下（否则两者互换）。
+  const placed: Array<{ item: LayoutResolveItem; top: number; bottom: number }> = [
+    { item: moving, top: mt, bottom: mt + resolveItemHeight(moving) },
+  ];
+  const tops: Record<string, number> = { [movingId]: mt };
+  for (const item of items.filter((entry) => entry.id !== movingId).sort(compare)) {
+    const height = resolveItemHeight(item);
+    let top = Math.max(0, item.placement.y);
+    // 迭代至稳定：placed 底边沿检查序并非单调（互不横向重叠时），单遍扫描可能漏检——
+    // 后检查的 placed 把 item 推入更早检查的 placed 区间时不会被复查。top 严格递增且取值集有限（各 placed 底边），必终止。
+    for (;;) {
+      let moved = false;
+      for (const other of placed) {
+        if (overlapsHorizontally(item, other.item) && top < other.bottom && other.top < top + height) {
+          top = other.bottom;
+          moved = true;
+        }
+      }
+      if (!moved) break;
+    }
+    tops[item.id] = top;
+    placed.push({ item, top, bottom: top + height });
   }
   return tops;
 }

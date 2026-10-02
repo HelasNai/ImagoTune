@@ -13,10 +13,12 @@ import {
   isSharedModule,
   LAYOUT_COLS,
   LAYOUT_MODULES,
+  minResizeHeightPx,
   moduleDef,
   occupiedInMode,
   rectsOverlap,
   resolveAllConflicts,
+  resolvePushLayout,
   resolveVerticalLayout,
   setHidden,
   setPlacement,
@@ -26,21 +28,18 @@ import {
 } from "../src/lib/layout";
 
 describe("layout module registry", () => {
-  it("13 个模块、id 唯一", () => {
-    expect(LAYOUT_MODULES.length).toBe(13);
-    expect(new Set(LAYOUT_MODULES.map((item) => item.id)).size).toBe(13);
+  it("9 个模块、id 唯一", () => {
+    expect(LAYOUT_MODULES.length).toBe(9);
+    expect(new Set(LAYOUT_MODULES.map((item) => item.id)).size).toBe(9);
   });
 
-  it("通用模块恰好 8 个（三模式全可见），专属模块 5 个", () => {
+  it("通用模块恰好 5 个（三模式全可见），专属模块 4 个", () => {
     const shared = LAYOUT_MODULES.filter((item) => isSharedModule(item.id));
     expect(shared.map((item) => item.id).sort()).toEqual([
       "controls",
       "negative-prompt",
-      "presets",
       "project-strip",
       "prompt",
-      "prompt-assistant",
-      "prompt-tools",
       "reverse-prompt",
     ]);
   });
@@ -48,7 +47,7 @@ describe("layout module registry", () => {
   it("visibleModuleIds 按出现模式过滤（含跨两模式的专属模块）", () => {
     expect(visibleModuleIds("outpaint")).toContain("outpaint-panel");
     expect(visibleModuleIds("outpaint")).not.toContain("mask");
-    expect(visibleModuleIds("edit")).toEqual(expect.arrayContaining(["mask", "upload", "references", "custom-size"]));
+    expect(visibleModuleIds("edit")).toEqual(expect.arrayContaining(["mask", "upload", "references"]));
     expect(visibleModuleIds("generate")).not.toContain("upload");
     expect(visibleModuleIds("generate")).toContain("references");
   });
@@ -107,11 +106,11 @@ describe("layout hidden semantics", () => {
 
   it("重复隐藏不产生重复项；取消隐藏后恢复可见", () => {
     let snapshot = createEmptySnapshot();
-    snapshot = setHidden(snapshot, "edit", "presets", true);
-    snapshot = setHidden(snapshot, "edit", "presets", true);
-    expect(snapshot.hidden.shared.filter((id) => id === "presets").length).toBe(1);
-    snapshot = setHidden(snapshot, "edit", "presets", false);
-    expect(isHidden(snapshot, "edit", "presets")).toBe(false);
+    snapshot = setHidden(snapshot, "edit", "negative-prompt", true);
+    snapshot = setHidden(snapshot, "edit", "negative-prompt", true);
+    expect(snapshot.hidden.shared.filter((id) => id === "negative-prompt").length).toBe(1);
+    snapshot = setHidden(snapshot, "edit", "negative-prompt", false);
+    expect(isHidden(snapshot, "edit", "negative-prompt")).toBe(false);
   });
 
   it("occupiedInMode 排除隐藏项与自身", () => {
@@ -178,6 +177,29 @@ describe("layout snapping and collision", () => {
   });
 });
 
+describe("vertical resize lower bound", () => {
+  it("内容未顶破撑开高度：下限只用定义 minH，实测撑开值不参与（回归「只能拉高不能拉矮」）", () => {
+    // 撑开高度 208px，实测同为 208px（minHeight 撑开、内容更矮）
+    expect(minResizeHeightPx(96, 208, 208)).toBe(96);
+    // 拖动中实测会随撑开高度一起涨（曾拉高到 400px）——绝不能成为下限，否则永远拉不回来
+    expect(minResizeHeightPx(96, 400, 400)).toBe(96);
+    // 未测量（0）与亚像素噪声（高于撑开高度 0.4px）同样不算顶破
+    expect(minResizeHeightPx(96, 0, 208)).toBe(96);
+    expect(minResizeHeightPx(96, 320.4, 320)).toBe(96);
+  });
+
+  it("内容顶破撑开高度：实测即内容自然高度，下限上取到 16px 行（缩到内容以下视觉无变化）", () => {
+    expect(minResizeHeightPx(96, 500, 320)).toBe(512);
+    expect(minResizeHeightPx(96, 320.6, 320)).toBe(336);
+  });
+
+  it("minH 高于内容时取 minH；下限至少 1 行（16px）", () => {
+    expect(minResizeHeightPx(600, 400, 300)).toBe(608);
+    expect(minResizeHeightPx(100, 100, 300)).toBe(112);
+    expect(minResizeHeightPx(0, 0, 0)).toBe(16);
+  });
+});
+
 describe("layout vertical resolve (push-down)", () => {
   it("无重叠时保持意图 y", () => {
     const tops = resolveVerticalLayout([
@@ -208,10 +230,10 @@ describe("layout vertical resolve (push-down)", () => {
     const tops = resolveVerticalLayout([
       { id: "prompt", placement: { x: 0, y: 0, w: 40, h: 10 } },
       { id: "controls", placement: { x: 0, y: 5, w: 40, h: 6 } },
-      { id: "presets", placement: { x: 0, y: 12, w: 40, h: 4 } },
+      { id: "negative-prompt", placement: { x: 0, y: 12, w: 40, h: 4 } },
     ]);
     expect(tops.controls).toBe(10);
-    expect(tops.presets).toBe(16);
+    expect(tops["negative-prompt"]).toBe(16);
   });
 
   it("实测高度大于快照 h 时按实测推挤", () => {
@@ -287,14 +309,14 @@ describe("layout share code", () => {
   });
 
   it("忽略非法模块、非通用模块与越界数值；全无有效坐标视为无效", () => {
-    const payload = { v: 2, m: { nope: [0, 0, 1, 1], mask: [0, 0, 1, 1], prompt: [0, 0, -5, 4], controls: [-1, 0, 4, 4], presets: [0, 0, 4, 4] }, h: ["nope", "mask", "presets"] };
+    const payload = { v: 2, m: { nope: [0, 0, 1, 1], mask: [0, 0, 1, 1], prompt: [0, 0, -5, 4], controls: [-1, 0, 4, 4], "negative-prompt": [0, 0, 4, 4] }, h: ["nope", "mask", "negative-prompt"] };
     const decoded = decodeLayoutCode("ITL2:" + btoa(JSON.stringify(payload)));
     expect(decoded).not.toBeNull();
     expect(decoded!.legacy).toBe(false);
     expect(decoded!.shared.prompt).toBeUndefined();
     expect(decoded!.shared.controls).toBeUndefined();
-    expect(decoded!.shared.presets).toEqual({ x: 0, y: 0, w: 4, h: 4 });
-    expect(decoded!.hidden).toEqual(["presets"]);
+    expect(decoded!.shared["negative-prompt"]).toEqual({ x: 0, y: 0, w: 4, h: 4 });
+    expect(decoded!.hidden).toEqual(["negative-prompt"]);
     expect(decodeLayoutCode("ITL2:" + btoa(JSON.stringify({ v: 2, m: { mask: [0, 0, 1, 1] }, h: [] })))).toBeNull();
   });
 
@@ -307,12 +329,12 @@ describe("layout share code", () => {
 
   it("ITL1 旧码换算：x/w 列值不变，y/h 按 colWidth/GRID_PX 换算为行（legacy=true）", () => {
     // colWidth=16 = GRID_PX：旧比例单位 y=2 → 2 行、h=4 → 4 行；x/w 原样保留
-    const payload = { v: 1, m: { prompt: [10, 2, 40, 4] }, h: ["presets"] };
+    const payload = { v: 1, m: { prompt: [10, 2, 40, 4] }, h: ["negative-prompt"] };
     const decoded = decodeLayoutCode("ITL1:" + btoa(JSON.stringify(payload)), 16);
     expect(decoded).not.toBeNull();
     expect(decoded!.legacy).toBe(true);
     expect(decoded!.shared.prompt).toEqual({ x: 10, y: 2, w: 40, h: 4 });
-    expect(decoded!.hidden).toEqual(["presets"]);
+    expect(decoded!.hidden).toEqual(["negative-prompt"]);
   });
 
   it("ITL1 换算结果钳制：x 钳入列范围；换算后 h 超 400 行的条目被丢弃", () => {
@@ -339,11 +361,11 @@ describe("layout import application", () => {
     let snapshot = createEmptySnapshot();
     snapshot = setPlacement(snapshot, "edit", "mask", { x: 1, y: 1, w: 20, h: 10 });
     snapshot = setPlacement(snapshot, "generate", "prompt", { x: 9, y: 9, w: 9, h: 9 });
-    const next = applySharedLayout(snapshot, { prompt: { x: 1, y: 2, w: 30, h: 6 }, controls: { x: 0, y: 9, w: 30, h: 4 } }, ["presets"]);
+    const next = applySharedLayout(snapshot, { prompt: { x: 1, y: 2, w: 30, h: 6 }, controls: { x: 0, y: 9, w: 30, h: 4 } }, ["negative-prompt"]);
     expect(next.shared.prompt).toEqual({ x: 1, y: 2, w: 30, h: 6 });
     expect(next.shared.controls).toEqual({ x: 0, y: 9, w: 30, h: 4 });
     expect(next.modes.edit.mask).toEqual({ x: 1, y: 1, w: 20, h: 10 });
-    expect(next.hidden.shared).toEqual(["presets"]);
+    expect(next.hidden.shared).toEqual(["negative-prompt"]);
   });
 
   it("码中缺失的通用模块坐标被清除（交由补位处理）", () => {
@@ -398,8 +420,8 @@ describe("layout size flags (width tiers)", () => {
     expect(sizeFlags("controls", -100)).toEqual({ compact: false, narrow: false });
   });
 
-  it("无档位模块（prompt / mask / presets）恒为 false/false", () => {
-    for (const id of ["prompt", "mask", "presets"] as const) {
+  it("无档位模块（prompt / mask）恒为 false/false", () => {
+    for (const id of ["prompt", "mask"] as const) {
       expect(sizeFlags(id, 100)).toEqual({ compact: false, narrow: false });
       expect(sizeFlags(id, 1)).toEqual({ compact: false, narrow: false });
     }
@@ -410,10 +432,158 @@ describe("layout size flags (width tiers)", () => {
     expect(sizeFlags("nope" as never, 300)).toEqual({ compact: false, narrow: false });
   });
 
-  it("单档模块按表生效（negative-prompt 仅 compact 636；prompt-assistant 仅 narrow 440）", () => {
+  it("单档模块按表生效（negative-prompt 仅 compact 636；upload 仅 narrow 440）", () => {
     expect(sizeFlags("negative-prompt", 636)).toEqual({ compact: false, narrow: false });
     expect(sizeFlags("negative-prompt", 635)).toEqual({ compact: true, narrow: false });
-    expect(sizeFlags("prompt-assistant", 440)).toEqual({ compact: false, narrow: false });
-    expect(sizeFlags("prompt-assistant", 439)).toEqual({ compact: false, narrow: true });
+    expect(sizeFlags("upload", 440)).toEqual({ compact: false, narrow: false });
+    expect(sizeFlags("upload", 439)).toEqual({ compact: false, narrow: true });
+  });
+});
+
+describe("layout push resolve (dragged module priority)", () => {
+  it("无重叠时保持各自意图 y，moving 不受影响", () => {
+    const tops = resolvePushLayout(
+      [
+        { id: "prompt", placement: { x: 0, y: 0, w: 20, h: 4 } },
+        { id: "controls", placement: { x: 30, y: 0, w: 20, h: 4 } },
+        { id: "negative-prompt", placement: { x: 0, y: 20, w: 40, h: 4 } },
+      ],
+      "prompt",
+    );
+    expect(tops.prompt).toBe(0);
+    expect(tops.controls).toBe(0);
+    expect(tops["negative-prompt"]).toBe(20);
+  });
+
+  it("moving 落到下方模块上（横向重叠）→ 被压者下推到 moving 底边之下", () => {
+    const tops = resolvePushLayout(
+      [
+        { id: "prompt", placement: { x: 0, y: 5, w: 40, h: 10 } },
+        { id: "controls", placement: { x: 0, y: 8, w: 40, h: 4 } },
+      ],
+      "prompt",
+    );
+    expect(tops.prompt).toBe(5);
+    expect(tops.controls).toBe(15);
+  });
+
+  it("链式推挤：A 推 B，B 被推后的底边继续推 C", () => {
+    const tops = resolvePushLayout(
+      [
+        { id: "prompt", placement: { x: 0, y: 0, w: 40, h: 10 } },
+        { id: "controls", placement: { x: 0, y: 5, w: 40, h: 6 } },
+        { id: "negative-prompt", placement: { x: 0, y: 12, w: 40, h: 4 } },
+      ],
+      "prompt",
+    );
+    expect(tops.controls).toBe(10);
+    expect(tops["negative-prompt"]).toBe(16);
+  });
+
+  it("moving 落进悬挂模块中部（moving.y > 模块 y 且 < 模块底边）→ moving 下修到其底边；原处模块被修正后的 moving 推走", () => {
+    const tops = resolvePushLayout(
+      [
+        { id: "prompt", placement: { x: 0, y: 0, w: 40, h: 10 } },
+        { id: "controls", placement: { x: 0, y: 5, w: 40, h: 4 } },
+        { id: "negative-prompt", placement: { x: 0, y: 10, w: 40, h: 4 } },
+      ],
+      "controls",
+    );
+    expect(tops.controls).toBe(10);
+    expect(tops["negative-prompt"]).toBe(14);
+  });
+
+  it("上方压制 + 链式推挤组合：moving 被悬挂模块下压后，连带把下方链条整体推走", () => {
+    const tops = resolvePushLayout(
+      [
+        { id: "prompt", placement: { x: 0, y: 0, w: 40, h: 10 } },
+        { id: "controls", placement: { x: 0, y: 6, w: 40, h: 4 } },
+        { id: "negative-prompt", placement: { x: 0, y: 10, w: 40, h: 4 } },
+        { id: "reverse-prompt", placement: { x: 0, y: 14, w: 40, h: 4 } },
+      ],
+      "controls",
+    );
+    expect(tops.controls).toBe(10);
+    expect(tops["negative-prompt"]).toBe(14);
+    expect(tops["reverse-prompt"]).toBe(18);
+  });
+
+  it("同 y 竞争者（x 更小且横向重叠）在 moving 修正后的位置上 → 让位给 moving（moving 优先）", () => {
+    const tops = resolvePushLayout(
+      [
+        { id: "controls", placement: { x: 0, y: 5, w: 30, h: 4 } },
+        { id: "prompt", placement: { x: 20, y: 5, w: 40, h: 4 } },
+      ],
+      "prompt",
+    );
+    expect(tops.prompt).toBe(5);
+    expect(tops.controls).toBe(9);
+  });
+
+  it("横向不重叠（边界相接）→ 谁都不动", () => {
+    const tops = resolvePushLayout(
+      [
+        { id: "prompt", placement: { x: 0, y: 5, w: 20, h: 10 } },
+        { id: "controls", placement: { x: 20, y: 5, w: 20, h: 10 } },
+      ],
+      "prompt",
+    );
+    expect(tops.prompt).toBe(5);
+    expect(tops.controls).toBe(5);
+  });
+
+  it("measuredH 参与高度（快照 h 很小、实测很大 → 按实测推挤）", () => {
+    const tops = resolvePushLayout(
+      [
+        { id: "prompt", placement: { x: 0, y: 0, w: 40, h: 3 }, measuredH: 10 },
+        { id: "controls", placement: { x: 0, y: 4, w: 40, h: 2 } },
+      ],
+      "prompt",
+    );
+    expect(tops.prompt).toBe(0);
+    expect(tops.controls).toBe(10);
+  });
+
+  it("movingId 不在 items 中 → 不抛错，按普通收纳（无优先级）", () => {
+    const items = [
+      { id: "prompt", placement: { x: 0, y: 0, w: 40, h: 10 } },
+      { id: "controls", placement: { x: 0, y: 5, w: 40, h: 4 } },
+    ] as const;
+    const tops = resolvePushLayout([...items], "mask");
+    expect(tops.prompt).toBe(0);
+    expect(tops.controls).toBe(10);
+  });
+
+  it("moving.y < 0 时钳到 0（只调 y、clamp 下界），其余模块仍正常推挤", () => {
+    const tops = resolvePushLayout(
+      [
+        { id: "prompt", placement: { x: 0, y: -5, w: 40, h: 4 } },
+        { id: "controls", placement: { x: 0, y: 0, w: 40, h: 4 } },
+      ],
+      "prompt",
+    );
+    expect(tops.prompt).toBe(0);
+    expect(tops.controls).toBe(4);
+    expect(resolvePushLayout([{ id: "prompt", placement: { x: 0, y: -5, w: 40, h: 4 } }], "prompt").prompt).toBe(0);
+  });
+
+  it("多 placed 且底边沿检查序非单调时，单遍扫描会把 item 停在早先 placed 的区间内（重叠）——必须迭代收敛", () => {
+    // 检查序 (y, x)：project-strip → negative-prompt（bottom 20）→ controls（bottom 15，不横向重叠故底边更低）→ references。
+    // references 先被 controls 推到 15，却被推回了 negative-prompt 的 [10, 20) 区间；单遍扫描不再复查 negative-prompt → 重叠。
+    const tops = resolvePushLayout(
+      [
+        { id: "prompt", placement: { x: 52, y: 0, w: 8, h: 1 } }, // moving（远处，无交互）
+        { id: "project-strip", placement: { x: 0, y: 0, w: 8, h: 10 } },
+        { id: "negative-prompt", placement: { x: 0, y: 4, w: 24, h: 10 } },
+        { id: "controls", placement: { x: 24, y: 5, w: 24, h: 10 } },
+        { id: "references", placement: { x: 20, y: 6, w: 8, h: 3 } },
+      ],
+      "prompt",
+    );
+    expect(tops.prompt).toBe(0);
+    expect(tops["project-strip"]).toBe(0);
+    expect(tops["negative-prompt"]).toBe(10);
+    expect(tops.controls).toBe(5);
+    expect(tops.references).toBe(20);
   });
 });

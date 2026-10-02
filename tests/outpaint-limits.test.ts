@@ -12,9 +12,9 @@ describe("canvas limits cross-layer consistency", () => {
   it("两端常量与扩图安全范围的既定字面值一致", () => {
     expect(outpaintLimits.CANVAS_MULTIPLE).toBe(16);
     expect(outpaintLimits.CANVAS_MAX_EDGE).toBe(3840);
-    expect(outpaintLimits.CANVAS_MAX_PIXELS).toBe(8_294_400);
+    expect(outpaintLimits.CANVAS_MAX_PIXELS).toBe(14_745_600);
     expect(creative.CANVAS_MULTIPLE).toBe(16);
     expect(creative.CANVAS_MAX_EDGE).toBe(3840);
-    expect(creative.CANVAS_MAX_PIXELS).toBe(8_294_400);
+    expect(creative.CANVAS_MAX_PIXELS).toBe(14_745_600);
   });
 });

@@ -283,36 +283,50 @@ export function ComposerPanel({
         <span>默认归档到收件箱，可随时批量移动。</span>
       </div>
 
-      <div className="prompt-tools" data-layout-id="prompt-tools" {...layout.dataFlagsOf("prompt-tools")} style={layout.styleOf("prompt-tools")}>
-        <label>提示词模板
-          <select value={selectedTemplate} onChange={(event) => applyTemplate(event.target.value)}>
-            <option value="">选择模板…</option>
-            {templates.filter((item) => item.kind === "positive").map((item) => <option key={item.id} value={item.id}>[{item.category}] {item.title}</option>)}
-          </select>
-        </label>
-        <button className="secondary" onClick={() => void saveTemplate("positive")}>保存为模板</button>
-        {selectedTemplate && !templates.find((item) => item.id === selectedTemplate)?.builtin && (
-          <>
-            <button className="secondary" onClick={() => void saveTemplate("positive", true)}>更新模板</button>
-            <button className="secondary" onClick={() => void deleteTemplate("positive")}>删除模板</button>
-          </>
-        )}
-      </div>
-
-      <textarea
-        data-layout-id="prompt"
-        style={layout.styleOf("prompt")}
-        value={prompt}
-        onChange={(event) => setPrompt(event.target.value)}
-        placeholder={mode === "edit"
-          ? "例如：保持主体不变，把背景改成未来城市夜景"
-          : "例如：一张科技感产品海报，蓝白配色，干净高级"}
-        rows={5}
-      />
+      <section className="prompt-panel" data-layout-id="prompt" {...layout.dataFlagsOf("prompt")} style={layout.styleOf("prompt")}>
+        <div className="prompt-head">
+          <strong>提示词</strong>
+          <div className="prompt-template-actions">
+            <select value={selectedTemplate} onChange={(event) => applyTemplate(event.target.value)}>
+              <option value="">选择模板…</option>
+              {templates.filter((item) => item.kind === "positive").map((item) => <option key={item.id} value={item.id}>[{item.category}] {item.title}</option>)}
+            </select>
+            <button onClick={() => void saveTemplate("positive")}>保存为模板</button>
+            {selectedTemplate && !templates.find((item) => item.id === selectedTemplate)?.builtin && (
+              <>
+                <button onClick={() => void saveTemplate("positive", true)}>更新模板</button>
+                <button onClick={() => void deleteTemplate("positive")}>删除模板</button>
+              </>
+            )}
+          </div>
+        </div>
+        <small className="panel-hint">正向描述画面；可保存为模板复用。</small>
+        <div className="prompt-assistant">
+          <button onClick={() => optimizeLocal("refine")}>精炼主体</button>
+          <button onClick={() => optimizeLocal("detail")}>强化细节</button>
+          <button onClick={() => optimizeLocal("poster")}>海报化</button>
+          <button onClick={() => optimizeLocal("social")}>社媒化</button>
+          <button onClick={() => optimizeLocal("realistic")}>更写实</button>
+          <button onClick={() => optimizeLocal("premium")}>更高级</button>
+          <button className="assistant-ai" onClick={() => void enhanceOnline()} disabled={enhancing}>
+            {enhancing ? "AI 增强中…" : "AI 增强 · " + chatModel}
+          </button>
+          {originalPrompt && <button onClick={() => setPrompt(originalPrompt)}>恢复原提示词</button>}
+        </div>
+        <textarea
+          value={prompt}
+          onChange={(event) => setPrompt(event.target.value)}
+          placeholder={mode === "edit"
+            ? "例如：保持主体不变，把背景改成未来城市夜景"
+            : "例如：一张科技感产品海报，蓝白配色，干净高级"}
+          rows={5}
+        />
+        {enhancing && enhanceProgress ? <ProgressBar event={enhanceProgress} /> : null}
+      </section>
 
       <section className="negative-prompt" data-layout-id="negative-prompt" {...layout.dataFlagsOf("negative-prompt")} style={layout.styleOf("negative-prompt")}>
         <div className="negative-head">
-          <div><strong>负面提示词</strong><small>独立保存；提交时转换为“必须避免”的自然语言约束。</small></div>
+          <strong>负面提示词</strong>
           <div className="negative-template-actions">
             <select value={selectedNegativeTemplate} onChange={(event) => applyNegativeTemplate(event.target.value)}>
               <option value="">选择负面词模板…</option>
@@ -323,23 +337,9 @@ export function ComposerPanel({
             {selectedNegativeTemplate && !templates.find((item) => item.id === selectedNegativeTemplate)?.builtin && <button onClick={() => void deleteTemplate("negative")}>删除</button>}
           </div>
         </div>
+        <small className="panel-hint">独立保存；提交时转换为“必须避免”的自然语言约束。</small>
         <textarea value={negativePrompt} onChange={(event) => setNegativePrompt(event.target.value)} rows={3} placeholder="例如：水印、乱码文字、重复元素、肢体畸形、塑料质感" />
       </section>
-
-      <div className="prompt-assistant" data-layout-id="prompt-assistant" {...layout.dataFlagsOf("prompt-assistant")} style={layout.styleOf("prompt-assistant")}>
-        <strong>提示词助手</strong>
-        <button onClick={() => optimizeLocal("refine")}>精炼主体</button>
-        <button onClick={() => optimizeLocal("detail")}>强化细节</button>
-        <button onClick={() => optimizeLocal("poster")}>海报化</button>
-        <button onClick={() => optimizeLocal("social")}>社媒化</button>
-        <button onClick={() => optimizeLocal("realistic")}>更写实</button>
-        <button onClick={() => optimizeLocal("premium")}>更高级</button>
-        <button className="assistant-ai" onClick={() => void enhanceOnline()} disabled={enhancing}>
-          {enhancing ? "AI 增强中…" : "AI 增强 · " + chatModel}
-        </button>
-        {originalPrompt && <button onClick={() => setPrompt(originalPrompt)}>恢复原提示词</button>}
-      </div>
-      {enhancing && enhanceProgress ? <div className="layout-flow-host" style={layout.followerStyle()}><ProgressBar event={enhanceProgress} /></div> : null}
 
       <details className="reverse-prompt" data-layout-id="reverse-prompt" {...layout.dataFlagsOf("reverse-prompt")} style={layout.styleOf("reverse-prompt")}>
         <summary>图反推提示词 · {roles.reverse?.model ?? "未配置"}</summary>
@@ -434,28 +434,44 @@ export function ComposerPanel({
         {outpaintCheck && <p className={outpaintCheck.ok ? "outpaint-valid" : "outpaint-invalid"}>{outpaintCheck.ok ? `目标 ${outpaintCheck.layout.targetSize} · 原图位于 (${outpaintCheck.layout.x}, ${outpaintCheck.layout.y})` : outpaintCheck.error}</p>}
       </section>}
 
-      <div className="performance-presets" data-layout-id="presets" style={layout.styleOf("presets")}>
-        <span>生成速度</span>
-        <button type="button" onClick={() => quickPreset("fast")}>快速预览</button>
-        <button type="button" onClick={() => quickPreset("stable")}>稳定创作</button>
-        <button type="button" onClick={() => quickPreset("detail")}>最终高清</button>
-      </div>
-
       <div className="controls" data-layout-id="controls" {...layout.dataFlagsOf("controls")} style={layout.styleOf("controls")}>
+        <div className="performance-presets">
+          <span>生成速度</span>
+          <button type="button" onClick={() => quickPreset("fast")}>快速预览</button>
+          <button type="button" onClick={() => quickPreset("stable")}>稳定创作</button>
+          <button type="button" onClick={() => quickPreset("detail")}>最终高清</button>
+        </div>
         <label>细节质量
           <select value={quality} onChange={(event) => setQuality(event.target.value)}>
             {qualities.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
           </select>
         </label>
         <label>清晰度
-          <select value={resolution} onChange={(event) => setResolution(event.target.value)}>
+          <select value={resolution} onChange={(event) => setResolution(event.target.value)} disabled={customSizeEnabled}>
             {resolutionOptions.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
           </select>
         </label>
         <label>画面比例
-          <select value={ratio} onChange={(event) => setRatio(event.target.value)} disabled={customSizeEnabled || mode === "outpaint"}>
-            {ratioOptions.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
-          </select>
+          {customSizeEnabled && mode !== "outpaint" ? (
+            <>
+              <span className="ratio-custom">
+                <input value={customSize} onChange={(event) => setCustomSize(event.target.value)} placeholder="例如 1536x1024" />
+                <button type="button" className="ratio-custom-back" title="返回预设比例" aria-label="返回预设比例" onClick={() => setCustomSizeEnabled(false)}><NavIcon name="undo" size={14} /></button>
+              </span>
+              <small className={customCheck.ok ? "valid" : "invalid"}>{customCheck.message}</small>
+            </>
+          ) : (
+            <span className="ratio-select">
+              <select value={ratio} onChange={(event) => setRatio(event.target.value)} disabled={mode === "outpaint"}>
+                {ratioOptions.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
+              </select>
+              {mode !== "outpaint" && (
+                <button type="button" className="ratio-custom-enter" title="自定义尺寸" aria-label="自定义尺寸" onClick={() => setCustomSizeEnabled(true)}>
+                  <NavIcon name="expand" size={14} />
+                </button>
+              )}
+            </span>
+          )}
         </label>
         <label>数量
           <select value={references.length && mode === "generate" ? 1 : n} onChange={(event) => setN(Number(event.target.value))} disabled={mode !== "generate" || references.length > 0}>
@@ -463,19 +479,6 @@ export function ComposerPanel({
           </select>
         </label>
       </div>
-
-      {mode !== "outpaint" && <div className="custom-size" data-layout-id="custom-size" {...layout.dataFlagsOf("custom-size")} style={layout.styleOf("custom-size")}>
-        <label className="check">
-          <input type="checkbox" checked={customSizeEnabled} onChange={(event) => setCustomSizeEnabled(event.target.checked)} />
-          自定义安全尺寸
-        </label>
-        {customSizeEnabled && (
-          <>
-            <input value={customSize} onChange={(event) => setCustomSize(event.target.value)} placeholder="例如 1536x1024" />
-            <small className={customCheck.ok ? "valid" : "invalid"}>{customCheck.message}</small>
-          </>
-        )}
-      </div>}
       {layout.editing && (
         <div className="layout-handle-layer">
           {layout.ghostRect && <div className="layout-ghost" style={layout.ghostRect} aria-hidden="true" />}

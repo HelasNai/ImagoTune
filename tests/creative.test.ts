@@ -20,6 +20,7 @@ describe("creative helpers", () => {
 
   it("validates safe custom canvas sizes", () => {
     expect(validateCanvasSize("1536x1024").ok).toBe(true);
+    expect(validateCanvasSize("3840x3840").ok).toBe(true);
     expect(validateCanvasSize("1000x1000").ok).toBe(false);
     expect(validateCanvasSize("4096x4096").ok).toBe(false);
     expect(validateCanvasSize("1600x512").ok).toBe(false);

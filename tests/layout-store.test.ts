@@ -27,7 +27,7 @@ function makeLegacyStore(): LegacyLayoutStoreV3 {
             edit: { mask: { x: 4, y: 6, w: 24, h: 12 } },
             outpaint: { "outpaint-panel": { x: 1, y: 3, w: 20, h: 6 } },
           },
-          hidden: { shared: ["prompt-assistant"], modes: { generate: [], edit: ["upload"], outpaint: [] } },
+          hidden: { shared: ["reverse-prompt"], modes: { generate: [], edit: ["upload"], outpaint: [] } },
         },
       },
     ],
@@ -220,22 +220,24 @@ describe("migrateV3ToV4", () => {
     const migrated = migrateV3ToV4(makeLegacyStore(), GRID_PX);
     const snapshot = migrated.presets.find((item) => item.id === "default")?.snapshot;
     expect(snapshot?.shared.prompt?.y).toBe(5);
-    expect(snapshot?.shared.prompt?.h).toBe(10);
+    // prompt minH=200px → 下限 ceil(200/GRID_PX)=13 行；y 原值 10 行被下限上顶
+    expect(snapshot?.shared.prompt?.h).toBe(13);
   });
 
   it("colWidth = 8 时 y=5 → round(5×8/16)=round(2.5)=3 行", () => {
     const migrated = migrateV3ToV4(makeLegacyStore(), 8);
     const snapshot = migrated.presets.find((item) => item.id === "default")?.snapshot;
     expect(snapshot?.shared.prompt?.y).toBe(3);
-    // prompt minH=128px → 下限 ceil(128/GRID_PX)=8 行；round(10×8/16)=5 < 8 → 取 8
-    expect(snapshot?.shared.prompt?.h).toBe(8);
+    // prompt minH=200px → 下限 ceil(200/GRID_PX)=13 行；round(10×8/16)=5 < 13 → 取 13
+    expect(snapshot?.shared.prompt?.h).toBe(13);
   });
 
   it("x/w 直接取整为列（旧单位与列数值相等，不经 colWidth 换算）", () => {
     const migrated = migrateV3ToV4(makeLegacyStore(), 8);
     const snapshot = migrated.presets.find((item) => item.id === "default")?.snapshot;
     expect(snapshot?.shared.prompt?.x).toBe(2);
-    expect(snapshot?.shared.prompt?.w).toBe(40);
+    // prompt minW=360px → 下限 ceil(360/8)=45 列；round(40)=40 < 45 → 取 45
+    expect(snapshot?.shared.prompt?.w).toBe(45);
   });
 
   it("迁移覆盖全部方案的全部层级（shared / modes 三模式）", () => {
@@ -283,10 +285,10 @@ describe("migrateV3ToV4", () => {
           name: "默认",
           snapshot: {
             shared: {
-              // presets w=100 超宽 → 64，x=50 被压回 [0, LAYOUT_COLS-w']=[0,64-64]=[0,0] → 0；
-              // prompt-tools w=40 合法，x=100 越界 → x=64-40=24
-              presets: { x: 50, y: 0, w: 100, h: 3 },
-              "prompt-tools": { x: 100, y: 0, w: 40, h: 3 },
+              // reverse-prompt w=100 超宽 → 64，x=50 被压回 [0, LAYOUT_COLS-w']=[0,64-64]=[0,0] → 0；
+              // prompt w=40 合法，x=100 越界 → x=64-40=24
+              "reverse-prompt": { x: 50, y: 0, w: 100, h: 3 },
+              prompt: { x: 100, y: 0, w: 40, h: 3 },
             },
           },
         },
@@ -294,10 +296,10 @@ describe("migrateV3ToV4", () => {
     };
     const migrated = migrateV3ToV4(legacy, GRID_PX);
     const shared = migrated.presets[0].snapshot?.shared;
-    expect(shared?.presets?.w).toBe(LAYOUT_COLS);
-    expect(shared?.presets?.x).toBe(0);
-    expect(shared?.["prompt-tools"]?.w).toBe(40);
-    expect(shared?.["prompt-tools"]?.x).toBe(LAYOUT_COLS - 40);
+    expect(shared?.["reverse-prompt"]?.w).toBe(LAYOUT_COLS);
+    expect(shared?.["reverse-prompt"]?.x).toBe(0);
+    expect(shared?.prompt?.w).toBe(40);
+    expect(shared?.prompt?.x).toBe(LAYOUT_COLS - 40);
   });
 
   it("含负数的 placement 视为非法被整体跳过（非法坐标不收敛保留，交由补位兜底）", () => {
@@ -321,9 +323,9 @@ describe("migrateV3ToV4", () => {
           snapshot: {
             shared: {
               prompt: { x: Number.NaN, y: 0, w: 40, h: 10 },
-              "prompt-tools": { x: -1, y: 0, w: 40, h: 10 },
+              "outpaint-panel": { x: -1, y: 0, w: 40, h: 10 },
               "negative-prompt": { x: 0, y: 0, w: 0, h: 10 },
-              "prompt-assistant": { x: 0, y: 0, w: 40, h: 0 },
+              "project-strip": { x: 0, y: 0, w: 40, h: 0 },
               "reverse-prompt": "garbage",
               "unknown-module": { x: 0, y: 0, w: 10, h: 10 },
               controls: { x: 0, y: 0, w: 40, h: 3 },
@@ -335,13 +337,13 @@ describe("migrateV3ToV4", () => {
     const migrated = migrateV3ToV4(legacy, GRID_PX);
     const shared = migrated.presets[0].snapshot?.shared;
     expect(shared?.prompt).toBeUndefined();
-    expect(shared?.["prompt-tools"]).toBeUndefined();
+    expect(shared?.["outpaint-panel"]).toBeUndefined();
     expect(shared?.["negative-prompt"]).toBeUndefined();
-    expect(shared?.["prompt-assistant"]).toBeUndefined();
+    expect(shared?.["project-strip"]).toBeUndefined();
     expect(shared?.["reverse-prompt"]).toBeUndefined();
     expect((shared as Record<string, unknown>)?.["unknown-module"]).toBeUndefined();
-    // 唯一合法项保留
-    expect(shared?.controls).toEqual({ x: 0, y: 0, w: 40, h: 3 });
+    // 唯一合法项保留（controls minH 144px → 下限 ceil(144/GRID_PX)=9 行，h=3 被上顶）
+    expect(shared?.controls).toEqual({ x: 0, y: 0, w: 40, h: 9 });
   });
 
   it("null 快照保持 null；hidden 原样保留（未知 id 过滤）", () => {
@@ -352,7 +354,7 @@ describe("migrateV3ToV4", () => {
     // makeLegacyStore 仅含 default，push 后 preset-empty 位于索引 1（原写死 2 越界）
     expect(migrated.presets[1].snapshot).toBeNull();
     const hidden = migrated.presets[0].snapshot?.hidden;
-    expect(hidden?.shared).toEqual(["prompt-assistant"]);
+    expect(hidden?.shared).toEqual(["reverse-prompt"]);
     expect(hidden?.modes.edit).toEqual(["upload"]);
     expect(hidden?.modes.generate).toEqual([]);
   });
@@ -402,7 +404,7 @@ describe("serializeLayoutStore", () => {
     expect(roundTripped.kind).toBe("v4");
     if (roundTripped.kind !== "v4") throw new Error("unreachable");
     expect(roundTripped.store.version).toBe(4);
-    expect(roundTripped.store.presets[0].snapshot?.shared.prompt).toEqual({ x: 2, y: 5, w: 40, h: 10 });
+    expect(roundTripped.store.presets[0].snapshot?.shared.prompt).toEqual({ x: 2, y: 5, w: 40, h: 13 });
   });
 
   it("LayoutSnapshot 内层 version 恒为 1（与 store 的 version: 4 是两个独立版本空间）", () => {
