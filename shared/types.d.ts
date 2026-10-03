@@ -377,6 +377,12 @@ export interface UpdateStatus {
   version?: string;
   progress?: number;
   message: string;
+  /**
+   * 稳定机器码（如 "update.available"），供渲染层经 `tCode("update", code, params, message)` 本地化；
+   * message 保留为由主进程按当前 locale 生成的文案，旧消费方可直接显示。
+   */
+  code?: string;
+  params?: Record<string, string | number>;
 }
 
 export interface LocalAIModelManifest {

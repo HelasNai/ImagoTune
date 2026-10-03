@@ -18,6 +18,7 @@ import { stripDataUrlPrefix } from "./data-url";
 import { LocalAIModelManager } from "./local-ai-model-manager";
 import { LocalAIModelId, localAIModelById } from "./local-ai-models";
 import { createDirectoryManager } from "./directory-manager";
+import { mt, setMainLocale } from "./i18n";
 import { INBOX_PROJECT_ID } from "./constants";
 import { errorMessage, joinBase, withTimeout } from "./net-utils";
 import { atomicWriteJson, ensureDir, nowISO } from "./fs-utils";
@@ -67,15 +68,20 @@ const LEGACY_SAVE_DIR = "D:\\codexproject\\生图\\保存图片";
 const controllers = new Map<string, AbortController>();
 const cancelledRequests = new Set<string>();
 const timedOutRequests = new Set<string>();
-let updateStatus: UpdateStatus = { phase: "idle", message: "尚未检查更新" };
+let updateStatus: UpdateStatus = { phase: "idle", message: mt("update.idle"), code: "update.idle" };
 let updateCheckInFlight = false;
 let updatePromptOpen = false;
 // 多供应商模型配置缓存：启动时由 loadModelConfig() 填充；读取失败或未加载时为 null。
 let modelConfigCache: ModelConfig | null = null;
 // 配置损坏等异常情况下的用户可见告警（中文）；正常时为 undefined。
 let modelConfigWarning: string | undefined;
-// 界面语言单例（T11 的 electron/i18n.ts 接管前的极简实现）：启动时由配置或 app.getLocale() 初始化。
+// 界面语言：currentLocale 是配置快照/普通保存的真相来源（settings:get 下发、rebuildModelConfig 并入）；
+// electron/i18n.ts 的 setMainLocale 驱动主进程原生面（updater 弹窗/保存过滤器/目录对话框）文案。二者经本函数同步。
 let currentLocale: Locale = "zh";
+function applyMainLocale(locale: Locale) {
+  currentLocale = locale;
+  setMainLocale(locale);
+}
 
 type BinaryInput = BinaryPayload;
 type RequestInput = Record<string, unknown> & { requestId: string; recipe?: ImageRecipeV1; title?: string };
@@ -103,7 +109,7 @@ const saveDirManager = createDirectoryManager({
   legacyDir: LEGACY_SAVE_DIR,
   activate: activateSaveDirectory,
   currentDir: () => saveDir,
-  dialogTitle: "选择 ImagoTune 保存位置",
+  dialogTitle: () => mt("dialog.chooseSaveDir"),
   resultKey: "saveDir",
   guard: () => (activeQueueJobId ? { ok: false, error: "当前有任务正在生成，请等待完成后再切换保存位置" } : null),
   chooseError: "无法使用所选保存位置",
@@ -117,7 +123,7 @@ const modelDirManager = createDirectoryManager({
   systemDir: systemModelDir,
   activate: activateModelDirectory,
   currentDir: () => localAIModels.modelsDir,
-  dialogTitle: "选择本地 AI 模型保存位置",
+  dialogTitle: () => mt("dialog.chooseModelDir"),
   resultKey: "modelsDir",
   guard: () => (localAIModels.hasActiveDownloads() ? { ok: false, error: "当前有模型正在下载，请先暂停或等待完成" } : null),
   resultExtras: async () => ({ items: await localAIModels.list() }),
@@ -323,7 +329,7 @@ async function recoverCorruptModelConfig(filePath: string, error: unknown) {
     modelConfigCache = null;
     console.error("合成旧版连接设置失败：", synthesizeError);
   }
-  currentLocale = resolveLocale(modelConfigCache, systemLocale());
+  applyMainLocale(resolveLocale(modelConfigCache, systemLocale()));
   modelConfigWarning = "配置文件损坏，已临时使用旧版连接设置；保存后将重建";
   console.error("模型配置文件损坏：", error);
 }
@@ -350,7 +356,7 @@ async function loadModelConfig(): Promise<void> {
       await atomicWriteJson(filePath, config);
       modelConfigCache = config;
       modelConfigWarning = undefined;
-      currentLocale = resolveLocale(config, systemLocale());
+      applyMainLocale(resolveLocale(config, systemLocale()));
       return;
     }
     let parsed: unknown;
@@ -371,11 +377,11 @@ async function loadModelConfig(): Promise<void> {
     else delete loaded.locale;
     modelConfigCache = loaded;
     modelConfigWarning = undefined;
-    currentLocale = validLocale ?? systemLocale();
+    applyMainLocale(validLocale ?? systemLocale());
   } catch (error) {
     // 绝不阻断启动：任何意外错误都只保留空缓存并给出告警。
     modelConfigCache = null;
-    currentLocale = systemLocale();
+    applyMainLocale(systemLocale());
     modelConfigWarning = "读取模型配置失败：" + errorMessage(error, "未知错误");
     console.error("读取模型配置失败：", error);
   }
@@ -542,15 +548,15 @@ function updateWindow() {
 }
 
 async function downloadAppUpdate() {
-  if (!app.isPackaged) return { ok: false, message: "开发模式不检查更新，请使用安装版测试。" };
-  if (updateStatus.phase === "downloading") return { ok: true, message: "更新正在下载。" };
+  if (!app.isPackaged) return { ok: false, message: mt("update.dev-mode") };
+  if (updateStatus.phase === "downloading") return { ok: true, message: mt("update.download-in-flight") };
   try {
-    publishUpdateStatus({ phase: "downloading", version: updateStatus.version, progress: 0, message: "正在下载更新…" });
+    publishUpdateStatus({ phase: "downloading", version: updateStatus.version, progress: 0, message: mt("update.downloading"), code: "update.downloading" });
     await autoUpdater.downloadUpdate();
-    return { ok: true, message: "更新下载完成。" };
+    return { ok: true, message: mt("update.download-done") };
   } catch (error) {
-    const message = errorMessage(error, "更新下载失败");
-    publishUpdateStatus({ phase: "error", message });
+    const message = errorMessage(error, mt("update.download-failed"));
+    publishUpdateStatus({ phase: "error", message, code: "update.download-failed" });
     return { ok: false, message };
   }
 }
@@ -563,10 +569,10 @@ async function promptForDownload(info: UpdateInfo) {
   try {
     const result = await dialog.showMessageBox(win, {
       type: "info",
-      title: "发现新版本",
-      message: "ImagoTune " + info.version + " 已可更新",
-      detail: "是否现在下载？下载完成后仍由你选择是否重启安装。",
-      buttons: ["稍后再说", "下载更新"],
+      title: mt("update.dialog.available.title"),
+      message: mt("update.dialog.available.message", { version: info.version }),
+      detail: mt("update.dialog.available.detail"),
+      buttons: [mt("update.dialog.available.later"), mt("update.dialog.available.download")],
       defaultId: 1,
       cancelId: 0,
       noLink: true
@@ -579,18 +585,18 @@ async function promptForDownload(info: UpdateInfo) {
 
 async function checkForAppUpdate() {
   if (!app.isPackaged) {
-    const message = "开发模式不检查更新，请使用安装版测试。";
-    publishUpdateStatus({ phase: "idle", message });
+    const message = mt("update.dev-mode");
+    publishUpdateStatus({ phase: "idle", message, code: "update.dev-mode" });
     return { ok: false, message };
   }
-  if (updateCheckInFlight) return { ok: true, message: "正在检查更新…" };
+  if (updateCheckInFlight) return { ok: true, message: mt("update.checking") };
   try {
     updateCheckInFlight = true;
     await autoUpdater.checkForUpdates();
-    return { ok: true, message: "已完成更新检查。" };
+    return { ok: true, message: mt("update.check-done") };
   } catch (error) {
-    const message = errorMessage(error, "检查更新失败");
-    publishUpdateStatus({ phase: "error", message });
+    const message = errorMessage(error, mt("update.check-failed"));
+    publishUpdateStatus({ phase: "error", message, code: "update.check-failed" });
     return { ok: false, message };
   } finally {
     updateCheckInFlight = false;
@@ -610,33 +616,33 @@ async function applyUpdatePreferences() {
 function configureAutoUpdater() {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
-  autoUpdater.on("checking-for-update", () => publishUpdateStatus({ phase: "checking", message: "正在检查更新…" }));
+  autoUpdater.on("checking-for-update", () => publishUpdateStatus({ phase: "checking", message: mt("update.checking"), code: "update.checking" }));
   autoUpdater.on("update-available", (info) => {
-    publishUpdateStatus({ phase: "available", version: info.version, message: "发现新版本 v" + info.version });
+    publishUpdateStatus({ phase: "available", version: info.version, message: mt("update.available", { version: info.version }), code: "update.available", params: { version: info.version } });
     if (!autoUpdater.autoDownload) void promptForDownload(info);
   });
-  autoUpdater.on("update-not-available", () => publishUpdateStatus({ phase: "not-available", message: "当前已是最新版本。" }));
+  autoUpdater.on("update-not-available", () => publishUpdateStatus({ phase: "not-available", message: mt("update.not-available"), code: "update.not-available" }));
   autoUpdater.on("download-progress", (progress: ProgressInfo) => {
     const percent = Math.round(progress.percent);
-    publishUpdateStatus({ phase: "downloading", version: updateStatus.version, progress: percent, message: "正在下载更新：" + percent + "%" });
+    publishUpdateStatus({ phase: "downloading", version: updateStatus.version, progress: percent, message: mt("update.downloading-progress", { percent }), code: "update.downloading-progress", params: { percent } });
   });
   autoUpdater.on("update-downloaded", async (info) => {
-    publishUpdateStatus({ phase: "downloaded", version: info.version, progress: 100, message: "v" + info.version + " 已下载，等待安装。" });
+    publishUpdateStatus({ phase: "downloaded", version: info.version, progress: 100, message: mt("update.downloaded", { version: info.version }), code: "update.downloaded", params: { version: info.version } });
     const win = updateWindow();
     if (!win) return;
     const result = await dialog.showMessageBox(win, {
       type: "info",
-      title: "更新已下载",
-      message: "ImagoTune " + info.version + " 已准备好",
-      detail: "是否现在重启并安装？你也可以稍后在“设置”中执行安装。",
-      buttons: ["稍后安装", "重启并安装"],
+      title: mt("update.dialog.downloaded.title"),
+      message: mt("update.dialog.downloaded.message", { version: info.version }),
+      detail: mt("update.dialog.downloaded.detail"),
+      buttons: [mt("update.dialog.downloaded.later"), mt("update.dialog.downloaded.install")],
       defaultId: 1,
       cancelId: 0,
       noLink: true
     });
     if (result.response === 1) autoUpdater.quitAndInstall();
   });
-  autoUpdater.on("error", (error) => publishUpdateStatus({ phase: "error", message: error.message || "更新服务发生错误" }));
+  autoUpdater.on("error", (error) => publishUpdateStatus({ phase: "error", message: error.message || mt("update.error"), code: "update.error" }));
 }
 
 function emit(win: BrowserWindow, requestId: string, status: string, progress?: number, message?: string) {
@@ -977,7 +983,7 @@ app.whenReady().then(async () => {
       await atomicWriteJson(modelConfigPath(), next);
       modelConfigCache = next;
       modelConfigWarning = undefined;
-      currentLocale = parsed;
+      applyMainLocale(parsed);
       return { ok: true };
     } catch (error) {
       return { ok: false, error: errorMessage(error, "保存语言设置失败") };
@@ -1164,17 +1170,17 @@ app.whenReady().then(async () => {
   ipcMain.handle(UPDATES_CHECK, async () => checkForAppUpdate());
   ipcMain.handle(UPDATES_DOWNLOAD, async () => downloadAppUpdate());
   ipcMain.handle(UPDATES_INSTALL, async () => {
-    if (!app.isPackaged) return { ok: false, message: "开发模式不支持安装更新。" };
-    if (updateStatus.phase !== "downloaded") return { ok: false, message: "尚未下载可安装的更新。" };
+    if (!app.isPackaged) return { ok: false, message: mt("update.install-dev-mode") };
+    if (updateStatus.phase !== "downloaded") return { ok: false, message: mt("update.install-not-ready") };
     autoUpdater.quitAndInstall();
-    return { ok: true, message: "正在重启并安装更新。" };
+    return { ok: true, message: mt("update.installing") };
   });
   ipcMain.handle(IMAGE_GENERATE, (e, input: RequestInput) => callImages(BrowserWindow.fromWebContents(e.sender)!, "generations", input));
   ipcMain.handle(IMAGE_EDIT, (e, input: EditInput) => callImages(BrowserWindow.fromWebContents(e.sender)!, "edits", input));
   ipcMain.handle(IMAGE_CANCEL, async (_e, requestId: string) => { cancelledRequests.add(requestId); controllers.get(requestId)?.abort(); });
   ipcMain.handle(IMAGE_SAVE, async (_e, value: { dataUrl: string; suggestedName: string; recipe?: ImageRecipeV1 }) => {
     await fs.mkdir(saveDir, { recursive: true });
-    const result = await dialog.showSaveDialog({ defaultPath: path.join(saveDir, value.suggestedName || `image-studio-${Date.now()}.png`), filters: [{ name: "PNG 图片", extensions: ["png"] }] });
+    const result = await dialog.showSaveDialog({ defaultPath: path.join(saveDir, value.suggestedName || `image-studio-${Date.now()}.png`), filters: [{ name: mt("filter.png"), extensions: ["png"] }] });
     if (result.canceled || !result.filePath) return { canceled: true };
     const base64 = stripDataUrlPrefix(value.dataUrl);
     const raw = Buffer.from(base64, "base64");
@@ -1301,7 +1307,7 @@ app.whenReady().then(async () => {
     return png.length ? { ok: true, b64: png.toString("base64") } : { ok: false, error: "无法读取剪贴板图片" };
   });
   ipcMain.handle(GALLERY_EXPORT_ZIP, async (e, ids: string[]) => {
-    const state = await galleryStore.readState(); const selected = state.items.filter(item => (ids || []).includes(item.id)); if (!selected.length) return { ok: false, error: "未选择图片" }; await fs.mkdir(saveDir, { recursive: true }); const dialogResult = await dialog.showSaveDialog({ defaultPath: path.join(saveDir, `image-studio-${Date.now()}.zip`), filters: [{ name: "ZIP 文件", extensions: ["zip"] }] }); if (dialogResult.canceled || !dialogResult.filePath) return { ok: true, canceled: true };
+    const state = await galleryStore.readState(); const selected = state.items.filter(item => (ids || []).includes(item.id)); if (!selected.length) return { ok: false, error: "未选择图片" }; await fs.mkdir(saveDir, { recursive: true }); const dialogResult = await dialog.showSaveDialog({ defaultPath: path.join(saveDir, `image-studio-${Date.now()}.zip`), filters: [{ name: mt("filter.zip"), extensions: ["zip"] }] }); if (dialogResult.canceled || !dialogResult.filePath) return { ok: true, canceled: true };
     // 导出进度：逐张入包计数（单例操作，固定 id，无需渲染层传 requestId）。
     const report = (event: Omit<TaskProgressEvent, "id" | "scope">) => emitProgress(BrowserWindow.fromWebContents(e.sender), { id: "gallery-export", scope: "export", ...event });
     const startedAt = Date.now();

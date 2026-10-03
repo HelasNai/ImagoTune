@@ -17,8 +17,8 @@ export type DirectoryManagerOptions = {
   activate: (directory: string, copyFrom?: string) => Promise<string>;
   /** 读取当前生效目录（对话框 defaultPath / 取消回包 / 打开目录使用）。 */
   currentDir: () => string;
-  /** 选择目录对话框标题。 */
-  dialogTitle: string;
+  /** 选择目录对话框标题；传函数时在每次打开对话框时求值（供 i18n 按当前 locale 生成）。 */
+  dialogTitle: string | (() => string);
   /** 返回结构中的目录字段名（saveDir / modelsDir）。 */
   resultKey: string;
   /** 切换前置守卫；返回错误对象表示拒绝（队列忙碌 / 模型下载中）。 */
@@ -76,7 +76,7 @@ export function createDirectoryManager(options: DirectoryManagerOptions): Direct
     const blocked = guard?.();
     if (blocked) return blocked;
     const result = await dialog.showOpenDialog({
-      title: dialogTitle,
+      title: typeof dialogTitle === "function" ? dialogTitle() : dialogTitle,
       defaultPath: currentDir(),
       properties: ["openDirectory", "createDirectory"],
     });
