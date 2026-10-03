@@ -11,8 +11,8 @@ import { en, type I18nKey } from "./en";
 
 export type { I18nKey };
 
-// 与 Shared.Locale 值域一致；待 T2 落地后由后续任务收口为单一来源（不得重复声明）
-export type Locale = "zh" | "en";
+// Locale 不再本地定义：单一来源 = shared/types.d.ts 的 Locale（经 src/global.d.ts 全局别名）。
+// 本模块与消费方直接使用环境中的全局 `Locale` 类型，禁止再次 export 同名类型。
 
 /** tCode 的 code 前缀域：error=生成错误、test=settings:test、ipc=IPC 失败、update=更新状态、localai=本地 AI。 */
 export type I18nCodePrefix = "error" | "test" | "ipc" | "update" | "localai";

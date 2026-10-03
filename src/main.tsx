@@ -26,6 +26,7 @@ import type { Mode, Output } from "./components/types";
 import { createRecipe, variationOptions } from "./lib/creative";
 import { DEFAULT_CHAT_MODEL, DEFAULT_IMAGE_MODEL, INBOX_PROJECT_ID } from "./lib/constants";
 import { formatDateTime, formatDurationSeconds, formatTags } from "./lib/format";
+import { setLocale } from "./lib/i18n";
 import { b64ToDataUrl } from "./lib/media";
 import {
   parseTutorialState,
@@ -130,6 +131,8 @@ function App() {
     try {
       const value = await callIpc(() => window.imageStudio.settings.get(), { fallbackError: "无法读取设置", onError: setError });
       if (!value || !Array.isArray(value.providers)) return null;
+      // 持久化语言 → i18n 单例（幂等；覆盖首次到达与后续变化）。切换 UI 在 SettingsPanel。
+      setLocale(value.locale);
       setProviders(value.providers);
       setRoles(value.roles);
       setConfigured(value.configured);

@@ -4,7 +4,9 @@ import { useDialog } from "./Dialogs";
 import { useStudio } from "./StudioContext";
 import { Combobox } from "./Combobox";
 import { Tooltip, InfoHint } from "./Tooltip";
+import { useLocale } from "./useLocale";
 import { formatDateTime } from "../lib/format";
+import { getLocale } from "../lib/i18n";
 import { isSettingsDirty } from "../lib/settings-dirty";
 import { presetToProviderDraft } from "../lib/provider-preset";
 import {
@@ -48,6 +50,8 @@ export function SettingsPanel({
 }) {
   const { providers, roles, refreshSettings, setError, setNotice, autoArchive } = useStudio();
   const { requestConfirm, requestText } = useDialog();
+  // 语言切换独立于设置草稿/保存底栏：点击即生效（乐观），失败回滚并提示。
+  const [locale, applyLocale] = useLocale();
 
   // —— 供应商/角色/归档草稿（保存的权威来源；providers 快照同步后重置）——
   const [drafts, setDrafts] = useState<ProviderDraft[]>([]);
@@ -358,6 +362,22 @@ export function SettingsPanel({
     await callIpc(() => window.imageStudio.settings.openSaveDir(), { fallbackError: "无法打开保存位置", onError: setError });
   };
 
+  // 语言切换：先乐观生效（界面立即切换），持久化失败则回滚并提示。不得进入设置草稿/保存底栏。
+  const switchLocale = async (next: Locale) => {
+    const previous = getLocale();
+    applyLocale(next);
+    try {
+      const result = await window.imageStudio.settings.setLocale(next);
+      if (!result.ok) {
+        applyLocale(previous);
+        setError(`语言切换失败：${result.error || "请重试"}`);
+      }
+    } catch (cause) {
+      applyLocale(previous);
+      setError(`语言切换失败：${(cause as Error).message || "请重试"}`);
+    }
+  };
+
   const applyZoom = (next: number) => {
     void window.imageStudio.windowControls.setZoom(next).then((r) => {
       if (r.ok && typeof r.factor === "number") setZoomFactor(r.factor);
@@ -638,6 +658,31 @@ export function SettingsPanel({
         </div>
         <code>{saveDir}</code>
       </div>}
+      {/* 语言 / Language：仅两选项（endonym，两种语言下均不翻译）；点击即乐观切换，不走保存底栏。 */}
+      <section className="update-settings">
+        <div>
+          <span className="eyebrow">LANGUAGE</span>
+          <h3>语言 / Language</h3>
+        </div>
+        <div className="update-channel-options" role="group" aria-label="语言 / Language">
+          <button
+            type="button"
+            className={locale === "zh" ? "active" : ""}
+            aria-pressed={locale === "zh"}
+            onClick={() => void switchLocale("zh")}
+          >
+            简体中文
+          </button>
+          <button
+            type="button"
+            className={locale === "en" ? "active" : ""}
+            aria-pressed={locale === "en"}
+            onClick={() => void switchLocale("en")}
+          >
+            English
+          </button>
+        </div>
+      </section>
       <section className="update-settings">
         <div>
           <span className="eyebrow">APPLICATION UPDATE</span>
