@@ -138,6 +138,25 @@ describe("tCode() 语义 code key", () => {
   });
 });
 
+describe("settings:test 语义码（T13）", () => {
+  // tCode 走动态 key（`as I18nKey`），类型系统无法保证 test.* 词条存在——用测试锁定。
+  it("en 下 8 个 test.* code 均命中英文", () => {
+    setLocale("en");
+    expect(tCode("test", "ok")).toBe("Connection successful");
+    expect(tCode("test", "noProvider")).toBe("Provider not found");
+    expect(tCode("test", "notConfigured")).toBe("Not configured");
+    expect(tCode("test", "noKey")).toBe("No API key configured");
+    expect(tCode("test", "badBaseUrl")).toBe("Invalid API Base URL");
+    expect(tCode("test", "scheme")).toBe("API Base URL only supports http/https");
+    expect(tCode("test", "http", { status: 404 })).toBe("Endpoint returned 404");
+    expect(tCode("test", "network")).toBe("Connection failed");
+  });
+
+  it("zh 下回退主进程中文 message", () => {
+    expect(tCode("test", "noKey", {}, "尚未配置 API 密钥")).toBe("尚未配置 API 密钥");
+  });
+});
+
 describe("词典完整性", () => {
   const shards = { core, settings, gallery, composer, localai, queue, tutorial, shell, errors };
 

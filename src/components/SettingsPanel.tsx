@@ -6,7 +6,7 @@ import { Combobox } from "./Combobox";
 import { Tooltip, InfoHint } from "./Tooltip";
 import { useLocale } from "./useLocale";
 import { formatDateTime } from "../lib/format";
-import { getLocale } from "../lib/i18n";
+import { getLocale, t, tCode } from "../lib/i18n";
 import { isSettingsDirty } from "../lib/settings-dirty";
 import { presetToProviderDraft } from "../lib/provider-preset";
 import {
@@ -37,6 +37,18 @@ function mergeModels(existing: ProviderModel[], fetched: string[]): ProviderMode
   });
   for (const id of fetched) if (!existingIds.has(id)) merged.push({ id, roles: [] });
   return merged;
+}
+
+// settings:test 结果 → 本地化文案：en 查 `test.<code>`、zh 回退主进程中文 message。
+// T3 契约里 result.code 已自带 `test.` 前缀（如 "test.noKey"），而 tCode 会再拼一次
+// `${prefix}.${code}`——故先剥离前缀，避免 `test.test.noKey` 双重前缀。
+// en 缺词条时 tCode 返回裸 key（`test.<code>`）——回退存储 message，绝不泄漏裸 code。
+function renderTestMessage(result: SettingsTestResult): string {
+  const code = result.code ? result.code.replace(/^test\./, "") : "";
+  if (!code) return result.message;
+  const text = tCode("test", code, result.params, result.message);
+  if (text === `test.${code}` && result.message) return result.message;
+  return text;
 }
 
 // 角色列表与显示名、下拉选项构造见 src/lib/role-options.ts（与侧栏快捷切换器共用）。
@@ -77,7 +89,7 @@ export function SettingsPanel({
   const [autoUpdate, setAutoUpdate] = useState(true);
   const [appVersion, setAppVersion] = useState("");
   const [alphaUnlocked, setAlphaUnlocked] = useState(false);
-  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ phase: "idle", message: "尚未检查更新" });
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ phase: "idle", message: t("尚未检查更新") });
   const [zoomFactor, setZoomFactor] = useState(1);
 
   // 服务端已保存密钥的供应商 id 集合（drafts 只存 ProviderConfig + 内存 apiKey，不携带 hasKey）。
@@ -92,14 +104,14 @@ export function SettingsPanel({
   }, [providers, roles, autoArchive]);
 
   useEffect(() => {
-    void callIpc(() => window.imageStudio.settings.get(), { fallbackError: "无法读取设置", onError: setError }).then((value) => {
+    void callIpc(() => window.imageStudio.settings.get(), { fallbackError: t("无法读取设置"), onError: setError }).then((value) => {
       setSaveDir(value.saveDir || "");
       // 预设平台随同一份快照到达（K8，不新增 IPC）；默认选中第一个，`current ||` 只防重复 set 覆盖用户选择。
       const snapshotPresets = value.presets ?? [];
       setPresets(snapshotPresets);
       setPresetId((current) => current || snapshotPresets[0]?.id || "");
     }).catch(() => { /* callIpc 已上报 */ });
-    void callIpc(() => window.imageStudio.updates.get(), { fallbackError: "无法读取更新状态", onError: setError }).then((value) => {
+    void callIpc(() => window.imageStudio.updates.get(), { fallbackError: t("无法读取更新状态"), onError: setError }).then((value) => {
       setUpdateChannel(value.channel);
       setAutoUpdate(value.autoUpdate);
       setAppVersion(value.appVersion);
@@ -129,8 +141,8 @@ export function SettingsPanel({
   const finishEdit = (id: string) => {
     const name = draftForm.name.trim();
     const baseUrl = draftForm.baseUrl.trim();
-    if (!name) { setError("请输入供应商名称"); return; }
-    if (!baseUrl) { setError("请输入 API Base URL"); return; }
+    if (!name) { setError(t("请输入供应商名称")); return; }
+    if (!baseUrl) { setError(t("请输入 API Base URL")); return; }
     setDrafts((current) => current.map((draft) => draft.id === id ? {
       ...draft,
       name,
@@ -152,8 +164,8 @@ export function SettingsPanel({
   const confirmAdd = () => {
     const name = draftForm.name.trim();
     const baseUrl = draftForm.baseUrl.trim();
-    if (!name) { setError("请输入供应商名称"); return; }
-    if (!baseUrl) { setError("请输入 API Base URL"); return; }
+    if (!name) { setError(t("请输入供应商名称")); return; }
+    if (!baseUrl) { setError(t("请输入 API Base URL")); return; }
     const id = crypto.randomUUID();
     setDrafts((current) => [...current, { id, name, baseUrl, models: [], ...(draftForm.apiKey ? { apiKey: draftForm.apiKey } : {}) }]);
     setAdding(false);
@@ -162,7 +174,7 @@ export function SettingsPanel({
   // 预设态添加：平台参数（名称/baseUrl/api/预置模型）全部来自快照预设，只需密钥（可留空）。
   const confirmAddPreset = () => {
     const preset = presets.find((item) => item.id === presetId);
-    if (!preset) { setError("请选择预设平台"); return; }
+    if (!preset) { setError(t("请选择预设平台")); return; }
     const id = crypto.randomUUID();
     setDrafts((current) => [...current, presetToProviderDraft(preset, id, presetApiKey)]);
     setPresetApiKey("");
@@ -177,17 +189,17 @@ export function SettingsPanel({
   const runProviderCheck = async (draft: ProviderDraft, action: "test" | "refresh") => {
     const apiKey = draft.apiKey?.trim() ?? "";
     if (!apiKey && !serverHasKey.has(draft.id)) {
-      setProviderMessage(draft.id, "请先输入 API 密钥", true);
+      setProviderMessage(draft.id, t("请先输入 API 密钥"), true);
       return;
     }
-    setProviderMessage(draft.id, action === "test" ? "测试中…" : "刷新中…", false);
+    setProviderMessage(draft.id, action === "test" ? t("测试中…") : t("刷新中…"), false);
     const input: SettingsTestInput = apiKey
       ? { transient: { baseUrl: draft.baseUrl.trim(), apiKey } }
       : { providerId: draft.id };
     let result: SettingsTestResult | undefined;
     try {
       result = await callIpc(() => window.imageStudio.settings.test(input), {
-        fallbackError: action === "test" ? "测试连接失败" : "刷新模型失败",
+        fallbackError: action === "test" ? t("测试连接失败") : t("刷新模型失败"),
         onError: (message) => setProviderMessage(draft.id, message, true),
       });
     } catch {
@@ -195,18 +207,18 @@ export function SettingsPanel({
     }
     if (!result.ok) {
       // SettingsTestResult 的失败文案在 message 字段（非 error），这里以业务结果形式展示。
-      setProviderMessage(draft.id, result.message, true);
+      setProviderMessage(draft.id, renderTestMessage(result), true);
       return;
     }
     if (action === "test") {
-      setProviderMessage(draft.id, result.message, false);
+      setProviderMessage(draft.id, renderTestMessage(result), false);
       return;
     }
     const fetched = result.models ?? [];
     setDrafts((current) => current.map((item) => item.id === draft.id
       ? { ...item, models: mergeModels(item.models, fetched), modelsUpdatedAt: new Date().toISOString() }
       : item));
-    setProviderMessage(draft.id, `已同步 ${fetched.length} 个模型`, false);
+    setProviderMessage(draft.id, t("已同步 {n} 个模型", { n: fetched.length }), false);
   };
 
   // —— 模型角色标注（仅内存草稿，随 providers 在「保存设置」时提交）——
@@ -223,14 +235,14 @@ export function SettingsPanel({
 
   const addCustomModel = async (draft: ProviderDraft) => {
     const raw = await requestText({
-      title: "自定义模型",
-      message: "输入模型名称；自定义模型在刷新后不会消失",
-      placeholder: "例如：my-model-v1",
+      title: t("自定义模型"),
+      message: t("输入模型名称；自定义模型在刷新后不会消失"),
+      placeholder: t("例如：my-model-v1"),
     });
     const id = raw?.trim() ?? "";
     if (!id) return;
     if (draft.models.some((model) => model.id === id)) {
-      setError("模型已存在");
+      setError(t("模型已存在"));
       return;
     }
     const model: ProviderModel = { id, roles: [], source: "custom" };
@@ -239,9 +251,9 @@ export function SettingsPanel({
 
   const removeCustomModel = async (providerId: string, modelId: string) => {
     const confirmed = await requestConfirm({
-      title: "删除自定义模型",
-      message: `删除「${modelId}」？（不会影响已保存的绑定，失效绑定会在分配区标出）`,
-      confirmLabel: "删除",
+      title: t("删除自定义模型"),
+      message: t("删除「{name}」？（不会影响已保存的绑定，失效绑定会在分配区标出）", { name: modelId }),
+      confirmLabel: t("删除|供应商"),
       danger: true,
     });
     if (!confirmed) return;
@@ -273,9 +285,9 @@ export function SettingsPanel({
 
   const removeProvider = async (draft: ProviderDraft) => {
     const confirmed = await requestConfirm({
-      title: "删除供应商",
-      message: `删除「${draft.name}」？保存后其密钥将从凭据库移除。`,
-      confirmLabel: "删除",
+      title: t("删除供应商"),
+      message: t("删除「{name}」？保存后其密钥将从凭据库移除。", { name: draft.name }),
+      confirmLabel: t("删除|供应商"),
       danger: true,
     });
     if (!confirmed) return;
@@ -311,13 +323,13 @@ export function SettingsPanel({
 
   const saveSettings = async () => {
     for (const draft of drafts) {
-      if (!draft.name.trim()) { setError("请输入供应商名称"); return; }
-      if (!draft.baseUrl.trim()) { setError("请输入 API Base URL"); return; }
+      if (!draft.name.trim()) { setError(t("请输入供应商名称")); return; }
+      if (!draft.baseUrl.trim()) { setError(t("请输入 API Base URL")); return; }
     }
     // 本地先行校验（服务端 D12 同样强制）：已绑定但模型为空 → 友好提示，避免整单远端拒绝。
     for (const role of MODEL_ROLES) {
       const binding = rolesDraft[role];
-      if (binding && !binding.model.trim()) { setError("请为「生图/图反推/提示词增强」选择模型"); return; }
+      if (binding && !binding.model.trim()) { setError(t("请为「生图/图反推/提示词增强」选择模型")); return; }
     }
     setSaving(true);
     try {
@@ -328,12 +340,12 @@ export function SettingsPanel({
           roles: rolesDraft,
           autoArchive: autoArchiveDraft,
         }),
-        { fallbackError: "设置保存失败", onError: setError },
+        { fallbackError: t("设置保存失败"), onError: setError },
       );
       if (!result.ok) return; // 服务端裁决（如 "供应商有未完成任务"）已由 callIpc → setError 上报
       await refreshSettings();
       setRemovedIds([]);
-      setNotice("设置已保存，密钥不会显示在界面中");
+      setNotice(t("设置已保存，密钥不会显示在界面中"));
     } catch {
       /* callIpc 已上报 */
     } finally {
@@ -342,24 +354,24 @@ export function SettingsPanel({
   };
 
   const chooseSaveDirectory = async () => {
-    const result = await callIpc(() => window.imageStudio.settings.chooseSaveDir(), { fallbackError: "无法修改保存位置", onError: setError });
+    const result = await callIpc(() => window.imageStudio.settings.chooseSaveDir(), { fallbackError: t("无法修改保存位置"), onError: setError });
     if (!result.ok) return;
     if (result.canceled || !result.saveDir) return;
     setSaveDir(result.saveDir);
     await onSaveDirChanged();
-    setNotice("保存位置已切换；原目录文件不会移动或删除");
+    setNotice(t("保存位置已切换；原目录文件不会移动或删除"));
   };
 
   const resetSaveDirectory = async () => {
-    const result = await callIpc(() => window.imageStudio.settings.resetSaveDir(), { fallbackError: "无法恢复系统默认保存位置", onError: setError });
+    const result = await callIpc(() => window.imageStudio.settings.resetSaveDir(), { fallbackError: t("无法恢复系统默认保存位置"), onError: setError });
     if (!result.ok || !result.saveDir) return;
     setSaveDir(result.saveDir);
     await onSaveDirChanged();
-    setNotice("已恢复系统“图片”文件夹中的默认保存位置");
+    setNotice(t("已恢复系统“图片”文件夹中的默认保存位置"));
   };
 
   const openSaveDirectory = async () => {
-    await callIpc(() => window.imageStudio.settings.openSaveDir(), { fallbackError: "无法打开保存位置", onError: setError });
+    await callIpc(() => window.imageStudio.settings.openSaveDir(), { fallbackError: t("无法打开保存位置"), onError: setError });
   };
 
   // 语言切换：先乐观生效（界面立即切换），持久化失败则回滚并提示。不得进入设置草稿/保存底栏。
@@ -370,11 +382,11 @@ export function SettingsPanel({
       const result = await window.imageStudio.settings.setLocale(next);
       if (!result.ok) {
         applyLocale(previous);
-        setError(`语言切换失败：${result.error || "请重试"}`);
+        setError(t("语言切换失败：{message}", { message: result.error || t("请重试") }));
       }
     } catch (cause) {
       applyLocale(previous);
-      setError(`语言切换失败：${(cause as Error).message || "请重试"}`);
+      setError(t("语言切换失败：{message}", { message: (cause as Error).message || t("请重试") }));
     }
   };
 
@@ -387,29 +399,29 @@ export function SettingsPanel({
   const setUpdateChannelPreference = async (channel: UpdateChannel) => {
     const previous = updateChannel;
     setUpdateChannel(channel);
-    const result = await callIpc(() => window.imageStudio.updates.setChannel(channel), { fallbackError: "无法保存更新渠道设置", onError: () => setError("无法保存更新渠道设置") });
+    const result = await callIpc(() => window.imageStudio.updates.setChannel(channel), { fallbackError: t("无法保存更新渠道设置"), onError: () => setError(t("无法保存更新渠道设置")) });
     if (!result.ok) setUpdateChannel(previous);
   };
 
   const setAutoUpdatePreference = async (enabled: boolean) => {
     setAutoUpdate(enabled);
-    const result = await callIpc(() => window.imageStudio.updates.setAutoUpdate(enabled), { fallbackError: "无法保存自动更新设置", onError: () => setError("无法保存自动更新设置") });
+    const result = await callIpc(() => window.imageStudio.updates.setAutoUpdate(enabled), { fallbackError: t("无法保存自动更新设置"), onError: () => setError(t("无法保存自动更新设置")) });
     if (!result.ok) setAutoUpdate(!enabled);
   };
 
   const checkUpdates = async () => {
-    setUpdateStatus((current) => ({ ...current, phase: "checking", message: "正在检查更新…" }));
-    const result = await callIpc(() => window.imageStudio.updates.check(), { fallbackError: "检查更新失败", onError: (message) => setUpdateStatus((current) => ({ ...current, phase: "error", message })) });
+    setUpdateStatus((current) => ({ ...current, phase: "checking", message: t("正在检查更新…") }));
+    const result = await callIpc(() => window.imageStudio.updates.check(), { fallbackError: t("检查更新失败"), onError: (message) => setUpdateStatus((current) => ({ ...current, phase: "error", message })) });
     if (!result.ok) setUpdateStatus((current) => ({ ...current, phase: "error", message: result.message }));
   };
 
   const downloadUpdate = async () => {
-    const result = await callIpc(() => window.imageStudio.updates.download(), { fallbackError: "下载更新失败", onError: setError });
+    const result = await callIpc(() => window.imageStudio.updates.download(), { fallbackError: t("下载更新失败"), onError: setError });
     if (!result.ok) setError(result.message);
   };
 
   const installUpdate = async () => {
-    const result = await callIpc(() => window.imageStudio.updates.install(), { fallbackError: "安装更新失败", onError: setError });
+    const result = await callIpc(() => window.imageStudio.updates.install(), { fallbackError: t("安装更新失败"), onError: setError });
     if (!result.ok) setError(result.message);
   };
 
@@ -423,10 +435,10 @@ export function SettingsPanel({
     alphaClickCount.current += 1;
     if (alphaClickCount.current >= 5) {
       alphaClickCount.current = 0;
-      void callIpc(() => window.imageStudio.updates.setAlphaUnlocked(true), { fallbackError: "无法解锁 Alpha 测试渠道", onError: setError }).then((result) => {
+      void callIpc(() => window.imageStudio.updates.setAlphaUnlocked(true), { fallbackError: t("无法解锁 Alpha 测试渠道"), onError: setError }).then((result) => {
         if (!result.ok) return;
         setAlphaUnlocked(true);
-        setNotice("已解锁 Alpha 测试渠道");
+        setNotice(t("已解锁 Alpha 测试渠道"));
       }).catch(() => { /* callIpc 已上报 */ });
       return;
     }
@@ -434,11 +446,11 @@ export function SettingsPanel({
   };
 
   const exitAlphaChannel = async () => {
-    const result = await callIpc(() => window.imageStudio.updates.setAlphaUnlocked(false), { fallbackError: "无法退出内测渠道", onError: setError });
+    const result = await callIpc(() => window.imageStudio.updates.setAlphaUnlocked(false), { fallbackError: t("无法退出内测渠道"), onError: setError });
     if (!result.ok) return;
     setAlphaUnlocked(false);
     if (result.channel) setUpdateChannel(result.channel);
-    setNotice("已退出内测渠道");
+    setNotice(t("已退出内测渠道"));
   };
 
   // 保存底栏的脏状态：草稿（providers/roles/autoArchive）与快照存在差异时提示未保存。
@@ -450,75 +462,75 @@ export function SettingsPanel({
   return (
     <section className="card settings" data-tutorial="connection-settings">
       <span className="eyebrow">CONNECTION & STORAGE</span>
-      <h2>连接设置</h2>
+      <h2>{t("连接设置")}</h2>
       <p className="muted">
-        支持添加多个符合当前请求格式的 OpenAI 兼容服务，并可为生图、图反推与提示词增强分别绑定模型。API 密钥仅保存到 Windows 凭据库，不会显示原文或写入项目文件。
+        {t("支持添加多个符合当前请求格式的 OpenAI 兼容服务，并可为生图、图反推与提示词增强分别绑定模型。API 密钥仅保存到 Windows 凭据库，不会显示原文或写入项目文件。")}
       </p>
       <section className="provider-block">
         <div className="provider-block-head">
           <div>
             <span className="eyebrow">PROVIDERS</span>
-            <h3>供应商</h3>
+            <h3>{t("供应商")}</h3>
           </div>
-          <button type="button" className="secondary" onClick={beginAdd}>+ 添加供应商</button>
+          <button type="button" className="secondary" onClick={beginAdd}>{t("+ 添加供应商")}</button>
         </div>
         {adding && (
           <div className="provider-card provider-card-new" data-provider-form="add">
             {presets.length > 0 && (
               // 双态切换：复用更新渠道分段控件的视觉（.update-channel-options）；只切模式，两态草稿互不清空。
-              <div className="update-channel-options" role="group" aria-label="添加方式">
-                <button type="button" className={effectiveAddMode === "preset" ? "active" : ""} onClick={() => setAddMode("preset")}>预设平台</button>
-                <button type="button" className={effectiveAddMode === "custom" ? "active" : ""} onClick={() => setAddMode("custom")}>自定义</button>
+              <div className="update-channel-options" role="group" aria-label={t("添加方式")}>
+                <button type="button" className={effectiveAddMode === "preset" ? "active" : ""} onClick={() => setAddMode("preset")}>{t("预设平台")}</button>
+                <button type="button" className={effectiveAddMode === "custom" ? "active" : ""} onClick={() => setAddMode("custom")}>{t("自定义|设置")}</button>
               </div>
             )}
             {effectiveAddMode === "preset" && selectedPreset ? (
               <>
-                <label>平台
+                <label>{t("平台")}
                   <Combobox
-                    ariaLabel="预设平台"
-                    placeholder="选择平台"
+                    ariaLabel={t("预设平台")}
+                    placeholder={t("选择平台")}
                     options={presets.map((item) => ({ value: item.id, label: item.label }))}
                     value={presetId}
                     onChange={setPresetId}
                   />
                 </label>
-                <label>API 密钥
+                <label>{t("API 密钥")}
                   <input
                     data-provider-field="presetApiKey"
                     type="password"
-                    placeholder="粘贴 API 密钥（可留空，稍后填写）"
+                    placeholder={t("粘贴 API 密钥（可留空，稍后填写）")}
                     value={presetApiKey}
                     onChange={(event) => setPresetApiKey(event.target.value)}
                   />
                 </label>
                 <p className="provider-meta">{selectedPreset.keyHelp}</p>
                 <div className="provider-form-actions">
-                  <button type="button" className="primary" onClick={confirmAddPreset}>添加</button>
-                  <button type="button" className="secondary" onClick={() => setAdding(false)}>取消</button>
+                  <button type="button" className="primary" onClick={confirmAddPreset}>{t("添加")}</button>
+                  <button type="button" className="secondary" onClick={() => setAdding(false)}>{t("取消")}</button>
                 </div>
               </>
             ) : (
               <>
-                <label>名称<input data-provider-field="name" placeholder="例如：主力平台" value={draftForm.name} onChange={(event) => setDraftForm((current) => ({ ...current, name: event.target.value }))} /></label>
-                <label>Base URL<input data-provider-field="baseUrl" placeholder="例如：https://api.example.com/v1" value={draftForm.baseUrl} onChange={(event) => setDraftForm((current) => ({ ...current, baseUrl: event.target.value }))} /></label>
-                <label>API 密钥
+                <label>{t("名称")}<input data-provider-field="name" placeholder={t("例如：主力平台")} value={draftForm.name} onChange={(event) => setDraftForm((current) => ({ ...current, name: event.target.value }))} /></label>
+                <label>Base URL<input data-provider-field="baseUrl" placeholder={t("例如：https://api.example.com/v1")} value={draftForm.baseUrl} onChange={(event) => setDraftForm((current) => ({ ...current, baseUrl: event.target.value }))} /></label>
+                <label>{t("API 密钥")}
                   <input
                     data-provider-field="apiKey"
                     type="password"
-                    placeholder="粘贴当前平台提供的 API 密钥"
+                    placeholder={t("粘贴当前平台提供的 API 密钥")}
                     value={draftForm.apiKey}
                     onChange={(event) => setDraftForm((current) => ({ ...current, apiKey: event.target.value }))}
                   />
                 </label>
                 <div className="provider-form-actions">
-                  <button type="button" className="primary" onClick={confirmAdd}>添加</button>
-                  <button type="button" className="secondary" onClick={() => setAdding(false)}>取消</button>
+                  <button type="button" className="primary" onClick={confirmAdd}>{t("添加")}</button>
+                  <button type="button" className="secondary" onClick={() => setAdding(false)}>{t("取消")}</button>
                 </div>
               </>
             )}
           </div>
         )}
-        {drafts.length === 0 && !adding && <p className="muted">尚未添加供应商。</p>}
+        {drafts.length === 0 && !adding && <p className="muted">{t("尚未添加供应商。")}</p>}
         {drafts.map((draft) => {
           const hasKey = Boolean(draft.apiKey) || serverHasKey.has(draft.id);
           // 模型面板过滤：大小写不敏感、空搜索 = 全部（同一结果集供批量按钮使用，D11）。
@@ -529,57 +541,59 @@ export function SettingsPanel({
               <div className="provider-card-head">
                 <div className="provider-card-title">
                   <strong>{draft.name}</strong>
-                  {hasKey ? <span className="key-badge ok">已保存密钥</span> : <span className="key-badge missing">缺少密钥</span>}
+                  {hasKey ? <span className="key-badge ok">{t("已保存密钥")}</span> : <span className="key-badge missing">{t("缺少密钥")}</span>}
                 </div>
                 <div className="provider-card-actions">
-                  <button type="button" className="secondary" onClick={() => beginEdit(draft)}>编辑</button>
-                  <Tooltip content="测试连接与刷新模型不会保存任何数据：未保存的新密钥只用于当次请求，不写入凭据库。">
-                    <button type="button" className="secondary" onClick={() => void runProviderCheck(draft, "test")}>测试连接</button>
+                  <button type="button" className="secondary" onClick={() => beginEdit(draft)}>{t("编辑")}</button>
+                  <Tooltip content={t("测试连接与刷新模型不会保存任何数据：未保存的新密钥只用于当次请求，不写入凭据库。")}>
+                    <button type="button" className="secondary" onClick={() => void runProviderCheck(draft, "test")}>{t("测试连接")}</button>
                   </Tooltip>
-                  <button type="button" className="secondary" onClick={() => void runProviderCheck(draft, "refresh")}>刷新模型</button>
-                  <button type="button" className="secondary" onClick={() => setExpandedModelsId((current) => (current === draft.id ? null : draft.id))}>模型</button>
-                  <button type="button" className="secondary" onClick={() => void removeProvider(draft)}>删除</button>
+                  <button type="button" className="secondary" onClick={() => void runProviderCheck(draft, "refresh")}>{t("刷新模型")}</button>
+                  <button type="button" className="secondary" onClick={() => setExpandedModelsId((current) => (current === draft.id ? null : draft.id))}>{t("模型")}</button>
+                  <button type="button" className="secondary" onClick={() => void removeProvider(draft)}>{t("删除|供应商")}</button>
                 </div>
               </div>
               <code>{draft.baseUrl}</code>
               <p className="provider-meta">
-                {draft.models.length} 个模型{draft.modelsUpdatedAt ? ` · 更新于 ${formatDateTime(draft.modelsUpdatedAt)}` : ""}
+                {draft.modelsUpdatedAt
+                  ? t("{n} 个模型 · 更新于 {time}", { n: draft.models.length, time: formatDateTime(draft.modelsUpdatedAt) })
+                  : t("{n} 个模型", { n: draft.models.length })}
               </p>
               {expandedModelsId === draft.id && (
                 <div className="model-role-block">
                   <div className="model-role-head">
                     <input
                       className="model-search"
-                      placeholder="搜索模型"
+                      placeholder={t("搜索模型")}
                       value={modelSearch[draft.id] ?? ""}
                       onChange={(event) => setModelSearch((current) => ({ ...current, [draft.id]: event.target.value }))}
                     />
-                    <button type="button" onClick={() => void runProviderCheck(draft, "refresh")}>刷新模型</button>
-                    <button type="button" onClick={() => void addCustomModel(draft)}>+ 自定义模型</button>
+                    <button type="button" onClick={() => void runProviderCheck(draft, "refresh")}>{t("刷新模型")}</button>
+                    <button type="button" onClick={() => void addCustomModel(draft)}>{`+ ${t("自定义模型")}`}</button>
                   </div>
                   <div className="model-bulk">
-                    批量（作用于搜索结果）：
+                    {t("批量（作用于搜索结果）：")}
                     {MODEL_ROLES.map((role) => (
                       <span key={role} className="model-bulk-group">
-                        <button type="button" onClick={() => bulkSetRole(draft.id, role)}>设为 {modelRoleLabel(role)}</button>
-                        <button type="button" onClick={() => bulkClearRole(draft.id, role)}>清除 {modelRoleLabel(role)}</button>
+                        <button type="button" onClick={() => bulkSetRole(draft.id, role)}>{t("设为 {role}", { role: modelRoleLabel(role) })}</button>
+                        <button type="button" onClick={() => bulkClearRole(draft.id, role)}>{t("清除 {role}", { role: modelRoleLabel(role) })}</button>
                       </span>
                     ))}
                   </div>
                   <div className="model-list">
-                    {filteredModels.length === 0 && <p className="model-empty">无匹配模型</p>}
+                    {filteredModels.length === 0 && <p className="model-empty">{t("无匹配模型")}</p>}
                     {filteredModels.map((model) => (
                       <div className={"model-row" + (model.missing ? " missing" : "")} key={model.id}>
                         <span className="model-id">{model.id}</span>
-                        {model.source === "custom" && <span className="model-custom">自定义</span>}
-                        {model.missing && <span className="model-missing">已下线</span>}
+                        {model.source === "custom" && <span className="model-custom">{t("自定义|设置")}</span>}
+                        {model.missing && <span className="model-missing">{t("已下线")}</span>}
                         {MODEL_ROLES.map((role) => (
                           <label key={role} className="model-role-check">
                             <input type="checkbox" checked={model.roles.includes(role)} onChange={() => toggleModelRole(draft.id, model.id, role)} /> {modelRoleLabel(role)}
                           </label>
                         ))}
                         {model.source === "custom" && (
-                          <button type="button" className="model-remove" onClick={() => void removeCustomModel(draft.id, model.id)}>删除</button>
+                          <button type="button" className="model-remove" onClick={() => void removeCustomModel(draft.id, model.id)}>{t("删除|供应商")}</button>
                         )}
                       </div>
                     ))}
@@ -588,20 +602,20 @@ export function SettingsPanel({
               )}
               {expandedId === draft.id && (
                 <div className="provider-form" data-provider-form="edit">
-                  <label>名称<input data-provider-field="name" value={draftForm.name} onChange={(event) => setDraftForm((current) => ({ ...current, name: event.target.value }))} /></label>
+                  <label>{t("名称")}<input data-provider-field="name" value={draftForm.name} onChange={(event) => setDraftForm((current) => ({ ...current, name: event.target.value }))} /></label>
                   <label>Base URL<input data-provider-field="baseUrl" value={draftForm.baseUrl} onChange={(event) => setDraftForm((current) => ({ ...current, baseUrl: event.target.value }))} /></label>
-                  <label>API 密钥
+                  <label>{t("API 密钥")}
                     <input
                       data-provider-field="apiKey"
                       type="password"
-                      placeholder="已保存，输入新值可覆盖"
+                      placeholder={t("已保存，输入新值可覆盖")}
                       value={draftForm.apiKey}
                       onChange={(event) => setDraftForm((current) => ({ ...current, apiKey: event.target.value }))}
                     />
                   </label>
                   <div className="provider-form-actions">
-                    <button type="button" className="primary" onClick={() => finishEdit(draft.id)}>完成</button>
-                    <button type="button" className="secondary" onClick={cancelEdit}>取消</button>
+                    <button type="button" className="primary" onClick={() => finishEdit(draft.id)}>{t("完成")}</button>
+                    <button type="button" className="secondary" onClick={cancelEdit}>{t("取消")}</button>
                   </div>
                 </div>
               )}
@@ -615,45 +629,45 @@ export function SettingsPanel({
       <section className="role-binding-block">
         <div>
           <span className="eyebrow">MODEL ASSIGNMENT</span>
-          <h3>模型分配<InfoHint content="为生图、图反推、提示词增强分别选择供应商与模型；只显示已标注该角色的模型。" /></h3>
+          <h3>{t("模型分配")}<InfoHint content={t("为生图、图反推、提示词增强分别选择供应商与模型；只显示已标注该角色的模型。")} /></h3>
         </div>
         {MODEL_ROLES.map((role) => (
           <div className="role-binding-row" key={role}>
             <span className="role-label">{modelRoleLabel(role)}</span>
             <Combobox
-              ariaLabel={`${modelRoleLabel(role)}供应商`}
+              ariaLabel={t("{role}供应商", { role: modelRoleLabel(role) })}
               className="role-provider"
-              placeholder="未分配"
+              placeholder={t("未分配")}
               options={roleProviderOptions(drafts, rolesDraft[role])}
               value={rolesDraft[role]?.providerId ?? ""}
               onChange={(value) => setRoleProvider(role, value)}
             />
             <Combobox
-              ariaLabel={`${modelRoleLabel(role)}模型`}
+              ariaLabel={t("{role}模型", { role: modelRoleLabel(role) })}
               className="role-model"
-              placeholder={rolesDraft[role] ? "选择模型" : "未分配"}
+              placeholder={rolesDraft[role] ? t("选择模型") : t("未分配")}
               options={roleModelOptions(drafts, rolesDraft[role], role)}
               value={rolesDraft[role]?.model ?? ""}
               disabled={!rolesDraft[role]}
               onChange={(value) => setRoleModel(role, value)}
             />
-            {rolesDraft[role] && <button type="button" className="role-clear" onClick={() => clearRole(role)}>清除</button>}
+            {rolesDraft[role] && <button type="button" className="role-clear" onClick={() => clearRole(role)}>{t("清除")}</button>}
           </div>
         ))}
       </section>
       <label className="archive-toggle">
         <input type="checkbox" checked={autoArchiveDraft} onChange={(event) => setAutoArchiveDraft(event.target.checked)} />
-        自动归档生成图片到本地图库与收件箱
+        {t("自动归档生成图片到本地图库与收件箱")}
       </label>
       {saveDir && <div className="storage-path">
         <div className="storage-head">
-          <strong>本地保存位置</strong>
+          <strong>{t("本地保存位置")}</strong>
           <div className="storage-actions">
-            <Tooltip content="新图片、自动图库和导出文件将使用此位置；切换目录不会移动或删除原目录中的文件。">
-              <button type="button" onClick={() => void chooseSaveDirectory()}>选择文件夹</button>
+            <Tooltip content={t("新图片、自动图库和导出文件将使用此位置；切换目录不会移动或删除原目录中的文件。")}>
+              <button type="button" onClick={() => void chooseSaveDirectory()}>{t("选择文件夹")}</button>
             </Tooltip>
-            <button type="button" onClick={() => void openSaveDirectory()}>打开目录</button>
-            <button type="button" onClick={() => void resetSaveDirectory()}>恢复默认</button>
+            <button type="button" onClick={() => void openSaveDirectory()}>{t("打开目录")}</button>
+            <button type="button" onClick={() => void resetSaveDirectory()}>{t("恢复默认")}</button>
           </div>
         </div>
         <code>{saveDir}</code>
@@ -662,9 +676,9 @@ export function SettingsPanel({
       <section className="update-settings">
         <div>
           <span className="eyebrow">LANGUAGE</span>
-          <h3>语言 / Language</h3>
+          <h3>{t("语言 / Language")}</h3>
         </div>
-        <div className="update-channel-options" role="group" aria-label="语言 / Language">
+        <div className="update-channel-options" role="group" aria-label={t("语言 / Language")}>
           <button
             type="button"
             className={locale === "zh" ? "active" : ""}
@@ -687,63 +701,63 @@ export function SettingsPanel({
       <section className="update-settings">
         <div>
           <span className="eyebrow">APPLICATION UPDATE</span>
-          <h3>软件更新</h3>
-          <p onClick={handleVersionClick}>当前版本：v{appVersion || "—"}。</p>
+          <h3>{t("软件更新")}</h3>
+          <p onClick={handleVersionClick}>{t("当前版本：v{version}。", { version: appVersion || "—" })}</p>
         </div>
         <div className="update-channel">
-          <span className="update-channel-label">更新渠道</span>
+          <span className="update-channel-label">{t("更新渠道")}</span>
           <div className={alphaUnlocked ? "update-channel-options alpha-unlocked" : "update-channel-options"}>
-            <button type="button" className={updateChannel === "stable" ? "active" : ""} onClick={() => void setUpdateChannelPreference("stable")}>正式版</button>
-            <button type="button" className={updateChannel === "beta" ? "active" : ""} onClick={() => void setUpdateChannelPreference("beta")}>测试版 Beta</button>
-            {alphaUnlocked && <button type="button" className={updateChannel === "alpha" ? "active" : ""} onClick={() => void setUpdateChannelPreference("alpha")}>Alpha 测试版</button>}
+            <button type="button" className={updateChannel === "stable" ? "active" : ""} onClick={() => void setUpdateChannelPreference("stable")}>{t("正式版")}</button>
+            <button type="button" className={updateChannel === "beta" ? "active" : ""} onClick={() => void setUpdateChannelPreference("beta")}>{t("测试版 Beta")}</button>
+            {alphaUnlocked && <button type="button" className={updateChannel === "alpha" ? "active" : ""} onClick={() => void setUpdateChannelPreference("alpha")}>{t("Alpha 测试版")}</button>}
           </div>
-          {alphaUnlocked && <button type="button" className="update-alpha-exit" onClick={() => void exitAlphaChannel()}>退出内测</button>}
+          {alphaUnlocked && <button type="button" className="update-alpha-exit" onClick={() => void exitAlphaChannel()}>{t("退出内测")}</button>}
         </div>
-        <Tooltip content="开启自动更新后会在后台检查并下载新版本，安装前仍会询问，不会强制重启；关闭后仅在你手动检查时提示下载。">
+        <Tooltip content={t("开启自动更新后会在后台检查并下载新版本，安装前仍会询问，不会强制重启；关闭后仅在你手动检查时提示下载。")}>
           <label className="archive-toggle">
             <input type="checkbox" checked={autoUpdate} onChange={(event) => void setAutoUpdatePreference(event.target.checked)} />
-            自动检查并在后台下载更新（安装前询问）
+            {t("自动检查并在后台下载更新（安装前询问）")}
           </label>
         </Tooltip>
         <div className="update-actions">
           <button className="secondary" onClick={() => void checkUpdates()} disabled={updateStatus.phase === "checking"}>
-            {updateStatus.phase === "checking" ? "检查中…" : "检查更新"}
+            {updateStatus.phase === "checking" ? t("检查中…") : t("检查更新")}
           </button>
-          {updateStatus.phase === "available" && <button className="primary" onClick={() => void downloadUpdate()}>下载 v{updateStatus.version}</button>}
-          {updateStatus.phase === "downloading" && <span className="update-progress">下载中 {updateStatus.progress || 0}%</span>}
-          {updateStatus.phase === "downloaded" && <button className="primary" onClick={() => void installUpdate()}>重启并安装 v{updateStatus.version}</button>}
+          {updateStatus.phase === "available" && <button className="primary" onClick={() => void downloadUpdate()}>{t("下载 v{version}", { version: updateStatus.version ?? "" })}</button>}
+          {updateStatus.phase === "downloading" && <span className="update-progress">{t("下载中 {progress}%", { progress: updateStatus.progress || 0 })}</span>}
+          {updateStatus.phase === "downloaded" && <button className="primary" onClick={() => void installUpdate()}>{t("重启并安装 v{version}", { version: updateStatus.version ?? "" })}</button>}
         </div>
         <p className={updateStatus.phase === "error" ? "update-status error-text" : "update-status"}>{updateStatus.message}</p>
       </section>
       <section className="update-settings">
         <div>
           <span className="eyebrow">INTERFACE ZOOM</span>
-          <h3>界面缩放</h3>
-          <p>当前缩放：{Math.round(zoomFactor * 100)}%。</p>
+          <h3>{t("界面缩放")}</h3>
+          <p>{t("当前缩放：{n}%。", { n: Math.round(zoomFactor * 100) })}</p>
         </div>
-        <Tooltip content="调整整个界面的缩放比例，范围为 50%–200%。">
+        <Tooltip content={t("调整整个界面的缩放比例，范围为 50%–200%。")}>
           <div className="update-actions">
-            <button type="button" className="secondary" onClick={() => applyZoom(Math.max(0.5, Number((zoomFactor - 0.1).toFixed(2))))}>缩小</button>
-            <button type="button" className="secondary" onClick={() => applyZoom(1)}>重置</button>
-            <button type="button" className="secondary" onClick={() => applyZoom(Math.min(2, Number((zoomFactor + 0.1).toFixed(2))))}>放大</button>
+            <button type="button" className="secondary" onClick={() => applyZoom(Math.max(0.5, Number((zoomFactor - 0.1).toFixed(2))))}>{t("缩小")}</button>
+            <button type="button" className="secondary" onClick={() => applyZoom(1)}>{t("重置")}</button>
+            <button type="button" className="secondary" onClick={() => applyZoom(Math.min(2, Number((zoomFactor + 0.1).toFixed(2))))}>{t("放大")}</button>
           </div>
         </Tooltip>
       </section>
       <section className="update-settings">
         <div>
           <span className="eyebrow">ABOUT & HELP</span>
-          <h3>关于与帮助</h3>
-          <p>本地 OpenAI 兼容图片创作工具，支持自定义基础地址、模型、文生图、图片编辑和常用输出尺寸。</p>
-          <p>Copyright (C) 2026 zztnbnb。本项目以 GNU Affero General Public License v3.0 only 发布，不提供任何担保。</p>
+          <h3>{t("关于与帮助")}</h3>
+          <p>{t("本地 OpenAI 兼容图片创作工具，支持自定义基础地址、模型、文生图、图片编辑和常用输出尺寸。")}</p>
+          <p>{t("Copyright (C) 2026 zztnbnb。本项目以 GNU Affero General Public License v3.0 only 发布，不提供任何担保。")}</p>
         </div>
         <div className="update-actions">
-          <button type="button" className="secondary" onClick={onOpenTutorial}>打开新手教程</button>
-          <a href="https://github.com/zztnbnb/image-studio/blob/main/LICENSE" target="_blank" rel="noreferrer" className="secondary">查看许可证与源代码</a>
+          <button type="button" className="secondary" onClick={onOpenTutorial}>{t("打开新手教程")}</button>
+          <a href="https://github.com/zztnbnb/image-studio/blob/main/LICENSE" target="_blank" rel="noreferrer" className="secondary">{t("查看许可证与源代码")}</a>
         </div>
       </section>
       <div className="settings-dock">
-        <button className="primary" onClick={() => void saveSettings()} disabled={saving}>{saving ? "保存中…" : "保存设置"}</button>
-        <span className="save-note">{saving ? "正在保存…" : settingsDirty ? "有未保存的更改" : "所有更改已保存"}</span>
+        <button className="primary" onClick={() => void saveSettings()} disabled={saving}>{saving ? t("保存中…") : t("保存设置")}</button>
+        <span className="save-note">{saving ? t("正在保存…") : settingsDirty ? t("有未保存的更改") : t("所有更改已保存")}</span>
       </div>
     </section>
   );
