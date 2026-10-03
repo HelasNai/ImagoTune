@@ -1056,7 +1056,7 @@ app.whenReady().then(async () => {
       if (providerId) {
         const current = getModelConfigCache();
         const provider = current ? findProvider(current, providerId) : undefined;
-        if (!provider) return { ok: false, message: "供应商不存在" };
+        if (!provider) return { ok: false, message: "供应商不存在", code: "test.noProvider" };
         baseUrl = provider.baseUrl;
         // 混元（K2）不实现 listModels，这里仍读取 api 并由 modelListPath 统一映射到平台级 /models。
         api = provider.api ?? "openai";
@@ -1072,22 +1072,22 @@ app.whenReady().then(async () => {
         )) {
           // 无 providerId、当前 image 绑定不可解析、且 transient 不完整时才报未配置；
           // 完整 transient（未保存的新供应商）直接由下方覆盖逻辑承接，不依赖绑定。
-          return { ok: false, message: "尚未配置" };
+          return { ok: false, message: "尚未配置", code: "test.notConfigured" };
         }
       }
       if (typeof input?.transient?.baseUrl === "string" && input.transient.baseUrl.trim()) baseUrl = input.transient.baseUrl.trim();
       if (typeof input?.transient?.apiKey === "string" && input.transient.apiKey.trim()) apiKey = input.transient.apiKey.trim();
-      if (!apiKey) return { ok: false, message: "尚未配置 API 密钥" };
+      if (!apiKey) return { ok: false, message: "尚未配置 API 密钥", code: "test.noKey" };
       let parsed: URL;
-      try { parsed = new URL(baseUrl); } catch { return { ok: false, message: "API Base URL 格式无效" }; }
-      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return { ok: false, message: "API Base URL 仅支持 http/https" };
+      try { parsed = new URL(baseUrl); } catch { return { ok: false, message: "API Base URL 格式无效", code: "test.badBaseUrl" }; }
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return { ok: false, message: "API Base URL 仅支持 http/https", code: "test.scheme" };
       const response = await fetch(joinBase(baseUrl, modelListPath(api)), { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(20_000) });
-      if (!response.ok) return { ok: false, message: `接口返回 ${response.status}` };
+      if (!response.ok) return { ok: false, message: `接口返回 ${response.status}`, code: "test.http", params: { status: response.status } };
       let models: string[] = [];
       try { models = parseModelsResponse(await response.json()); } catch { models = []; }
-      return { ok: true, message: "连接成功", models };
+      return { ok: true, message: "连接成功", code: "test.ok", models };
     } catch (error) {
-      return { ok: false, message: errorMessage(error, "连接失败") };
+      return { ok: false, message: errorMessage(error, "连接失败"), code: "test.network" };
     }
   });
   ipcMain.handle(LOCAL_AI_CAPABILITIES, async () => ({

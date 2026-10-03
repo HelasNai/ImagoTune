@@ -310,6 +310,16 @@ export interface SettingsTestInput {
 export interface SettingsTestResult {
   ok: boolean;
   message: string;
+  code?:
+    | "test.ok"
+    | "test.noProvider"
+    | "test.notConfigured"
+    | "test.noKey"
+    | "test.badBaseUrl"
+    | "test.scheme"
+    | "test.http"
+    | "test.network";
+  params?: { status?: number };
   models?: string[];
 }
 
