@@ -47,7 +47,14 @@ const supportsViewTransition = typeof (document as Document & { startViewTransit
 
 function App() {
   // 订阅 i18n 单例：语言切换后重渲染整个壳层，导航/header/灯箱/通知文案即时更新（t() 在渲染期求值）。
-  useLocale();
+  const [locale] = useLocale();
+  // 同步 <html lang>：初始化挂载与 setLocale 后各生效一次（zh → "zh-CN"、en → "en"）。
+  // index.html 的 lang="zh-CN" 仅作构建默认，运行时（持久化 locale 到达后）立即校正。
+  // 选择在 App 壳层做（而非 useLocale 内部）：App 是唯一常驻根、useLocale 已有返回值，
+  // DOM 副作用集中一处、i18n 核心模块保持纯逻辑。切换语言后 App 必重渲染 → 该 effect 重跑。
+  useEffect(() => {
+    document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
+  }, [locale]);
   const initialTutorial = useMemo(() => parseTutorialState(window.localStorage.getItem(TUTORIAL_STORAGE_KEY)), []);
   const appRef = useRef<HTMLDivElement | null>(null);
   const [mode, setModeState] = useState<Mode>("generate");
