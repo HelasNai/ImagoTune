@@ -4,6 +4,7 @@ import { INBOX_PROJECT_ID } from "../lib/constants";
 import { formatTags } from "../lib/format";
 import { resolveFocusLocation } from "../lib/gallery-focus";
 import { b64ToDataUrl } from "../lib/media";
+import { t } from "../lib/i18n";
 import type { LocalAIAction } from "./LocalAIToolbox";
 import { useDialog } from "./Dialogs";
 import { callIpc } from "./ipc";
@@ -87,7 +88,7 @@ export function GalleryWorkspace({
   const refresh = useCallback(async (targetPage = page) => {
     const seq = ++refreshSeqRef.current;
     try {
-      const workspace = await callIpc(() => window.imageStudio.gallery.workspace(), { fallbackError: "图库读取失败" });
+      const workspace = await callIpc(() => window.imageStudio.gallery.workspace(), { fallbackError: t("图库读取失败") });
       setProjects(workspace.projects || []);
       const allItems = workspace.items || [];
       setAvailableSizes([...new Set(allItems.map((item) => item.recipe.size).filter(Boolean))].sort());
@@ -103,7 +104,7 @@ export function GalleryWorkspace({
         sort,
         page: targetPage,
         pageSize: GALLERY_PAGE_SIZE,
-      }), { fallbackError: "图库读取失败" });
+      }), { fallbackError: t("图库读取失败") });
       // 过期保护：page 0 是「替换」语义（挂载 / 筛选重置），只有它仍是最新一次刷新时才允许应用——
       // 否则聚焦跳页期间晚到的第 0 页响应会把目标页覆盖掉；page>0 是「加载更多」的累加语义，保持原样。
       if (targetPage === 0 && seq !== refreshSeqRef.current) return;
@@ -116,7 +117,7 @@ export function GalleryWorkspace({
       });
       setTotal(result.total || 0);
     } catch (cause) {
-      onNotice("图库读取失败：" + ((cause as Error).message || "请检查本地保存目录"), true);
+      onNotice(t("图库读取失败：{message}", { message: (cause as Error).message || t("请检查本地保存目录") }), true);
     }
   }, [activeProject, favoriteOnly, page, query, resolutionFilter, seedFilter, sizeFilter, sort, tag]);
 
@@ -159,24 +160,24 @@ export function GalleryWorkspace({
       // 悬空 id（已删除 / 图库重建为全新 uuid）一律优雅降级：提示 + 消费，绝不抛出。
       let exists = false;
       try {
-        const response = await callIpc(() => window.imageStudio.gallery.loadImage(focusImageId), { fallbackError: "图片不存在或已被删除" });
+        const response = await callIpc(() => window.imageStudio.gallery.loadImage(focusImageId), { fallbackError: t("图片不存在或已被删除") });
         exists = response.ok !== false;
       } catch { /* callIpc 已抛出结构化错误，按不存在处理 */ }
       if (!active) return;
       if (!exists) {
-        onNotice("图片不存在或已被删除", true);
+        onNotice(t("图片不存在或已被删除"), true);
         consumeFocus(focusImageId);
         return;
       }
       // 用全量（未分页）数据定位：页码 = 目标在「所属项目自身列表」中的位置换算（1 基）。
       let location: { projectId: string; page: number } | null = null;
       try {
-        const workspace = await callIpc(() => window.imageStudio.gallery.workspace(), { fallbackError: "图库读取失败", onError: (message) => onNotice(message, true) });
+        const workspace = await callIpc(() => window.imageStudio.gallery.workspace(), { fallbackError: t("图库读取失败"), onError: (message) => onNotice(message, true) });
         location = resolveFocusLocation(workspace.items || [], focusImageId, GALLERY_PAGE_SIZE, focusEnvRef.current.sort);
       } catch { /* callIpc 已上报 */ }
       if (!active) return;
       if (!location) {
-        onNotice("图片不存在或已被删除", true);
+        onNotice(t("图片不存在或已被删除"), true);
         consumeFocus(focusImageId);
         return;
       }
@@ -246,7 +247,7 @@ export function GalleryWorkspace({
     const missing = items.filter((item) => !thumbs[item.id]);
     if (!missing.length) return () => { active = false; };
     void Promise.all(missing.map(async (item) => {
-      const response = await callIpc(() => window.imageStudio.gallery.thumbnail(item.id), { fallbackError: "缩略图加载失败", onError: (message) => onNotice(message, true) });
+      const response = await callIpc(() => window.imageStudio.gallery.thumbnail(item.id), { fallbackError: t("缩略图加载失败"), onError: (message) => onNotice(message, true) });
       return [item.id, response.b64 || ""] as const;
     })).then((values) => {
       if (!active) return;
@@ -283,7 +284,7 @@ export function GalleryWorkspace({
 
   // open / openLocalAI 共用同一段「按 id 读取图片 → 交给对应消费者」逻辑，避免逐字复制。
   const loadAndOpen = async (item: GalleryItem, consume: (b64: string) => void) => {
-    const response = await callIpc(() => window.imageStudio.gallery.loadImage(item.id), { fallbackError: "无法读取图片", onError: (message) => onNotice(message, true) });
+    const response = await callIpc(() => window.imageStudio.gallery.loadImage(item.id), { fallbackError: t("无法读取图片|图库"), onError: (message) => onNotice(message, true) });
     if (response.b64) consume(response.b64);
   };
 
@@ -295,50 +296,50 @@ export function GalleryWorkspace({
   const openLocally = (item: GalleryItem, mode: "open" | "reveal") => {
     void callIpc(
       () => window.imageStudio.gallery.openLocal(item.id, mode),
-      { fallbackError: mode === "reveal" ? "无法定位文件" : "无法打开文件", onError: (message) => onNotice(message, true) },
+      { fallbackError: mode === "reveal" ? t("无法定位文件") : t("无法打开文件"), onError: (message) => onNotice(message, true) },
     ).catch(() => { /* callIpc 已上报 */ });
   };
 
   const createProject = async () => {
-    const response = await callIpc(() => window.imageStudio.projects.create(newProject), { fallbackError: "创建项目失败", onError: (message) => onNotice(message, true) });
+    const response = await callIpc(() => window.imageStudio.projects.create(newProject), { fallbackError: t("创建项目失败"), onError: (message) => onNotice(message, true) });
     if (!response.ok) return;
     setNewProject("");
     await refresh(0);
-    onNotice("项目已创建");
+    onNotice(t("项目已创建"));
     onChanged?.();
   };
 
   const renameProject = async (project: GalleryProject) => {
-    const name = await requestText({ title: "重命名项目", message: "输入新的项目名称", defaultValue: project.name, confirmLabel: "重命名" });
+    const name = await requestText({ title: t("重命名项目"), message: t("输入新的项目名称"), defaultValue: project.name, confirmLabel: t("重命名|图库") });
     if (!name?.trim()) return;
-    const response = await callIpc(() => window.imageStudio.projects.rename(project.id, name), { fallbackError: "重命名失败", onError: (message) => onNotice(message, true) });
+    const response = await callIpc(() => window.imageStudio.projects.rename(project.id, name), { fallbackError: t("重命名失败"), onError: (message) => onNotice(message, true) });
     if (response.ok) {
-      onNotice("项目已重命名");
+      onNotice(t("项目已重命名"));
       onChanged?.();
     }
     await refresh(0);
   };
 
   const deleteProject = async (project: GalleryProject) => {
-    if (!(await requestConfirm({ title: "删除项目", message: "删除项目后，其中图片会回到收件箱，确定继续吗？", confirmLabel: "删除", danger: true }))) return;
-    const response = await callIpc(() => window.imageStudio.projects.delete(project.id), { fallbackError: "删除失败", onError: (message) => onNotice(message, true) });
+    if (!(await requestConfirm({ title: t("删除项目"), message: t("删除项目后，其中图片会回到收件箱，确定继续吗？"), confirmLabel: t("删除|图库"), danger: true }))) return;
+    const response = await callIpc(() => window.imageStudio.projects.delete(project.id), { fallbackError: t("删除失败|图库"), onError: (message) => onNotice(message, true) });
     if (activeProject === project.id) setActiveProject("all");
     if (response.ok) {
-      onNotice("项目已删除，图片已移回收件箱");
+      onNotice(t("项目已删除，图片已移回收件箱"));
       onChanged?.();
     }
     await refresh(0);
   };
 
   const updateMetadata = async (item: GalleryItem) => {
-    const title = await requestText({ title: "编辑图片标题", defaultValue: item.title });
+    const title = await requestText({ title: t("编辑图片标题"), defaultValue: item.title });
     if (title === null) return;
-    const tags = await requestText({ title: "编辑标签", message: "用逗号分隔", defaultValue: formatTags(item.recipe.tags) });
+    const tags = await requestText({ title: t("编辑标签"), message: t("用逗号分隔"), defaultValue: formatTags(item.recipe.tags) });
     const response = await callIpc(() => window.imageStudio.gallery.update(item.id, {
       title,
       tags: tags === null ? item.recipe.tags : parseTags(tags),
-    }), { fallbackError: "更新失败", onError: (message) => onNotice(message, true) });
-    if (response.ok) onNotice("图片信息已更新");
+    }), { fallbackError: t("更新失败|图库"), onError: (message) => onNotice(message, true) });
+    if (response.ok) onNotice(t("图片信息已更新"));
     await refresh(0);
   };
 
@@ -348,13 +349,13 @@ export function GalleryWorkspace({
   ) => {
     const ids = [...selected];
     if (!ids.length) {
-      onNotice("请先选择图片");
+      onNotice(t("请先选择图片"));
       return;
     }
-    if (action === "delete" && !(await requestConfirm({ title: "删除所选图片", message: "删除所选图片及原始 PNG 文件吗？", confirmLabel: "删除", danger: true }))) return;
-    const response = await callIpc(() => window.imageStudio.gallery.bulk({ ids, action, ...extra }), { fallbackError: "操作失败", onError: (message) => onNotice(message, true) });
+    if (action === "delete" && !(await requestConfirm({ title: t("删除所选图片"), message: t("删除所选图片及原始 PNG 文件吗？"), confirmLabel: t("删除|图库"), danger: true }))) return;
+    const response = await callIpc(() => window.imageStudio.gallery.bulk({ ids, action, ...extra }), { fallbackError: t("操作失败|图库"), onError: (message) => onNotice(message, true) });
     if (response.ok) {
-      onNotice("已处理 " + String(response.count || ids.length) + " 张图片");
+      onNotice(t("已处理 {n} 张图片", { n: response.count || ids.length }));
       setSelected(new Set());
       // 收藏不改项目归属；移动/删除/批量标签会改变侧栏计数或缩略图，需刷新侧栏项目树。
       if (action !== "favorite") onChanged?.();
@@ -364,21 +365,21 @@ export function GalleryWorkspace({
 
   const exportZip = async () => {
     if (!selected.size) {
-      onNotice("请先选择需要导出的图片");
+      onNotice(t("请先选择需要导出的图片"));
       return;
     }
-    const response = await callIpc(() => window.imageStudio.gallery.exportZip([...selected]), { fallbackError: "导出失败", onError: (message) => onNotice(message, true) });
-    if (response.ok && !response.canceled) onNotice("ZIP 已导出：" + (response.path || ""));
+    const response = await callIpc(() => window.imageStudio.gallery.exportZip([...selected]), { fallbackError: t("导出失败|图库"), onError: (message) => onNotice(message, true) });
+    if (response.ok && !response.canceled) onNotice(t("ZIP 已导出：{path}", { path: response.path || "" }));
   };
 
   const compareSelected = async () => {
     const candidates = items.filter((item) => selected.has(item.id)).slice(0, 4);
     if (candidates.length < 2) {
-      onNotice("请至少选择两张图片进行对比");
+      onNotice(t("请至少选择两张图片进行对比"));
       return;
     }
     const results = await Promise.all(candidates.map(async (item) => {
-      const response = await callIpc(() => window.imageStudio.gallery.loadImage(item.id), { fallbackError: "无法读取图片", onError: (message) => onNotice(message, true) });
+      const response = await callIpc(() => window.imageStudio.gallery.loadImage(item.id), { fallbackError: t("无法读取图片|图库"), onError: (message) => onNotice(message, true) });
       return { item, b64: response.b64 || "" };
     }));
     setCompare(results.filter((value) => Boolean(value.b64)));
@@ -386,11 +387,11 @@ export function GalleryWorkspace({
 
   const setCover = async (item: GalleryItem) => {
     if (item.recipe.projectId === INBOX_PROJECT_ID) {
-      onNotice("收件箱没有项目封面，请先把图片移入一个项目");
+      onNotice(t("收件箱没有项目封面，请先把图片移入一个项目"));
       return;
     }
-    const response = await callIpc(() => window.imageStudio.projects.setCover(item.recipe.projectId, item.id), { fallbackError: "设置失败", onError: (message) => onNotice(message, true) });
-    if (response.ok) onNotice("已设为项目封面");
+    const response = await callIpc(() => window.imageStudio.projects.setCover(item.recipe.projectId, item.id), { fallbackError: t("设置失败|图库"), onError: (message) => onNotice(message, true) });
+    if (response.ok) onNotice(t("已设为项目封面"));
     await refresh(0);
   };
 
@@ -398,15 +399,15 @@ export function GalleryWorkspace({
     <section className="gallery-workbench" data-tutorial="gallery-workspace">
       <section className="workspace-sidebar">
         <span className="eyebrow">PROJECTS</span>
-        <h3>创作项目</h3>
+        <h3>{t("创作项目")}</h3>
         <div className="project-list">
           <div className={activeProject === "all" ? "project-row active" : "project-row"}>
-            <button onClick={() => setActiveProject("all")}>全部图库</button>
+            <button onClick={() => setActiveProject("all")}>{t("全部图库")}</button>
           </div>
           {projects.map((project) => (
             <div className={activeProject === project.id ? "project-row active" : "project-row"} key={project.id}>
               <button onClick={() => setActiveProject(project.id)}>
-                {project.name}{project.id === INBOX_PROJECT_ID ? "（收件箱）" : ""}
+                {project.name}{project.id === INBOX_PROJECT_ID ? t("（收件箱）") : ""}
               </button>
               {project.id !== INBOX_PROJECT_ID && (
                 <>
@@ -421,10 +422,10 @@ export function GalleryWorkspace({
           <input
             value={newProject}
             onChange={(event) => setNewProject(event.target.value)}
-            placeholder="新项目名称"
+            placeholder={t("新项目名称")}
             onKeyDown={(event) => { if (event.key === "Enter") void createProject(); }}
           />
-          <button onClick={() => void createProject()}>新建项目</button>
+          <button onClick={() => void createProject()}>{t("新建项目")}</button>
         </div>
       </section>
 
@@ -432,72 +433,72 @@ export function GalleryWorkspace({
         <div className="section-head">
           <div>
             <span className="eyebrow">LOCAL LIBRARY</span>
-            <h2>{activeProject === "all" ? "本地图库" : projectName.get(activeProject) || "项目图库"}</h2>
-            <small>图片原文件始终保存在本地；删除项目只会将图片移回收件箱。</small>
+            <h2>{activeProject === "all" ? t("本地图库") : projectName.get(activeProject) || t("项目图库")}</h2>
+            <small>{t("图片原文件始终保存在本地；删除项目只会将图片移回收件箱。")}</small>
           </div>
-          <span className="muted">{total} 张</span>
+          <span className="muted">{t("{n} 张|图库", { n: total })}</span>
         </div>
 
         <div className="gallery-toolbar">
-          <label className="toolbar-search">关键词
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="标题、提示词、模型、尺寸或标签" />
+          <label className="toolbar-search">{t("关键词")}
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("标题、提示词、模型、尺寸或标签")} />
           </label>
-          <label className="toolbar-tag">标签
-            <input value={tag} onChange={(event) => setTag(event.target.value)} placeholder="筛选标签" />
+          <label className="toolbar-tag">{t("标签|图库")}
+            <input value={tag} onChange={(event) => setTag(event.target.value)} placeholder={t("筛选标签")} />
           </label>
-          <label>清晰度
+          <label>{t("清晰度|图库")}
             <select value={resolutionFilter} onChange={(event) => setResolutionFilter(event.target.value)}>
-              <option value="">全部</option>
+              <option value="">{t("全部|图库")}</option>
               {resolutionLevels.map((value) => <option key={value} value={value}>{value.toUpperCase()}</option>)}
             </select>
           </label>
-          <label>精确分辨率
+          <label>{t("精确分辨率")}
             <select value={sizeFilter} onChange={(event) => setSizeFilter(event.target.value)}>
-              <option value="">全部尺寸</option>
+              <option value="">{t("全部尺寸")}</option>
               {availableSizes.map((value) => <option key={value} value={value}>{value}</option>)}
             </select>
           </label>
           {hasSeeds && <label>Seed
-            <input value={seedFilter} onChange={(event) => setSeedFilter(event.target.value)} placeholder="搜索真实 Seed" />
+            <input value={seedFilter} onChange={(event) => setSeedFilter(event.target.value)} placeholder={t("搜索真实 Seed")} />
           </label>}
           <label className="favorite-toggle">
             <input type="checkbox" checked={favoriteOnly} onChange={(event) => setFavoriteOnly(event.target.checked)} />
-            仅收藏
+            {t("仅收藏")}
           </label>
-          <label className="toolbar-sort">排序
+          <label className="toolbar-sort">{t("排序|图库")}
             <select value={sort} onChange={(event) => setSort(event.target.value as "newest" | "oldest")}>
-              <option value="newest">最新优先</option>
-              <option value="oldest">最早优先</option>
+              <option value="newest">{t("最新优先")}</option>
+              <option value="oldest">{t("最早优先")}</option>
             </select>
           </label>
         </div>
 
           <div className="bulk-toolbar">
             <div className="bulk-summary">
-              <Tooltip content="可批量归类、标注和导出"><strong>已选择 {selected.size} 张</strong></Tooltip>
+              <Tooltip content={t("可批量归类、标注和导出")}><strong>{t("已选择 {n} 张", { n: selected.size })}</strong></Tooltip>
               <button className="select-page" onClick={togglePageSelection} disabled={!items.length}>
-                {items.length > 0 && items.every((item) => selected.has(item.id)) ? "取消全选本页" : "全选本页"}
+                {items.length > 0 && items.every((item) => selected.has(item.id)) ? t("取消全选本页") : t("全选本页")}
               </button>
             </div>
             <div className="bulk-group">
-            <label>移动到项目
+            <label>{t("移动到项目")}
               <select value={bulkProjectId} onChange={(event) => setBulkProjectId(event.target.value)}>
                 {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
               </select>
             </label>
-            <button disabled={!selected.size} onClick={() => void bulk("move", { projectId: bulkProjectId })}>移动</button>
+            <button disabled={!selected.size} onClick={() => void bulk("move", { projectId: bulkProjectId })}>{t("移动|图库")}</button>
           </div>
           <div className="bulk-group">
-            <label>批量标签
-              <input value={bulkTags} onChange={(event) => setBulkTags(event.target.value)} placeholder="用逗号分隔" />
+            <label>{t("批量标签")}
+              <input value={bulkTags} onChange={(event) => setBulkTags(event.target.value)} placeholder={t("用逗号分隔")} />
             </label>
-            <button disabled={!selected.size} onClick={() => void bulk("tags", { tags: parseTags(bulkTags) })}>更新</button>
+            <button disabled={!selected.size} onClick={() => void bulk("tags", { tags: parseTags(bulkTags) })}>{t("更新|图库")}</button>
           </div>
           <div className="bulk-actions">
-            <button disabled={!selected.size} onClick={() => void bulk("favorite", { favorite: true })}>收藏</button>
-            <button disabled={selected.size < 2} onClick={() => void compareSelected()}>对比</button>
-            <button disabled={!selected.size} onClick={() => void exportZip()}>导出 ZIP</button>
-            <button className="danger" disabled={!selected.size} onClick={() => void bulk("delete")}>删除</button>
+            <button disabled={!selected.size} onClick={() => void bulk("favorite", { favorite: true })}>{t("收藏|图库")}</button>
+            <button disabled={selected.size < 2} onClick={() => void compareSelected()}>{t("对比|图库")}</button>
+            <button disabled={!selected.size} onClick={() => void exportZip()}>{t("导出 ZIP")}</button>
+            <button className="danger" disabled={!selected.size} onClick={() => void bulk("delete")}>{t("删除|图库")}</button>
           </div>
         </div>
 
@@ -506,8 +507,8 @@ export function GalleryWorkspace({
         {items.length === 0 ? (
           <div className="empty">
             <span><NavIcon name="images" size={40} /></span>
-            <p>这里还没有图片</p>
-            <small>生成完成后会自动归档到收件箱或你选择的项目。</small>
+            <p>{t("这里还没有图片")}</p>
+            <small>{t("生成完成后会自动归档到收件箱或你选择的项目。")}</small>
           </div>
         ) : (
           <div className="archive-grid" ref={gridRef}>
@@ -517,7 +518,7 @@ export function GalleryWorkspace({
                   <input type="checkbox" checked={selected.has(item.id)} onChange={() => toggleSelection(item.id)} />
                 </label>
                 <button className={thumbs[item.id] ? "archive-preview" : "archive-preview loading"} onClick={() => void open(item, "preview")}>
-                  {thumbs[item.id] ? <img src={b64ToDataUrl(thumbs[item.id], "image/jpeg")} alt={item.title} /> : <span>加载预览…</span>}
+                  {thumbs[item.id] ? <img src={b64ToDataUrl(thumbs[item.id], "image/jpeg")} alt={item.title} /> : <span>{t("加载预览…")}</span>}
                 </button>
                 <div className="archive-meta">
                   <strong>{item.title}</strong>
@@ -526,26 +527,26 @@ export function GalleryWorkspace({
                   <div className="tag-row">{item.recipe.tags.map((value) => <span key={value}>#{value}</span>)}</div>
                 </div>
                 <div className="card-actions">
-                  <button onClick={() => void open(item, "preview")}>预览</button>
-                  <button onClick={() => void open(item, "reuse")}>复用</button>
-                  <button onClick={() => void open(item, "edit")}>继续编辑</button>
-                  <button onClick={() => void open(item, "outpaint")}>智能扩图</button>
+                  <button onClick={() => void open(item, "preview")}>{t("预览|图库")}</button>
+                  <button onClick={() => void open(item, "reuse")}>{t("复用")}</button>
+                  <button onClick={() => void open(item, "edit")}>{t("继续编辑")}</button>
+                  <button onClick={() => void open(item, "outpaint")}>{t("智能扩图")}</button>
                 </div>
                 <details className="card-more">
-                  <summary><NavIcon name="chevron-right" size={12} />更多操作</summary>
+                  <summary><NavIcon name="chevron-right" size={12} />{t("更多操作")}</summary>
                   <div>
-                    <button onClick={() => onVariation(item)}>创建变体</button>
-                    <button onClick={() => void openLocalAI(item, "upscale")}>高清放大</button>
-                    <button onClick={() => void openLocalAI(item, "remove-background")}>智能抠图</button>
-                    <button onClick={() => void openLocalAI(item, "face-restore")}>人脸优化 Beta</button>
-                    <button onClick={() => void openLocalAI(item, "pipeline")}>本地组合处理</button>
-                    <button onClick={() => void callIpc(() => window.imageStudio.gallery.toggleFavorite(item.id), { fallbackError: "收藏操作失败", onError: (message) => onNotice(message, true) }).then(() => refresh(0)).catch(() => { /* callIpc 已上报 */ })}>
-                      {item.favorite ? "取消收藏" : "收藏"}
+                    <button onClick={() => onVariation(item)}>{t("创建变体")}</button>
+                    <button onClick={() => void openLocalAI(item, "upscale")}>{t("高清放大")}</button>
+                    <button onClick={() => void openLocalAI(item, "remove-background")}>{t("智能抠图")}</button>
+                    <button onClick={() => void openLocalAI(item, "face-restore")}>{t("人脸优化 Beta")}</button>
+                    <button onClick={() => void openLocalAI(item, "pipeline")}>{t("本地组合处理")}</button>
+                    <button onClick={() => void callIpc(() => window.imageStudio.gallery.toggleFavorite(item.id), { fallbackError: t("收藏操作失败"), onError: (message) => onNotice(message, true) }).then(() => refresh(0)).catch(() => { /* callIpc 已上报 */ })}>
+                      {item.favorite ? t("取消收藏") : t("收藏|图库")}
                     </button>
-                    <button onClick={() => void updateMetadata(item)}>编辑信息</button>
-                    {item.recipe.projectId !== INBOX_PROJECT_ID && <button onClick={() => void setCover(item)}>设为封面</button>}
-                    <button onClick={() => openLocally(item, "open")}>用系统应用打开</button>
-                    <button onClick={() => openLocally(item, "reveal")}>在文件夹中显示</button>
+                    <button onClick={() => void updateMetadata(item)}>{t("编辑信息")}</button>
+                    {item.recipe.projectId !== INBOX_PROJECT_ID && <button onClick={() => void setCover(item)}>{t("设为封面")}</button>}
+                    <button onClick={() => openLocally(item, "open")}>{t("用系统应用打开")}</button>
+                    <button onClick={() => openLocally(item, "reveal")}>{t("在文件夹中显示")}</button>
                   </div>
                 </details>
               </article>
@@ -553,7 +554,7 @@ export function GalleryWorkspace({
           </div>
         )}
         {total > items.length && (
-          <button className="load-more" onClick={() => setPage((current) => current + 1)}>加载下一页</button>
+          <button className="load-more" onClick={() => setPage((current) => current + 1)}>{t("加载下一页")}</button>
         )}
       </div>
 
@@ -562,13 +563,13 @@ export function GalleryWorkspace({
           <section onClick={(event) => event.stopPropagation()}>
             <button className="lightbox-close" onClick={() => setCompare([])}><NavIcon name="x" size={20} /></button>
             <span className="eyebrow">COMPARE</span>
-            <h2>图片对比</h2>
+            <h2>{t("图片对比")}</h2>
             <div className="compare-grid">
               {compare.map((value) => (
                 <article key={value.item.id}>
                   <img src={b64ToDataUrl(value.b64)} alt={value.item.title} />
                   <strong>{value.item.title}</strong>
-                  <button onClick={() => void setCover(value.item)}>设为项目封面</button>
+                  <button onClick={() => void setCover(value.item)}>{t("设为项目封面")}</button>
                 </article>
               ))}
             </div>

@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { INBOX_PROJECT_ID } from "../lib/constants";
 import { formatShortDate } from "../lib/format";
+import { t } from "../lib/i18n";
 import { useDialog } from "./Dialogs";
 import { GalleryThumb } from "./GalleryThumb";
 import { NavIcon } from "./icons";
@@ -79,26 +80,26 @@ export function SidebarProjects({
   const createProject = async () => {
     const name = draftName.trim();
     if (!name) return;
-    const result = await run(() => window.imageStudio.projects.create(name), { fallbackError: "创建项目失败" });
+    const result = await run(() => window.imageStudio.projects.create(name), { fallbackError: t("创建项目失败") });
     if (!result) return;
     setDraftName("");
     setCreating(false);
-    notify("项目已创建");
+    notify(t("项目已创建"));
     await onChanged();
   };
 
   const renameProject = async (project: GalleryProject) => {
-    const name = await requestText({ title: "重命名项目", message: "输入新的项目名称", defaultValue: project.name, confirmLabel: "重命名" });
+    const name = await requestText({ title: t("重命名项目"), message: t("输入新的项目名称"), defaultValue: project.name, confirmLabel: t("重命名|图库") });
     if (!name?.trim()) return;
-    const result = await run(() => window.imageStudio.projects.rename(project.id, name.trim()), { fallbackError: "重命名失败" });
+    const result = await run(() => window.imageStudio.projects.rename(project.id, name.trim()), { fallbackError: t("重命名失败") });
     if (!result) return;
-    notify("项目已重命名");
+    notify(t("项目已重命名"));
     await onChanged();
   };
 
   const deleteProject = async (project: GalleryProject) => {
-    if (!(await requestConfirm({ title: "删除项目", message: "删除项目后，其中图片会回到收件箱，确定继续吗？", confirmLabel: "删除", danger: true }))) return;
-    const result = await run(() => window.imageStudio.projects.delete(project.id), { fallbackError: "删除失败" });
+    if (!(await requestConfirm({ title: t("删除项目"), message: t("删除项目后，其中图片会回到收件箱，确定继续吗？"), confirmLabel: t("删除|图库"), danger: true }))) return;
+    const result = await run(() => window.imageStudio.projects.delete(project.id), { fallbackError: t("删除失败|图库") });
     if (!result) return;
     // 已删除项目的展开态一并收起，避免留下空壳。
     setExpanded((current) => {
@@ -106,28 +107,28 @@ export function SidebarProjects({
       next.delete(project.id);
       return next;
     });
-    notify("项目已删除，图片已移回收件箱");
+    notify(t("项目已删除，图片已移回收件箱"));
     await onChanged();
   };
 
   return (
     <>
       <div className="sidebar-projects-head">
-        <Tooltip content="任务队列">
+        <Tooltip content={t("任务队列")}>
           <button
             className={queueActive ? "nav sidebar-queue-nav active" : "nav sidebar-queue-nav"}
             data-mode="queue"
             onClick={onOpenQueue}
           >
             <NavIcon name="list-todo" size={18} />
-            <span className="sidebar-queue-nav-label">任务队列</span>
+            <span className="sidebar-queue-nav-label">{t("任务队列")}</span>
             {queueCount > 0 && <span className="sidebar-queue-nav-badge">{queueCount}</span>}
           </button>
         </Tooltip>
-        <Tooltip content="新建项目">
+        <Tooltip content={t("新建项目")}>
           <button
             className="sidebar-projects-add"
-            aria-label="新建项目"
+            aria-label={t("新建项目")}
             disabled={pending}
             onClick={() => setCreating((current) => !current)}
           >
@@ -140,7 +141,7 @@ export function SidebarProjects({
           <input
             autoFocus
             value={draftName}
-            placeholder="新项目名称"
+            placeholder={t("新项目名称")}
             onChange={(event) => setDraftName(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
@@ -153,10 +154,10 @@ export function SidebarProjects({
               }
             }}
           />
-          <button disabled={pending || !draftName.trim()} onClick={() => void createProject()}>创建</button>
+          <button disabled={pending || !draftName.trim()} onClick={() => void createProject()}>{t("创建|图库")}</button>
         </div>
       )}
-      <section className="sidebar-projects" aria-label="项目">
+      <section className="sidebar-projects" aria-label={t("项目|图库")}>
         <div className="sidebar-project-list">
           {ordered.map((project) => {
             const list = grouped.get(project.id) ?? [];
@@ -175,13 +176,13 @@ export function SidebarProjects({
                   </button>
                   {project.id !== INBOX_PROJECT_ID && (
                     <span className="sidebar-project-actions">
-                      <Tooltip content="重命名">
-                        <button aria-label="重命名项目" disabled={pending} onClick={() => void renameProject(project)}>
+                      <Tooltip content={t("重命名|图库")}>
+                        <button aria-label={t("重命名项目")} disabled={pending} onClick={() => void renameProject(project)}>
                           <NavIcon name="pen-line" size={12} />
                         </button>
                       </Tooltip>
-                      <Tooltip content="删除">
-                        <button aria-label="删除项目" disabled={pending} onClick={() => void deleteProject(project)}>
+                      <Tooltip content={t("删除|图库")}>
+                        <button aria-label={t("删除项目")} disabled={pending} onClick={() => void deleteProject(project)}>
                           <NavIcon name="trash" size={12} />
                         </button>
                       </Tooltip>
@@ -194,7 +195,7 @@ export function SidebarProjects({
                 <div className={open ? "sidebar-project-body open" : "sidebar-project-body"}>
                   <div className="sidebar-project-body-inner">
                     {list.length === 0 ? (
-                      <p className="sidebar-project-empty">还没有图片</p>
+                      <p className="sidebar-project-empty">{t("还没有图片")}</p>
                     ) : (
                       <div className="sidebar-project-items">
                         {list.slice(0, PREVIEW_LIMIT).map((item) => (
@@ -205,7 +206,7 @@ export function SidebarProjects({
                             >
                               <GalleryThumb id={item.id} className="sidebar-project-item-thumb" alt={item.title} />
                               <span className="sidebar-project-item-text">
-                                <span className="sidebar-project-item-title">{item.title || "未命名图片"}</span>
+                                <span className="sidebar-project-item-title">{item.title || t("未命名图片")}</span>
                                 <span className="sidebar-project-item-time">{formatShortDate(item.createdAt)}</span>
                               </span>
                             </button>
@@ -213,7 +214,7 @@ export function SidebarProjects({
                         ))}
                       </div>
                     )}
-                    <button className="sidebar-project-more" onClick={() => onOpenProject(project.id)}>查看全部 ({list.length})</button>
+                    <button className="sidebar-project-more" onClick={() => onOpenProject(project.id)}>{t("查看全部 ({n})", { n: list.length })}</button>
                   </div>
                 </div>
               </div>
