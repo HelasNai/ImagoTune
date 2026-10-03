@@ -66,6 +66,11 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "ImagoTune",
+      "installerLanguages": [
+        "zh_CN",
+        "en_US"
+      ],
+      "multiLanguageInstaller": true,
       "include": "tools/installer.nsh"
     }
   },
