@@ -19,3 +19,6 @@ ImagoTune.ico.bak
 dist-verify/
 icon_preview.png
 
+# 字体源文件缓存（tools/build-fonts.mjs 下载的原始字体，体积大；子集产物已提交于 src/assets/fonts/）
+tools/fonts-src/
+
