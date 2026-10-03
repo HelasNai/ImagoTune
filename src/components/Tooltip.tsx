@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState
 import { createPortal } from "react-dom";
 import { NavIcon } from "./icons";
 import { resolveTooltipLayout, type TooltipLayout } from "../lib/tooltip";
+import { t } from "../lib/i18n";
 
 /** 把节点赋给函数式或对象式 ref（两者皆可）。 */
 function assignRef<T>(ref: React.Ref<T> | undefined, node: T | null): void {
@@ -171,7 +172,7 @@ export interface InfoHintProps {
 }
 
 /** 信息提示按钮：16px 圆形问号（Lucide circle-question-mark），悬停 / 聚焦显示 Tooltip。 */
-export function InfoHint({ content, label = "说明" }: InfoHintProps): React.ReactElement {
+export function InfoHint({ content, label = t("说明") }: InfoHintProps): React.ReactElement {
   return (
     <Tooltip content={content}>
       <button type="button" className="tooltip-hint" aria-label={label}>

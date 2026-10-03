@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { t } from "../lib/i18n";
 
 /** 单个候选项：`hint` 为可选补充说明（如供应商名），仅展示、不参与过滤。 */
 export type ComboboxOption = { value: string; label: string; hint?: string };
@@ -31,7 +32,7 @@ export function Combobox({
   value,
   onChange,
   placeholder,
-  emptyText = "无匹配项",
+  emptyText = t("无匹配项"),
   disabled = false,
   ariaLabel,
   className,

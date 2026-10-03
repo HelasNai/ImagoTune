@@ -3,7 +3,9 @@
 export const core = {
   取消: "Cancel",
   确定: "OK",
-  说明: "Info",
+  关闭对话框: "Close dialog",
+  说明: "Help",
+  无匹配项: "No matches",
   "删除|标题": "Delete",
   "已选择 {n} 张": "{n} image selected|{n} images selected",
 } as const;

@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { createPortal } from "react-dom";
 import { NavIcon } from "./icons";
 import { useEscapeKey } from "./useKeyboard";
+import { t } from "../lib/i18n";
 
 export type TextDialogOptions = {
   title: string;
@@ -58,14 +59,14 @@ function DialogModal({ request, onDone }: { request: DialogRequest; onDone: (val
 
   const cancel = () => onDone(request.kind === "text" ? null : false);
   const confirm = () => onDone(request.kind === "text" ? value : true);
-  const cancelLabel = request.kind === "confirm" ? request.options.cancelLabel ?? "取消" : "取消";
-  const confirmLabel = request.options.confirmLabel ?? "确定";
+  const cancelLabel = request.kind === "confirm" ? request.options.cancelLabel ?? t("取消") : t("取消");
+  const confirmLabel = request.options.confirmLabel ?? t("确定");
   const danger = Boolean(request.options.danger);
 
   return (
     <div className="dialog-modal" role="dialog" aria-modal="true" aria-label={request.options.title} onClick={cancel}>
       <section onClick={(event) => event.stopPropagation()}>
-        <button className="lightbox-close" onClick={cancel} aria-label="关闭对话框"><NavIcon name="x" size={20} /></button>
+        <button className="lightbox-close" onClick={cancel} aria-label={t("关闭对话框")}><NavIcon name="x" size={20} /></button>
         <h2>{request.options.title}</h2>
         {request.options.message && <p>{request.options.message}</p>}
         {request.kind === "text" && (
