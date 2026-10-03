@@ -26,6 +26,7 @@ import type { Mode, Output } from "./components/types";
 import { createRecipe, variationOptions } from "./lib/creative";
 import { DEFAULT_CHAT_MODEL, DEFAULT_IMAGE_MODEL, INBOX_PROJECT_ID } from "./lib/constants";
 import { formatDateTime, formatDurationSeconds, formatTags } from "./lib/format";
+import { renderErrorInfo } from "./lib/error-display";
 import { setLocale } from "./lib/i18n";
 import { b64ToDataUrl } from "./lib/media";
 import {
@@ -399,6 +400,9 @@ function App() {
     setMode("gallery");
   }
 
+  // 错误展示统一经 renderErrorInfo：有 code 时按当前语言渲染三层（zh 回退主进程中文、en 查词典）。
+  const renderedError = errorInfo ? renderErrorInfo(errorInfo) : null;
+
   return (
     <StudioProvider
       value={{
@@ -430,10 +434,10 @@ function App() {
         {(error || notice || errorInfo) && (
           <div className={error || errorInfo ? "feedback-toast feedback-error" : "feedback-toast feedback-success"} role={error || errorInfo ? "alert" : "status"}>
             <div>
-              <strong>{errorInfo?.title || (error ? "需要处理" : "操作成功")}</strong>
+              <strong>{renderedError?.title || (error ? "需要处理" : "操作成功")}</strong>
               {errorInfo?.category && <span>{errorInfo.category.replace("_", " ")}</span>}
-              <span>{error || errorInfo?.message || notice}</span>
-              {errorInfo?.suggestion && <small>{errorInfo.suggestion}</small>}
+              <span>{error || renderedError?.message || notice}</span>
+              {renderedError?.suggestion && <small>{renderedError.suggestion}</small>}
               {errorInfo?.details && (
                 <details>
                   <summary>查看接口详情</summary>

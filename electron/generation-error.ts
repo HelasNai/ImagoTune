@@ -22,54 +22,54 @@ export function classifyHttpError(status: number, body: string): GenerationError
   const balancePattern = /(balance|credit|quota|billing|subscription|余额|额度|权益|订阅)/i;
   const unsupportedQuality = /quality/i.test(details) && /(unsupported|unknown|invalid|not supported|不支持|未知|无效)/i.test(details);
   if ((status === 400 || status === 422) && unsupportedQuality) {
-    return { category: "parameters", title: "清晰度参数不兼容", message: "当前接口不支持所选清晰度参数。", suggestion: "切换为“自动”后手动重试，软件不会自动重复生成。", retryable: false, status, details };
+    return { category: "parameters", code: "parameters.quality", title: "清晰度参数不兼容", message: "当前接口不支持所选清晰度参数。", suggestion: "切换为“自动”后手动重试，软件不会自动重复生成。", retryable: false, status, details };
   }
   if (contentPattern.test(details)) {
-    return { category: "content", title: "内容合规限制", message: "服务端未接受当前内容请求。", suggestion: "调整可能触发审核的主体、描述或参考图片后再手动提交。", retryable: false, status, details };
+    return { category: "content", code: "content.rejected", title: "内容合规限制", message: "服务端未接受当前内容请求。", suggestion: "调整可能触发审核的主体、描述或参考图片后再手动提交。", retryable: false, status, details };
   }
   if (status === 402 || balancePattern.test(details)) {
-    return { category: "balance", title: "余额或权益不足", message: "账户余额、订阅、额度或权益可能不足。", suggestion: "请到当前 API 平台检查余额与订阅状态，补充权益后再提交。", retryable: false, status, details };
+    return { category: "balance", code: "http.balance", title: "余额或权益不足", message: "账户余额、订阅、额度或权益可能不足。", suggestion: "请到当前 API 平台检查余额与订阅状态，补充权益后再提交。", retryable: false, status, details };
   }
   if (status === 401 || status === 403) {
-    return { category: "authentication", title: "密钥或权限异常", message: status === 401 ? "API 密钥无效或已失效。" : "当前密钥没有调用图片模型的权限。", suggestion: "请在设置中重新保存有效密钥，并确认图片模型权限。", retryable: false, status, details };
+    return { category: "authentication", code: status === 401 ? "http.unauthorized" : "http.forbidden", title: "密钥或权限异常", message: status === 401 ? "API 密钥无效或已失效。" : "当前密钥没有调用图片模型的权限。", suggestion: "请在设置中重新保存有效密钥，并确认图片模型权限。", retryable: false, status, details };
   }
   if (status === 413) {
-    return { category: "upload", title: "上传文件过大", message: "上传图片、蒙版或请求内容超过接口限制。", suggestion: "压缩原图、减少参考图或降低目标尺寸后再提交。", retryable: false, status, details };
+    return { category: "upload", code: "upload.tooLarge", title: "上传文件过大", message: "上传图片、蒙版或请求内容超过接口限制。", suggestion: "压缩原图、减少参考图或降低目标尺寸后再提交。", retryable: false, status, details };
   }
   if (status === 408 || status === 504) {
-    return { category: "timeout", title: "生成响应超时", message: "图片服务未能在限定时间内完成响应。", suggestion: "建议切换到 1K、单张和自动细节，稍后手动重试。", retryable: true, status, details };
+    return { category: "timeout", code: "http.timeout", title: "生成响应超时", message: "图片服务未能在限定时间内完成响应。", suggestion: "建议切换到 1K、单张和自动细节，稍后手动重试。", retryable: true, status, details };
   }
   if (status === 429) {
-    return { category: "rate_limit", title: "请求过于频繁", message: "服务繁忙或已达到并发限制。", suggestion: "等待片刻后手动重试；任务队列会继续保持串行。", retryable: true, status, details };
+    return { category: "rate_limit", code: "http.rateLimit", title: "请求过于频繁", message: "服务繁忙或已达到并发限制。", suggestion: "等待片刻后手动重试；任务队列会继续保持串行。", retryable: true, status, details };
   }
   if ((status === 400 || status === 404) && /(does not exist|not found|不存在)/i.test(details)) {
-    return { category: "endpoint", title: "模型或接口不存在", message: "服务端未找到所请求的模型或接口。", suggestion: "请检查供应商的接口类型、Base URL 与模型名是否正确。", retryable: false, status, details };
+    return { category: "endpoint", code: "http.notFound", title: "模型或接口不存在", message: "服务端未找到所请求的模型或接口。", suggestion: "请检查供应商的接口类型、Base URL 与模型名是否正确。", retryable: false, status, details };
   }
   if (status === 400 || status === 422) {
-    return { category: "parameters", title: "生成参数不兼容", message: "尺寸、比例、质量或编辑参数未被接口接受。", suggestion: "先改为 1K、自动细节、单张，并检查自定义尺寸和蒙版。", retryable: false, status, details };
+    return { category: "parameters", code: "parameters.size", title: "生成参数不兼容", message: "尺寸、比例、质量或编辑参数未被接口接受。", suggestion: "先改为 1K、自动细节、单张，并检查自定义尺寸和蒙版。", retryable: false, status, details };
   }
   if (status >= 500) {
-    return { category: "server", title: "图片服务暂时异常", message: "当前图片服务或网关暂时无法完成请求。", suggestion: "稍后手动重试；软件不会自动再次计费。", retryable: true, status, details };
+    return { category: "server", code: "http.server", title: "图片服务暂时异常", message: "当前图片服务或网关暂时无法完成请求。", suggestion: "稍后手动重试；软件不会自动再次计费。", retryable: true, status, details };
   }
-  return { category: "unknown", title: "生成请求失败", message: "接口返回了未识别的错误。", suggestion: "检查接口详情和当前参数后再提交。", retryable: false, status, details };
+  return { category: "unknown", code: "http.unknown", title: "生成请求失败", message: "接口返回了未识别的错误。", suggestion: "检查接口详情和当前参数后再提交。", retryable: false, status, details };
 }
 
 export function cancelledErrorInfo(): GenerationErrorInfo {
-  return { category: "cancelled", title: "任务已取消", message: "请求已由用户取消。", suggestion: "修改参数后可重新加入队列。", retryable: false };
+  return { category: "cancelled", code: "cancel.user", title: "任务已取消", message: "请求已由用户取消。", suggestion: "修改参数后可重新加入队列。", retryable: false };
 }
 
 export function interruptedErrorInfo(): GenerationErrorInfo {
-  return { category: "cancelled", title: "任务已中断", message: "应用关闭时任务仍在运行。", suggestion: "确认参数后手动重试，软件不会自动重复计费。", retryable: true };
+  return { category: "cancelled", code: "cancel.interrupt", title: "任务已中断", message: "应用关闭时任务仍在运行。", suggestion: "确认参数后手动重试，软件不会自动重复计费。", retryable: true };
 }
 
 export function classifyRuntimeError(error: unknown, options: { timedOut?: boolean; cancelled?: boolean } = {}): GenerationErrorInfo {
   if (error instanceof GenerationError) return error.info;
   const message = error instanceof Error ? error.message : String(error || "未知错误");
   if (options.cancelled) return cancelledErrorInfo();
-  if (options.timedOut || /timeout|timed out|超时/i.test(message)) return { category: "timeout", title: "生成响应超时", message: "请求超过 300 秒仍未完成。", suggestion: "建议降低到 1K、单张并稍后手动重试。", retryable: true, details: message };
-  if (/图片链接下载失败|无效的图片链接|不是有效图片|图片文件无效/i.test(message)) return { category: "network", title: "图片结果转存失败", message: "图片服务已经返回结果，但临时图片链接无法转存为本地 PNG。", suggestion: "请检查网络后手动重试；软件不会自动再次生成和计费。", retryable: false, details: message };
-  if (/fetch failed|network|dns|socket|econn|enotfound|offline|网络/i.test(message)) return { category: "network", title: "网络连接失败", message: "客户端无法连接当前图片服务。", suggestion: "检查网络、代理和 API 地址后再手动提交。", retryable: true, details: message };
-  return { category: "unknown", title: "生成失败", message, suggestion: "查看详情并检查当前参数后再提交。", retryable: false, details: message };
+  if (options.timedOut || /timeout|timed out|超时/i.test(message)) return { category: "timeout", code: "network.timeout", params: { seconds: 300 }, title: "生成响应超时", message: "请求超过 300 秒仍未完成。", suggestion: "建议降低到 1K、单张并稍后手动重试。", retryable: true, details: message };
+  if (/图片链接下载失败|无效的图片链接|不是有效图片|图片文件无效/i.test(message)) return { category: "network", code: "archive.failed", title: "图片结果转存失败", message: "图片服务已经返回结果，但临时图片链接无法转存为本地 PNG。", suggestion: "请检查网络后手动重试；软件不会自动再次生成和计费。", retryable: false, details: message };
+  if (/fetch failed|network|dns|socket|econn|enotfound|offline|网络/i.test(message)) return { category: "network", code: "network.offline", title: "网络连接失败", message: "客户端无法连接当前图片服务。", suggestion: "检查网络、代理和 API 地址后再手动提交。", retryable: true, details: message };
+  return { category: "unknown", code: "runtime.unknown", title: "生成失败", message, suggestion: "查看详情并检查当前参数后再提交。", retryable: false, details: message };
 }
 
 export function errorInfoMessage(info: GenerationErrorInfo) {

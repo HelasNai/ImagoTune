@@ -144,6 +144,28 @@ export type GenerationErrorCategory =
   | "cancelled"
   | "unknown";
 
+// 生成错误语义 code（值不含 `error.` 前缀；渲染层经 tCode("error", `${code}.title`) 查 en 词典，
+// zh 用下方 title/message/suggestion 存储原文回退）。新增一条 = 新增一个 code + en 词典三键。
+export type GenerationErrorCode =
+  | "parameters.quality"
+  | "content.rejected"
+  | "http.balance"
+  | "http.unauthorized"
+  | "http.forbidden"
+  | "upload.tooLarge"
+  | "http.timeout"
+  | "http.rateLimit"
+  | "http.notFound"
+  | "parameters.size"
+  | "http.server"
+  | "http.unknown"
+  | "cancel.user"
+  | "cancel.interrupt"
+  | "network.timeout"
+  | "archive.failed"
+  | "network.offline"
+  | "runtime.unknown";
+
 export interface GenerationErrorInfo {
   category: GenerationErrorCategory;
   title: string;
@@ -152,6 +174,10 @@ export interface GenerationErrorInfo {
   retryable: boolean;
   status?: number;
   details?: string;
+  /** 语义 code（可选：历史错误/未分类路径无此字段，渲染层回退存储文本）。 */
+  code?: GenerationErrorCode;
+  /** 消息插值参数（如 `{seconds}`）；缺失参数保留占位符原文。 */
+  params?: Record<string, string | number>;
 }
 
 export interface ApiImage {

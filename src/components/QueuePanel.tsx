@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { formatDateTime, formatDurationSeconds, queueStatusLabel } from "../lib/format";
+import { renderErrorInfo } from "../lib/error-display";
 import { historyQueueCount, orderQueueForDisplay, waitingAheadCount } from "../lib/queue";
 import { recipeFromQueueInput, recipeModeLabel } from "./queue-utils";
 import { NavIcon } from "./icons";
@@ -83,6 +84,8 @@ export function QueuePanel({ queueItems, onRefresh, onOpenGalleryAt }: {
             // 多图时角标显示总数；悬空 id（图片已删）由 GalleryThumb 渲染占位、跳转后由图库提示不存在。
             const resultId = job.status === "completed" ? job.resultGalleryIds?.[0] : undefined;
             const resultCount = job.status === "completed" ? job.resultGalleryIds?.length ?? 0 : 0;
+            // 错误展示统一经 renderErrorInfo：有 code 按语言渲染，历史错误回退存储文本。
+            const renderedError = job.errorInfo ? renderErrorInfo(job.errorInfo) : null;
             return (
             <article key={job.id}>
               <div>
@@ -90,7 +93,7 @@ export function QueuePanel({ queueItems, onRefresh, onOpenGalleryAt }: {
                 <small>{formatDateTime(job.createdAt)} · 尝试 {job.attempts} 次{job.status === "completed" && job.elapsedMs !== undefined ? ` · 用时 ${formatDurationSeconds(job.elapsedMs)}` : ""}{waiting > 0 ? ` · 前面还有 ${waiting} 个任务` : ""}</small>
                 <p>{recipeFromQueueInput(job.input, job.kind, "1024x1024").prompt}</p>
                 {live && live.state === "running" ? <ProgressBar event={live} /> : null}
-                {job.errorInfo ? <div className="queue-error"><em>{job.errorInfo.title}：{job.errorInfo.message}</em><small>{job.errorInfo.suggestion}</small></div> : job.error && <em>{job.error}</em>}
+                {renderedError ? <div className="queue-error"><em>{renderedError.title}：{renderedError.message}</em><small>{renderedError.suggestion}</small></div> : job.error && <em>{job.error}</em>}
               </div>
               <div className="queue-actions">
                 {["failed", "interrupted", "cancelled"].includes(job.status) && (
