@@ -1,4 +1,5 @@
 import React from "react";
+import { t } from "../lib/i18n";
 import { formatElapsed } from "../lib/progress";
 import { useElapsedNow } from "./ProgressContext";
 
@@ -20,9 +21,9 @@ export function ProgressBar({ event }: { event: TaskProgressEvent }) {
       <span>
         {event.message}
         {event.detail ? ` · ${event.detail.toUpperCase()}` : ""}
-        {event.totalStages !== undefined && event.totalStages > 1 ? ` · 阶段 ${(event.stageIndex ?? 0) + 1}/${event.totalStages}` : ""}
+        {event.totalStages !== undefined && event.totalStages > 1 ? ` · ${t("阶段 {i}/{n}", { i: (event.stageIndex ?? 0) + 1, n: event.totalStages })}` : ""}
         {progressValue === undefined ? "" : ` · ${Math.round(progressValue)}%`}
-        {elapsed ? ` · 已用时 ${elapsed}` : ""}
+        {elapsed ? ` · ${t("已用时 {t}", { t: elapsed })}` : ""}
       </span>
     </div>
   );

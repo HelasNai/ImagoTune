@@ -9,25 +9,27 @@ import { useSaveImage } from "./useSaveImage";
 import { b64ToFile, dataUrlFor, drawContain, readImage } from "./media-utils";
 import { formatGenerationParameters, variationOptions } from "../lib/creative";
 import { modeLabel, parsePixelSize } from "../lib/format";
+import { t } from "../lib/i18n";
 import type { Output } from "./types";
 
+// label 用 getter：每次读取时经 t() 求值（语言切换后重渲染即更新），零调用点改动。
 const socialPresets = [
-  { value: "1080x1080", label: "1:1 方图" },
-  { value: "1080x1350", label: "4:5 竖图" },
-  { value: "1920x1080", label: "16:9 横图" },
-  { value: "1080x1920", label: "9:16 竖图" },
+  { value: "1080x1080", get label() { return t("1:1 方图"); } },
+  { value: "1080x1350", get label() { return t("4:5 竖图"); } },
+  { value: "1920x1080", get label() { return t("16:9 横图"); } },
+  { value: "1080x1920", get label() { return t("9:16 竖图"); } },
 ];
 
 async function exportSocialCanvas(output: Output, preset: string, fill: "light" | "blur") {
   const parsed = parsePixelSize(preset);
-  if (!parsed) throw new Error("导出尺寸无效");
+  if (!parsed) throw new Error(t("导出尺寸无效"));
   const { width, height } = parsed;
   const image = await readImage(b64ToFile(output.b64, "export.png"));
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const context = canvas.getContext("2d");
-  if (!context) throw new Error("无法创建导出画布");
+  if (!context) throw new Error(t("无法创建导出画布"));
   if (fill === "blur") {
     const cover = Math.max(width / image.naturalWidth, height / image.naturalHeight);
     context.filter = "blur(28px)";
@@ -82,7 +84,7 @@ export function ResultPanel({
       dataUrl: dataUrlFor(output),
       suggestedName: "image-studio-" + new Date(output.createdAt).toISOString().replace(/[:.]/g, "-") + ".png",
       recipe: output.recipe,
-    }, { onSaved: (path) => setNotice("已保存：" + path) });
+    }, { onSaved: (path) => setNotice(t("已保存：{path}", { path })) });
   };
 
   const exportSocial = async () => {
@@ -94,12 +96,12 @@ export function ResultPanel({
         suggestedName: "image-studio-social-" + socialPreset + ".png",
         recipe: { ...exportOutput.recipe, size: socialPreset },
       }, {
-        fallbackError: "导出失败",
-        onSaved: (path) => setNotice("社交平台成品已保存：" + path),
+        fallbackError: t("导出失败|结果"),
+        onSaved: (path) => setNotice(t("社交平台成品已保存：{path}", { path })),
       });
       if (saved) setExportOutput(null);
     } catch (cause) {
-      setError((cause as Error).message || "导出失败");
+      setError((cause as Error).message || t("导出失败|结果"));
     }
   };
 
@@ -108,37 +110,37 @@ export function ResultPanel({
   const panelSection = (
     <section className="card results">
       <div className="section-head">
-        <div><span className="eyebrow">RESULTS</span><h2>生成结果</h2></div>
-        {outputs.length > 0 && <span className="muted">{outputs.length} 张图片 · 点击查看大图</span>}
+        <div><span className="eyebrow">RESULTS</span><h2>{t("生成结果|结果")}</h2></div>
+        {outputs.length > 0 && <span className="muted">{t("{n} 张图片 · 点击查看大图", { n: outputs.length })}</span>}
       </div>
       {outputs.length === 0 ? (
         <div className="empty">
           <span><NavIcon name="sparkles" size={40} /></span>
-          <p>生成后的图片会显示在这里</p>
-          <small>队列、项目、变体与交付工具会保留你的创作过程。</small>
+          <p>{t("生成后的图片会显示在这里")}</p>
+          <small>{t("队列、项目、变体与交付工具会保留你的创作过程。")}</small>
         </div>
       ) : (
         <div className="gallery">
           {outputs.map((output) => (
             <article key={output.id}>
-              <img className="result-image" onClick={() => onOpenPreview(output)} src={dataUrlFor(output)} alt="生成结果" />
+              <img className="result-image" onClick={() => onOpenPreview(output)} src={dataUrlFor(output)} alt={t("生成结果|结果")} />
               <div className="result-caption">
-                <strong>{output.recipe.variationLabel || modeLabel(output.recipe, { fallback: "新生成图片" })}</strong>
+                <strong>{output.recipe.variationLabel || modeLabel(output.recipe, { fallback: t("新生成图片|结果") })}</strong>
                 <small>{output.recipe.size} · {output.recipe.projectId}{output.recipe.seed ? " · Seed " + output.recipe.seed : ""}</small>
               </div>
-              {output.recipe.seed && <button className="seed-chip" onClick={() => void copyText(output.recipe.seed!, "Seed 已复制")}>Seed：{output.recipe.seed} · 点击复制</button>}
+              {output.recipe.seed && <button className="seed-chip" onClick={() => void copyText(output.recipe.seed!, t("Seed 已复制"))}>{t("Seed：{seed} · 点击复制", { seed: output.recipe.seed })}</button>}
               <div className="result-actions">
-                <button onClick={() => void saveOutput(output)}>保存 PNG</button>
-                <button onClick={() => void copyImage(output.b64, "图片已复制到剪贴板")}>复制图片</button>
-                <button onClick={() => void copyText(output.recipe.prompt, "提示词已复制")}>复制提示词</button>
-                <button onClick={() => void copyText(formatGenerationParameters(output.recipe), "完整参数已复制")}>复制参数</button>
-                <button onClick={() => onRegenerate(output)}>再生成</button>
-                <button onClick={() => onContinueEdit(output)}>继续编辑</button>
-                <button onClick={() => onStartOutpaint(output)}>智能扩图</button>
-                <button onClick={() => setExportOutput(output)}>社媒导出</button>
-                <button onClick={() => onOpenLocalAI(output, "upscale")}>高清放大</button>
-                <button onClick={() => onOpenLocalAI(output, "remove-background")}>智能抠图</button>
-                <button onClick={() => onOpenLocalAI(output, "face-restore")}>人脸优化</button>
+                <button onClick={() => void saveOutput(output)}>{t("保存 PNG|结果")}</button>
+                <button onClick={() => void copyImage(output.b64, t("图片已复制到剪贴板"))}>{t("复制图片")}</button>
+                <button onClick={() => void copyText(output.recipe.prompt, t("提示词已复制|结果"))}>{t("复制提示词|结果")}</button>
+                <button onClick={() => void copyText(formatGenerationParameters(output.recipe), t("完整参数已复制|结果"))}>{t("复制参数|结果")}</button>
+                <button onClick={() => onRegenerate(output)}>{t("再生成|结果")}</button>
+                <button onClick={() => onContinueEdit(output)}>{t("继续编辑|结果")}</button>
+                <button onClick={() => onStartOutpaint(output)}>{t("智能扩图")}</button>
+                <button onClick={() => setExportOutput(output)}>{t("社媒导出|结果")}</button>
+                <button onClick={() => onOpenLocalAI(output, "upscale")}>{t("高清放大")}</button>
+                <button onClick={() => onOpenLocalAI(output, "remove-background")}>{t("智能抠图")}</button>
+                <button onClick={() => onOpenLocalAI(output, "face-restore")}>{t("人脸优化|结果")}</button>
               </div>
               <div className="variation-row">
                 {variationOptions.map((option) => (
@@ -160,20 +162,20 @@ export function ResultPanel({
           <section onClick={(event) => event.stopPropagation()}>
             <button className="lightbox-close" onClick={() => setExportOutput(null)}><NavIcon name="x" size={20} /></button>
             <span className="eyebrow">SOCIAL EXPORT</span>
-            <h2>社交平台画布适配</h2>
-            <img src={dataUrlFor(exportOutput)} alt="待导出图片" />
-            <label>目标尺寸
+            <h2>{t("社交平台画布适配")}</h2>
+            <img src={dataUrlFor(exportOutput)} alt={t("待导出图片")} />
+            <label>{t("目标尺寸|结果")}
               <select value={socialPreset} onChange={(event) => setSocialPreset(event.target.value)}>
                 {socialPresets.map((item) => <option key={item.value} value={item.value}>{item.label} · {item.value}</option>)}
               </select>
             </label>
-            <label>背景填充
+            <label>{t("背景填充|结果")}
               <select value={socialFill} onChange={(event) => setSocialFill(event.target.value as "light" | "blur")}>
-                <option value="light">浅色留白</option>
-                <option value="blur">模糊延展</option>
+                <option value="light">{t("浅色留白")}</option>
+                <option value="blur">{t("模糊延展")}</option>
               </select>
             </label>
-            <button className="primary" onClick={() => void exportSocial()}>导出 PNG</button>
+            <button className="primary" onClick={() => void exportSocial()}>{t("导出 PNG|结果")}</button>
           </section>
         </div>,
         portalTarget,
