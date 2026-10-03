@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   applySharedLayout,
   clearPlacement,
@@ -16,6 +16,7 @@ import {
   LAYOUT_MODULES,
   minResizeHeightPx,
   moduleDef,
+  moduleLabel,
   occupiedInMode,
   rectsOverlap,
   resolveAllConflicts,
@@ -27,6 +28,10 @@ import {
   snapToGrid,
   visibleModuleIds,
 } from "../src/lib/layout";
+import { setLocale } from "../src/lib/i18n";
+
+// i18n 模块级单例在测试间共享：每例结束复位中文。
+afterEach(() => setLocale("zh"));
 
 describe("layout module registry", () => {
   it("9 个模块、id 唯一", () => {
@@ -659,5 +664,19 @@ describe("layout push resolve (dragged module priority)", () => {
     expect(tops["negative-prompt"]).toBe(10);
     expect(tops.controls).toBe(5);
     expect(tops.references).toBe(20);
+  });
+});
+
+describe("layout module labels i18n", () => {
+  it("moduleLabel 在 zh 下直通中文、在 en 下返回英文", () => {
+    expect(moduleLabel("project-strip")).toBe("项目归属");
+    expect(moduleLabel("prompt")).toBe("提示词");
+    expect(moduleLabel("reverse-prompt")).toBe("图反推");
+    setLocale("en");
+    expect(moduleLabel("project-strip")).toBe("Project");
+    expect(moduleLabel("prompt")).toBe("Prompt");
+    // 「图反推」复用 settings 分片已登记的模型角色英文值。
+    expect(moduleLabel("reverse-prompt")).toBe("Reverse prompt");
+    expect(moduleLabel("controls")).toBe("Output controls");
   });
 });

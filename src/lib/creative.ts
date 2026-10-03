@@ -1,5 +1,6 @@
 import { DEFAULT_IMAGE_MODEL, INBOX_PROJECT_ID } from "./constants";
 import { clamp, modeLabel, nowISO } from "./format";
+import { t } from "./i18n";
 
 export type PromptAction = "refine" | "detail" | "poster" | "social" | "realistic" | "premium";
 
@@ -44,24 +45,26 @@ export function createRecipe(partial: Partial<ImageRecipeV1> = {}): ImageRecipeV
   };
 }
 
+/** 清晰度档位选项：`label` 为调用时求值的 getter（语言切换后重渲染即更新）；`value` 为持久化契约，不译。 */
 export const resolutionOptions = [
-  { value: "1k", label: "1K（标准）" },
-  { value: "2k", label: "2K（高清）" },
-  { value: "4k", label: "4K（超清）" },
-];
+  { value: "1k", get label() { return t("1K（标准）"); } },
+  { value: "2k", get label() { return t("2K（高清）"); } },
+  { value: "4k", get label() { return t("4K（超清）"); } },
+] as const;
 
+/** 画面比例选项：`label` 为调用时求值的 getter；`value` 为持久化契约，不译。 */
 export const ratioOptions = [
-  { value: "1:1", label: "1:1 正方形" },
-  { value: "4:3", label: "4:3 横向" },
-  { value: "3:4", label: "3:4 竖向" },
-  { value: "3:2", label: "3:2 横向" },
-  { value: "2:3", label: "2:3 竖向" },
-  { value: "16:9", label: "16:9 宽屏" },
-  { value: "9:16", label: "9:16 手机" },
-  { value: "4:5", label: "4:5 人像" },
-  { value: "5:4", label: "5:4 横幅" },
-  { value: "21:9", label: "21:9 超宽" },
-];
+  { value: "1:1", get label() { return t("1:1 正方形"); } },
+  { value: "4:3", get label() { return t("4:3 横向"); } },
+  { value: "3:4", get label() { return t("3:4 竖向"); } },
+  { value: "3:2", get label() { return t("3:2 横向"); } },
+  { value: "2:3", get label() { return t("2:3 竖向"); } },
+  { value: "16:9", get label() { return t("16:9 宽屏"); } },
+  { value: "9:16", get label() { return t("9:16 手机"); } },
+  { value: "4:5", get label() { return t("4:5 人像"); } },
+  { value: "5:4", get label() { return t("5:4 横幅"); } },
+  { value: "21:9", get label() { return t("21:9 超宽"); } },
+] as const;
 
 export const sizeMatrix: Record<string, Record<string, string>> = {
   "1k": {
@@ -90,6 +93,7 @@ export const outpaintQuickRatios = ["1:1", "4:5", "16:9", "9:16"];
 /** 图库清晰度筛选项：渲染时以 value.toUpperCase() 显示为 1K/2K/4K。 */
 export const resolutionLevels = ["1k", "2k", "4k"];
 
+// 本地提示词动作的模型输入后缀：作为提示词正文提交给模型，刻意不本地化。
 const promptSuffix: Record<PromptAction, string> = {
   refine: "主体明确，构图聚焦，画面干净，避免无关元素。",
   detail: "补充清晰的材质、光线、空间层次和可执行的视觉细节，主体边缘完整。",
@@ -114,24 +118,24 @@ export const CANVAS_MAX_PIXELS = 14_745_600;
 
 export function validateCanvasSize(value: string) {
   const match = /^\s*(\d{2,5})\s*[x×]\s*(\d{2,5})\s*$/i.exec(value);
-  if (!match) return { ok: false, message: "请输入宽 x 高，例如 1536x1024" } as const;
+  if (!match) return { ok: false, message: t("请输入宽 x 高，例如 1536x1024") } as const;
   const width = Number(match[1]);
   const height = Number(match[2]);
   const longEdge = Math.max(width, height);
   const shortEdge = Math.min(width, height);
   const pixels = width * height;
-  if (width % CANVAS_MULTIPLE || height % CANVAS_MULTIPLE) return { ok: false, message: "宽高需要是 16 的倍数" } as const;
-  if (longEdge > CANVAS_MAX_EDGE) return { ok: false, message: "最长边不能超过 3840 px" } as const;
-  if (longEdge / shortEdge > 3) return { ok: false, message: "长宽比不能超过 3:1" } as const;
+  if (width % CANVAS_MULTIPLE || height % CANVAS_MULTIPLE) return { ok: false, message: t("宽高需要是 16 的倍数") } as const;
+  if (longEdge > CANVAS_MAX_EDGE) return { ok: false, message: t("最长边不能超过 3840 px") } as const;
+  if (longEdge / shortEdge > 3) return { ok: false, message: t("长宽比不能超过 3:1") } as const;
   if (pixels < 655_360 || pixels > CANVAS_MAX_PIXELS) {
-    return { ok: false, message: "总像素需在 65 万到 1475 万之间" } as const;
+    return { ok: false, message: t("总像素需在 65 万到 1475 万之间") } as const;
   }
   return {
     ok: true,
     width,
     height,
     size: String(width) + "x" + String(height),
-    message: String(width) + " × " + String(height) + "，约 " + (pixels / 1_000_000).toFixed(2) + " MP",
+    message: t("{w} × {h}，约 {mp} MP", { w: width, h: height, mp: (pixels / 1_000_000).toFixed(2) }),
   } as const;
 }
 
@@ -158,9 +162,10 @@ export function formatGenerationParameters(
   ].join("\n");
 }
 
+/** 变体选项：`label` 为调用时求值的 getter；`suffix` 为模型输入（提示词正文），刻意不译。 */
 export const variationOptions = [
-  { id: "premium", label: "更高级", suffix: "版本方向：提升高级感、统一性与材质质感，保持原主题。" },
-  { id: "realistic", label: "更写实", suffix: "版本方向：提升真实摄影感、自然光线与可信细节，保持原主题。" },
-  { id: "minimal", label: "更简洁", suffix: "版本方向：减少次要元素，保留核心主体和清晰留白，保持原主题。" },
-  { id: "impact", label: "更有视觉冲击力", suffix: "版本方向：强化视觉焦点、对比、动态感和第一眼吸引力，保持原主题。" },
+  { id: "premium", get label() { return t("更高级"); }, suffix: "版本方向：提升高级感、统一性与材质质感，保持原主题。" },
+  { id: "realistic", get label() { return t("更写实"); }, suffix: "版本方向：提升真实摄影感、自然光线与可信细节，保持原主题。" },
+  { id: "minimal", get label() { return t("更简洁"); }, suffix: "版本方向：减少次要元素，保留核心主体和清晰留白，保持原主题。" },
+  { id: "impact", get label() { return t("更有视觉冲击力"); }, suffix: "版本方向：强化视觉焦点、对比、动态感和第一眼吸引力，保持原主题。" },
 ] as const;

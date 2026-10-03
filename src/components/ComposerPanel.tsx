@@ -11,7 +11,7 @@ import { qualities } from "./useComposer";
 import type { ComposerActions, ComposerState } from "./useComposer";
 import { outpaintQuickRatios, ratioOptions, resolutionOptions } from "../lib/creative";
 import { compositeFileKey } from "../lib/format";
-import { decodeLayoutCode, encodeLayoutCode, moduleDef, type LayoutMode } from "../lib/layout";
+import { decodeLayoutCode, encodeLayoutCode, moduleLabel, type LayoutMode } from "../lib/layout";
 import { useDialog } from "./Dialogs";
 import { useStudio } from "./StudioContext";
 import { useCopyText } from "./useCopy";
@@ -279,7 +279,7 @@ export function ComposerPanel({
                 {layout.hiddenIds.map((id) => (
                   <Tooltip key={id} content="恢复显示该模块">
                     <button type="button" className="layout-hidden-restore" onClick={() => layout.showModule(id)}>
-                      {moduleDef(id).label} ↺
+                      {moduleLabel(id)} ↺
                     </button>
                   </Tooltip>
                 ))}

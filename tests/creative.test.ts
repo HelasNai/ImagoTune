@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   applyLocalPromptAction,
   createRecipe,
@@ -6,10 +6,16 @@ import {
   parseTags,
   ratioOptions,
   resolutionLevels,
+  resolutionOptions,
   sizeMatrix,
   validateCanvasSize,
+  variationOptions,
 } from "../src/lib/creative";
+import { setLocale } from "../src/lib/i18n";
 import { normalizeImageBase64, prioritizeImageResponses } from "../electron/image-response";
+
+// i18n 模块级单例在测试间共享：每例结束复位中文，避免 en 用例污染后续/默认断言。
+afterEach(() => setLocale("zh"));
 
 describe("creative helpers", () => {
   it("applies local prompt enhancement without an API call", () => {
@@ -116,5 +122,27 @@ describe("size and ratio presets", () => {
     for (const level of resolutionLevels) {
       expect(Object.keys(sizeMatrix[level]).sort()).toEqual(ratioValues);
     }
+  });
+});
+
+describe("creative options i18n (en)", () => {
+  it("清晰度 / 比例 / 变体 label 在 en 下为英文（value / id / suffix 不变）", () => {
+    setLocale("en");
+    expect(resolutionOptions.find((item) => item.value === "1k")!.label).toBe("1K (Standard)");
+    expect(resolutionOptions.find((item) => item.value === "4k")!.label).toBe("4K (Ultra HD)");
+    expect(ratioOptions.find((item) => item.value === "1:1")!.label).toBe("1:1 Square");
+    expect(ratioOptions.find((item) => item.value === "21:9")!.label).toBe("21:9 Ultra-wide");
+    const premium = variationOptions.find((item) => item.id === "premium")!;
+    expect(premium.label).toBe("More premium");
+    // suffix 是模型输入，语言无关（保持中文原文）。
+    expect(premium.suffix).toBe("版本方向：提升高级感、统一性与材质质感，保持原主题。");
+  });
+
+  it("validateCanvasSize 校验消息在 en 下为英文（成功消息模板插值）", () => {
+    setLocale("en");
+    expect(validateCanvasSize("abc")).toMatchObject({ ok: false, message: "Enter width x height, e.g. 1536x1024" });
+    expect(validateCanvasSize("1000x1000")).toMatchObject({ ok: false, message: "Width and height must be multiples of 16" });
+    expect(validateCanvasSize("4096x4096")).toMatchObject({ ok: false, message: "The longest edge cannot exceed 3840 px" });
+    expect(validateCanvasSize("1536x1024")).toMatchObject({ ok: true, message: "1536 × 1024, about 1.57 MP" });
   });
 });

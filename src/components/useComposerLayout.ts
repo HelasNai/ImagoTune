@@ -12,6 +12,7 @@ import {
   LAYOUT_COLS,
   minResizeHeightPx,
   moduleDef,
+  moduleLabel,
   resolveAllConflicts,
   resolvePushLayout,
   resolveVerticalLayout,
@@ -36,6 +37,7 @@ import {
   type LegacyLayoutStoreV3,
 } from "../lib/layout-store";
 import { createHistory, pushHistory, redoHistory, undoHistory, type LayoutHistory } from "../lib/layout-history";
+import { t } from "../lib/i18n";
 import { useGlobalKeyDown } from "./useKeyboard";
 
 const STORAGE_KEY = "imagotune:layout:v1";
@@ -51,7 +53,14 @@ function isTextEditingTarget(target: EventTarget | null): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
 }
 
-const DEFAULT_PRESET: LayoutPreset = { id: "default", name: "默认", snapshot: null };
+const DEFAULT_PRESET_ID = "default";
+/** 默认方案初始显示名：作为「未被用户重命名」的哨兵，展示时经 t("默认") 按当前语言输出。 */
+const DEFAULT_PRESET_NAME = "默认";
+
+/** 构造默认方案（快照为 null = 未自定义，流式渲染）。 */
+function defaultPreset(): LayoutPreset {
+  return { id: DEFAULT_PRESET_ID, name: DEFAULT_PRESET_NAME, snapshot: null };
+}
 
 /**
  * 从 localStorage 读取布局：v4 直接使用；v3 暂存到 legacyRef（本次以空 store 流式渲染，待列宽就绪后一次性迁移）；
@@ -511,13 +520,13 @@ export function useComposerLayout({ mode, containerRef }: {
     if (!editing || !resolved) return [];
     return layoutItems.map((item) => {
       if (live?.id === item.id) {
-        return { id: item.id, label: moduleDef(item.id).label, left: live.x, top: live.y, width: live.w, height: live.h };
+        return { id: item.id, label: moduleLabel(item.id), left: live.x, top: live.y, width: live.w, height: live.h };
       }
       // 手柄层跟随推挤预览（被推模块的拖拽 / 缩放热区须与其可见位置一致）。
       const top = pushTops?.[item.id] ?? displayTops[item.id] ?? item.placement.y;
       return {
         id: item.id,
-        label: moduleDef(item.id).label,
+        label: moduleLabel(item.id),
         left: displayLeft(item.placement) * colWidth,
         top: top * GRID_PX,
         width: Math.min(item.placement.w, LAYOUT_COLS) * colWidth,
@@ -877,14 +886,14 @@ export function useComposerLayout({ mode, containerRef }: {
   /** 删除方案（「默认」不可删；删除当前激活方案时回落到默认方案）。 */
   const deletePreset = useCallback(
     (id: string) => {
-      if (id === DEFAULT_PRESET.id) return;
+      if (id === DEFAULT_PRESET_ID) return;
       setEditing(false);
       updateStore((current) => {
         const presets = current.presets.filter((item) => item.id !== id);
-        if (!presets.length) presets.push({ ...DEFAULT_PRESET });
+        if (!presets.length) presets.push(defaultPreset());
         const activePresetId =
           current.activePresetId === id
-            ? (presets.find((item) => item.id === DEFAULT_PRESET.id)?.id ?? presets[0].id)
+            ? (presets.find((item) => item.id === DEFAULT_PRESET_ID)?.id ?? presets[0].id)
             : current.activePresetId;
         return { ...current, presets, activePresetId };
       });
@@ -948,8 +957,11 @@ export function useComposerLayout({ mode, containerRef }: {
     redo,
     /** 当前激活方案快照（编码分享码用） */
     snapshot,
-    /** 方案列表（id + 名称） */
-    presets: store.presets.map((item) => ({ id: item.id, name: item.name })),
+    /** 方案列表（id + 名称）；默认方案的初始名按当前语言显示，用户重命名后保留自定义名。 */
+    presets: store.presets.map((item) => ({
+      id: item.id,
+      name: item.id === DEFAULT_PRESET_ID && item.name === DEFAULT_PRESET_NAME ? t("默认") : item.name,
+    })),
     activePresetId: store.activePresetId,
     createPreset,
     switchPreset,

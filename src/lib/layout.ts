@@ -10,9 +10,10 @@
 // - 放置不允许重叠：冲突时由 findFreeSlot 在期望位置附近找最近空位（自动避让；
 //   「最近」是列/行混合度量，不承诺像素最优）；
 // - 运行行（生成按钮条）钉在底部，不参与布局模型。
-// 本文件不 import components/、electron/ 与任何第三方包（可被 vitest 直接导入）。
+// 本文件不 import components/、electron/ 与任何第三方包（仅依赖纯逻辑 i18n，可被 vitest 直接导入）。
 // 注意：默认布局不由本模块静态定义——现状排布依赖运行时实测（流式高度），
 // 由编辑模式开启时测量生成；本模块只提供模型与运算。
+import { t } from "./i18n";
 
 /** 垂直行高（y / h 单位），窗口无关：1 行 = 16px。 */
 export const GRID_PX = 16;
@@ -38,7 +39,6 @@ export type LayoutPlacement = { x: number; y: number; w: number; h: number };
 
 export type LayoutModuleDef = {
   id: LayoutModuleId;
-  label: string;
   /** 出现的模式（三个 = 通用模块，坐标三模式共享）。 */
   modes: readonly LayoutMode[];
   /** 最小尺寸（px 语义，窗口无关）：缩放把手下限，避免压扁到不可用；换算列/行由调用方按 colWidth / GRID_PX 进行。 */
@@ -48,16 +48,34 @@ export type LayoutModuleDef = {
 
 /** 可编辑模块清单（一级颗粒度；顺序 = 未自定义时的默认纵向顺序，供测量兜底）。 */
 export const LAYOUT_MODULES: readonly LayoutModuleDef[] = [
-  { id: "project-strip", label: "项目归属", modes: ["generate", "edit", "outpaint"], minW: 400, minH: 64 },
-  { id: "prompt", label: "提示词", modes: ["generate", "edit", "outpaint"], minW: 360, minH: 200 },
-  { id: "negative-prompt", label: "负面提示词", modes: ["generate", "edit", "outpaint"], minW: 360, minH: 112 },
-  { id: "reverse-prompt", label: "图反推", modes: ["generate", "edit", "outpaint"], minW: 320, minH: 48 },
-  { id: "upload", label: "上传区", modes: ["edit", "outpaint"], minW: 320, minH: 48 },
-  { id: "mask", label: "蒙版绘制", modes: ["edit"], minW: 360, minH: 240 },
-  { id: "references", label: "参考图", modes: ["generate", "edit"], minW: 320, minH: 120 },
-  { id: "outpaint-panel", label: "扩图画布", modes: ["outpaint"], minW: 360, minH: 160 },
-  { id: "controls", label: "输出控制", modes: ["generate", "edit", "outpaint"], minW: 480, minH: 144 },
+  { id: "project-strip", modes: ["generate", "edit", "outpaint"], minW: 400, minH: 64 },
+  { id: "prompt", modes: ["generate", "edit", "outpaint"], minW: 360, minH: 200 },
+  { id: "negative-prompt", modes: ["generate", "edit", "outpaint"], minW: 360, minH: 112 },
+  { id: "reverse-prompt", modes: ["generate", "edit", "outpaint"], minW: 320, minH: 48 },
+  { id: "upload", modes: ["edit", "outpaint"], minW: 320, minH: 48 },
+  { id: "mask", modes: ["edit"], minW: 360, minH: 240 },
+  { id: "references", modes: ["generate", "edit"], minW: 320, minH: 120 },
+  { id: "outpaint-panel", modes: ["outpaint"], minW: 360, minH: 160 },
+  { id: "controls", modes: ["generate", "edit", "outpaint"], minW: 480, minH: 144 },
 ];
+
+/** 模块显示名的中文 key（id → 文案）：调用时经 t() 求值，语言切换后重渲染即更新。 */
+const MODULE_LABEL_KEYS = {
+  "project-strip": "项目归属",
+  prompt: "提示词",
+  "negative-prompt": "负面提示词",
+  "reverse-prompt": "图反推",
+  upload: "上传区",
+  mask: "蒙版绘制",
+  references: "参考图",
+  "outpaint-panel": "扩图画布",
+  controls: "输出控制",
+} as const;
+
+/** 模块显示名 getter（id → 当前语言文案）。 */
+export function moduleLabel(id: LayoutModuleId): string {
+  return t(MODULE_LABEL_KEYS[id]);
+}
 
 /** 模块宽度档位阈值（px，模块自身宽度）：widthPx < 阈值时对应档位生效。空对象 = 无档位（天然弹性）。 */
 export const LAYOUT_SIZE_THRESHOLDS: Record<LayoutModuleId, { compact?: number; narrow?: number }> = {
