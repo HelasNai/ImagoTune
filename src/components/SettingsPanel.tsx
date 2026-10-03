@@ -669,6 +669,7 @@ export function SettingsPanel({
             type="button"
             className={locale === "zh" ? "active" : ""}
             aria-pressed={locale === "zh"}
+            data-i18n-skip="true"
             onClick={() => void switchLocale("zh")}
           >
             简体中文
