@@ -135,6 +135,7 @@ export function validateCanvasSize(value: string) {
   } as const;
 }
 
+// 分隔符同时接受中文逗号「，」、英文逗号 "," 与换行；每段 trim 后去重、上限 20。
 export function parseTags(value: string) {
   return [...new Set(value.split(/[，,\n]/).map((tag) => tag.trim()).filter(Boolean))].slice(0, 20);
 }

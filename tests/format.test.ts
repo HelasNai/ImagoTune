@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { setLocale } from "../src/lib/i18n";
 import {
   clamp,
   compositeFileKey,
@@ -15,6 +16,11 @@ import {
   roundUp16,
   uniqueBy,
 } from "../src/lib/format";
+
+// locale 为模块级单例：每个用例结束后复位 zh，保证既有的中文断言逐字不变。
+afterEach(() => {
+  setLocale("zh");
+});
 
 describe("format helpers", () => {
   describe("clamp", () => {
@@ -243,5 +249,42 @@ describe("format helpers", () => {
       expect(Number.isNaN(Date.parse(value))).toBe(false);
       expect(value).toBe(new Date(value).toISOString());
     });
+  });
+});
+
+describe("locale-aware en output", () => {
+  it("en 下时长模板输出 12.3s", () => {
+    setLocale("en");
+    expect(formatDurationSeconds(12345)).toBe("12.3s");
+    expect(formatDurationSeconds(1000)).toBe("1.0s");
+    expect(formatDurationSeconds(0)).toBe("0.0s");
+  });
+
+  it("en 下标签用半角逗号加空格拼接", () => {
+    setLocale("en");
+    expect(formatTags(["风景", "夜景"])).toBe("风景, 夜景");
+    expect(formatTags([])).toBe("");
+  });
+
+  it("en 下更早年份输出 M/D/Y", () => {
+    setLocale("en");
+    const now = new Date(2026, 0, 15);
+    expect(formatShortDate(new Date(2025, 11, 1), now)).toBe("12/1/2025");
+    // 今天与今年的分支与 zh 一致。
+    expect(formatShortDate(new Date(2025, 8, 30, 14, 7), new Date(2025, 8, 30, 20, 5))).toBe("14:07");
+    expect(formatShortDate(new Date(2025, 8, 28), new Date(2025, 8, 30, 20, 5))).toBe("9/28");
+  });
+
+  it("en 下模式与队列状态走词典", () => {
+    setLocale("en");
+    // 仅断言 core.ts 自有键；图片编辑 / 智能扩图 同键由 en/shell.ts（main.tsx 导航）承载。
+    expect(modeLabel({ mode: "generate" })).toBe("Text to image");
+    expect(modeLabel({ mode: "generate", referenceCount: 2 }, { referenceAware: true })).toBe("Reference generation");
+    expect(queueStatusLabel("queued")).toBe("Queued");
+    expect(queueStatusLabel("running")).toBe("Running");
+    expect(queueStatusLabel("completed")).toBe("Completed");
+    expect(queueStatusLabel("failed")).toBe("Failed");
+    expect(queueStatusLabel("cancelled")).toBe("Cancelled");
+    expect(queueStatusLabel("interrupted")).toBe("Interrupted");
   });
 });
