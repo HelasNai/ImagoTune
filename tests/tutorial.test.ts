@@ -11,7 +11,7 @@ import {
   startTutorial,
   TUTORIAL_CONTENT_VERSION,
   TUTORIAL_REMIND_DELAY_MS,
-  TUTORIAL_STEPS,
+  TUTORIAL_STEP_COUNT,
   tutorialProgress,
 } from "../src/lib/tutorial";
 
@@ -42,8 +42,8 @@ describe("tutorial state", () => {
     const advanced = advanceTutorial(initial, 4, now + 1);
     expect(advanced).toMatchObject({ status: "in_progress", currentStep: 4 });
     expect(startTutorial(advanced, now + 2).currentStep).toBe(4);
-    expect(advanceTutorial(advanced, 999, now + 3).currentStep).toBe(TUTORIAL_STEPS.length - 1);
-    expect(completeTutorial(advanced, now + 4)).toMatchObject({ status: "completed", currentStep: TUTORIAL_STEPS.length - 1 });
+    expect(advanceTutorial(advanced, 999, now + 3).currentStep).toBe(TUTORIAL_STEP_COUNT - 1);
+    expect(completeTutorial(advanced, now + 4)).toMatchObject({ status: "completed", currentStep: TUTORIAL_STEP_COUNT - 1 });
   });
 
   it("reports stable progress", () => {

@@ -1,3 +1,6 @@
+import { t } from "./i18n";
+import type { I18nKey } from "./i18n";
+
 export const TUTORIAL_CONTENT_VERSION = 1;
 export const TUTORIAL_STORAGE_KEY = "imagotune:tutorial-state";
 export const TUTORIAL_REMIND_DELAY_MS = 24 * 60 * 60 * 1000;
@@ -36,7 +39,28 @@ export interface TutorialTopic {
   mode: TutorialMode;
 }
 
-export const TUTORIAL_STEPS: TutorialStep[] = [
+// 步骤/主题模板：结构（id/mode/target/icon）为稳定数据；文案存中文 key，
+// 由 tutorialSteps()/tutorialTopics() 在每次调用时经 t() 求值（绝不在模块加载期冻结）。
+interface TutorialStepTemplate {
+  id: string;
+  title: I18nKey;
+  description: I18nKey;
+  hint: I18nKey;
+  mode?: TutorialMode;
+  target?: string;
+}
+
+interface TutorialTopicTemplate {
+  id: string;
+  icon: TutorialIconName;
+  title: I18nKey;
+  purpose: I18nKey;
+  steps: I18nKey[];
+  commonIssue: I18nKey;
+  mode: TutorialMode;
+}
+
+const STEP_TEMPLATES: TutorialStepTemplate[] = [
   {
     id: "welcome",
     title: "欢迎来到 ImagoTune",
@@ -99,7 +123,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   },
 ];
 
-export const TUTORIAL_TOPICS: TutorialTopic[] = [
+const TOPIC_TEMPLATES: TutorialTopicTemplate[] = [
   {
     id: "connection",
     icon: "settings",
@@ -147,6 +171,34 @@ export const TUTORIAL_TOPICS: TutorialTopic[] = [
   },
 ];
 
+/** 教程步骤总数（结构常量；状态机与 UI 取长度时无需构造文案）。 */
+export const TUTORIAL_STEP_COUNT = STEP_TEMPLATES.length;
+
+/** 当前语言下的教程步骤（每次调用经 t() 组合，语言切换后重新调用即更新）。 */
+export function tutorialSteps(): TutorialStep[] {
+  return STEP_TEMPLATES.map((item) => ({
+    id: item.id,
+    title: t(item.title),
+    description: t(item.description),
+    hint: t(item.hint),
+    mode: item.mode,
+    target: item.target,
+  }));
+}
+
+/** 当前语言下的教程主题（每次调用经 t() 组合）。 */
+export function tutorialTopics(): TutorialTopic[] {
+  return TOPIC_TEMPLATES.map((item) => ({
+    id: item.id,
+    icon: item.icon,
+    title: t(item.title),
+    purpose: t(item.purpose),
+    steps: item.steps.map((step) => t(step)),
+    commonIssue: t(item.commonIssue),
+    mode: item.mode,
+  }));
+}
+
 export function createTutorialState(now = Date.now()): TutorialState {
   return {
     version: TUTORIAL_CONTENT_VERSION,
@@ -167,7 +219,7 @@ export function parseTutorialState(raw: string | null, now = Date.now()): Tutori
     return {
       version: TUTORIAL_CONTENT_VERSION,
       status: value.status as TutorialStatus,
-      currentStep: Math.max(0, Math.min(TUTORIAL_STEPS.length - 1, Number(value.currentStep) || 0)),
+      currentStep: Math.max(0, Math.min(TUTORIAL_STEP_COUNT - 1, Number(value.currentStep) || 0)),
       remindAt: Number.isFinite(value.remindAt) ? Number(value.remindAt) : undefined,
       updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : new Date(now).toISOString(),
     };
@@ -196,7 +248,7 @@ export function startTutorial(state: TutorialState, now = Date.now(), restart = 
   return {
     version: TUTORIAL_CONTENT_VERSION,
     status: "in_progress",
-    currentStep: restart ? 0 : Math.min(resumeStep, TUTORIAL_STEPS.length - 1),
+    currentStep: restart ? 0 : Math.min(resumeStep, TUTORIAL_STEP_COUNT - 1),
     updatedAt: new Date(now).toISOString(),
   };
 }
@@ -223,7 +275,7 @@ export function advanceTutorial(state: TutorialState, step: number, now = Date.n
   return {
     ...state,
     status: "in_progress",
-    currentStep: Math.max(0, Math.min(TUTORIAL_STEPS.length - 1, step)),
+    currentStep: Math.max(0, Math.min(TUTORIAL_STEP_COUNT - 1, step)),
     remindAt: undefined,
     updatedAt: new Date(now).toISOString(),
   };
@@ -233,7 +285,7 @@ export function completeTutorial(state: TutorialState, now = Date.now()): Tutori
   return {
     ...state,
     status: "completed",
-    currentStep: TUTORIAL_STEPS.length - 1,
+    currentStep: TUTORIAL_STEP_COUNT - 1,
     remindAt: undefined,
     updatedAt: new Date(now).toISOString(),
   };
@@ -242,5 +294,5 @@ export function completeTutorial(state: TutorialState, now = Date.now()): Tutori
 export function tutorialProgress(state: TutorialState) {
   if (state.status === "completed") return 100;
   if (state.status === "new") return 0;
-  return Math.round((state.currentStep / (TUTORIAL_STEPS.length - 1)) * 100);
+  return Math.round((state.currentStep / (TUTORIAL_STEP_COUNT - 1)) * 100);
 }

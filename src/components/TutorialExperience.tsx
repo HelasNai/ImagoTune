@@ -6,12 +6,13 @@ import {
   postponeTutorial,
   shouldShowTutorialWelcome,
   startTutorial,
-  TUTORIAL_STEPS,
-  TUTORIAL_TOPICS,
+  tutorialSteps,
+  tutorialTopics,
   TutorialMode,
   TutorialState,
   tutorialProgress,
 } from "../lib/tutorial";
+import { t } from "../lib/i18n";
 import { NavIcon } from "./icons";
 import { useGlobalKeyDown } from "./useKeyboard";
 
@@ -51,7 +52,9 @@ export function TutorialExperience({
   const [targetRect, setTargetRect] = useState<Rect | null>(null);
   const [targetMissing, setTargetMissing] = useState(false);
   const overlayRef = useRef<HTMLDivElement>(null);
-  const step = TUTORIAL_STEPS[state.currentStep] || TUTORIAL_STEPS[0];
+  const steps = tutorialSteps();
+  const topics = tutorialTopics();
+  const step = steps[state.currentStep] || steps[0];
   const progress = tutorialProgress(state);
 
   const beginTour = (restart = false) => {
@@ -73,8 +76,8 @@ export function TutorialExperience({
   };
 
   const goToStep = (index: number) => {
-    const nextIndex = Math.max(0, Math.min(TUTORIAL_STEPS.length - 1, index));
-    const nextStep = TUTORIAL_STEPS[nextIndex];
+    const nextIndex = Math.max(0, Math.min(steps.length - 1, index));
+    const nextStep = steps[nextIndex];
     onStateChange(advanceTutorial(state, nextIndex));
     if (nextStep.mode) onNavigate(nextStep.mode);
   };
@@ -195,16 +198,16 @@ export function TutorialExperience({
   if (view === "welcome") return (
     <div className="tutorial-modal" ref={overlayRef} role="dialog" aria-modal="true" aria-labelledby="tutorial-welcome-title">
       <section className="tutorial-welcome-card">
-        <button className="tutorial-close" aria-label="稍后再看" onClick={() => { onStateChange(postponeTutorial(state)); onViewChange("none"); }}><NavIcon name="x" size={18} /></button>
+        <button className="tutorial-close" aria-label={t("稍后再看")} onClick={() => { onStateChange(postponeTutorial(state)); onViewChange("none"); }}><NavIcon name="x" size={18} /></button>
         <span className="tutorial-spark"><NavIcon name="sparkles" size={30} /></span>
-        <span className="eyebrow">WELCOME TO IMAGOTUNE</span>
-        <h2 id="tutorial-welcome-title">用 2–3 分钟熟悉创作流程</h2>
-        <p>教程会带你查看连接设置、提示词、参考图片、生成队列、图库和本地 AI 工具箱。</p>
-        <div className="tutorial-privacy"><strong>不会产生费用</strong><span>教程只高亮和说明功能，不会生成图片、测试连接、下载模型或读取你的输入。</span></div>
+        <span className="eyebrow">{t("WELCOME TO IMAGOTUNE")}</span>
+        <h2 id="tutorial-welcome-title">{t("用 2–3 分钟熟悉创作流程")}</h2>
+        <p>{t("教程会带你查看连接设置、提示词、参考图片、生成队列、图库和本地 AI 工具箱。")}</p>
+        <div className="tutorial-privacy"><strong>{t("不会产生费用")}</strong><span>{t("教程只高亮和说明功能，不会生成图片、测试连接、下载模型或读取你的输入。")}</span></div>
         <div className="tutorial-welcome-actions">
-          <button className="primary" onClick={() => beginTour(true)}>开始教程</button>
-          <button className="secondary" onClick={() => { onStateChange(postponeTutorial(state)); onViewChange("none"); }}>24 小时后提醒</button>
-          <button className="tutorial-text-button" onClick={() => { onStateChange(dismissTutorial(state)); onViewChange("none"); }}>当前教程版本不再提醒</button>
+          <button className="primary" onClick={() => beginTour(true)}>{t("开始教程")}</button>
+          <button className="secondary" onClick={() => { onStateChange(postponeTutorial(state)); onViewChange("none"); }}>{t("24 小时后提醒")}</button>
+          <button className="tutorial-text-button" onClick={() => { onStateChange(dismissTutorial(state)); onViewChange("none"); }}>{t("当前教程版本不再提醒")}</button>
         </div>
       </section>
     </div>
@@ -213,32 +216,32 @@ export function TutorialExperience({
   if (view === "center") return (
     <div className="tutorial-modal tutorial-center-modal" ref={overlayRef} role="dialog" aria-modal="true" aria-labelledby="tutorial-center-title">
       <section className="tutorial-center">
-        <button className="tutorial-close" aria-label="关闭教程中心" onClick={() => onViewChange("none")}><NavIcon name="x" size={18} /></button>
+        <button className="tutorial-close" aria-label={t("关闭教程中心")} onClick={() => onViewChange("none")}><NavIcon name="x" size={18} /></button>
         <div className="tutorial-center-scroll">
           <div className="tutorial-center-sticky-head"><div className="tutorial-center-head">
-            <div><span className="eyebrow">LEARNING CENTER</span><h2 id="tutorial-center-title">新手教程中心</h2><p>按主题快速了解用途、步骤和常见问题。</p></div>
-            <div className="tutorial-progress-card"><strong>{progress}%</strong><span>{state.status === "completed" ? "核心教程已完成" : state.status === "in_progress" ? `已学习 ${state.currentStep + 1}/${TUTORIAL_STEPS.length}` : "尚未开始核心教程"}</span><i><b style={{ width: `${progress}%` }} /></i></div>
+            <div><span className="eyebrow">{t("LEARNING CENTER")}</span><h2 id="tutorial-center-title">{t("新手教程中心")}</h2><p>{t("按主题快速了解用途、步骤和常见问题。")}</p></div>
+            <div className="tutorial-progress-card"><strong>{progress}%</strong><span>{state.status === "completed" ? t("核心教程已完成") : state.status === "in_progress" ? t("已学习 {current}/{total}", { current: state.currentStep + 1, total: steps.length }) : t("尚未开始核心教程")}</span><i><b style={{ width: `${progress}%` }} /></i></div>
           </div></div>
           <div className="tutorial-topic-grid">
-            {TUTORIAL_TOPICS.map((topic) => <article key={topic.id}>
+            {topics.map((topic) => <article key={topic.id}>
               <span className="tutorial-topic-icon"><NavIcon name={topic.icon} size={20} /></span>
               <div><h3>{topic.title}</h3><p>{topic.purpose}</p></div>
               <ol>{topic.steps.map((item) => <li key={item}>{item}</li>)}</ol>
-              <details><summary>常见问题</summary><p>{topic.commonIssue}</p></details>
-              <button onClick={() => { onNavigate(topic.mode); onViewChange("none"); }}>前往该功能</button>
+              <details><summary>{t("常见问题")}</summary><p>{topic.commonIssue}</p></details>
+              <button onClick={() => { onNavigate(topic.mode); onViewChange("none"); }}>{t("前往该功能")}</button>
             </article>)}
           </div>
           <div className="tutorial-center-actions">
-            {state.status === "in_progress" && <button className="primary" onClick={() => beginTour(false)}>继续上次进度</button>}
-            <button className={state.status === "in_progress" ? "secondary" : "primary"} onClick={() => beginTour(true)}>重新开始完整引导</button>
-            <button className="secondary" onClick={() => onViewChange("none")}>关闭</button>
+            {state.status === "in_progress" && <button className="primary" onClick={() => beginTour(false)}>{t("继续上次进度")}</button>}
+            <button className={state.status === "in_progress" ? "secondary" : "primary"} onClick={() => beginTour(true)}>{t("重新开始完整引导")}</button>
+            <button className="secondary" onClick={() => onViewChange("none")}>{t("关闭")}</button>
           </div>
         </div>
       </section>
     </div>
   );
 
-  const last = state.currentStep === TUTORIAL_STEPS.length - 1;
+  const last = state.currentStep === steps.length - 1;
   return (
     <div className={`tutorial-tour${targetRect ? " has-target" : " is-centered"}`} ref={overlayRef} role="dialog" aria-modal="true" aria-labelledby="tutorial-step-title">
       {targetRect && <>
@@ -251,21 +254,21 @@ export function TutorialExperience({
       </>}
       {!targetRect && <div className="tutorial-shade tutorial-shade-full" />}
       <section className="tutorial-step-card" style={cardStyle}>
-        <div className="tutorial-step-meta"><span>核心教程</span><strong>{state.currentStep + 1} / {TUTORIAL_STEPS.length}</strong></div>
-        <div className="tutorial-step-progress"><i style={{ width: `${((state.currentStep + 1) / TUTORIAL_STEPS.length) * 100}%` }} /></div>
+        <div className="tutorial-step-meta"><span>{t("核心教程")}</span><strong>{state.currentStep + 1} / {steps.length}</strong></div>
+        <div className="tutorial-step-progress"><i style={{ width: `${((state.currentStep + 1) / steps.length) * 100}%` }} /></div>
         <h2 id="tutorial-step-title">{step.title}</h2>
         <p>{step.description}</p>
-        <div className="tutorial-hint"><span>提示</span>{step.hint}</div>
-        {targetMissing && <small className="tutorial-fallback-note">当前布局中没有找到目标控件，已切换为居中讲解，你仍可继续教程。</small>}
+        <div className="tutorial-hint"><span>{t("提示|教程")}</span>{step.hint}</div>
+        {targetMissing && <small className="tutorial-fallback-note">{t("当前布局中没有找到目标控件，已切换为居中讲解，你仍可继续教程。")}</small>}
         <div className="tutorial-step-actions">
-          {state.currentStep > 0 && <button className="secondary" onClick={() => goToStep(state.currentStep - 1)}>上一步</button>}
-          {!last ? <button className="primary" onClick={() => goToStep(state.currentStep + 1)}>下一步</button> : <>
-            <button className="primary" onClick={() => finishTour(false)}>开始创作</button>
-            <button className="secondary" onClick={() => finishTour(true)}>查看教程中心</button>
+          {state.currentStep > 0 && <button className="secondary" onClick={() => goToStep(state.currentStep - 1)}>{t("上一步")}</button>}
+          {!last ? <button className="primary" onClick={() => goToStep(state.currentStep + 1)}>{t("下一步")}</button> : <>
+            <button className="primary" onClick={() => finishTour(false)}>{t("开始创作")}</button>
+            <button className="secondary" onClick={() => finishTour(true)}>{t("查看教程中心")}</button>
           </>}
         </div>
-        <div className="tutorial-step-footer"><button onClick={pauseTour}>暂停并退出</button><button onClick={() => { onStateChange(dismissTutorial(state)); onTourExit("restore"); onViewChange("none"); }}>跳过教程</button></div>
-        <small className="tutorial-keyboard">← → 切换步骤 · Esc 暂停</small>
+        <div className="tutorial-step-footer"><button onClick={pauseTour}>{t("暂停并退出")}</button><button onClick={() => { onStateChange(dismissTutorial(state)); onTourExit("restore"); onViewChange("none"); }}>{t("跳过教程")}</button></div>
+        <small className="tutorial-keyboard">{t("← → 切换步骤 · Esc 暂停")}</small>
       </section>
     </div>
   );
