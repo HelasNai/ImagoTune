@@ -13,6 +13,7 @@ declare global {
         openSaveDir: () => Promise<{ ok: boolean; error?: string }>;
         clear: () => Promise<{ ok: boolean }>;
         test: (input?: SettingsTestInput) => Promise<SettingsTestResult>;
+        setLocale: (locale: Shared.Locale) => Promise<{ ok: boolean; error?: string }>;
       };
       updates: {
         get: () => Promise<{ ok: boolean; appVersion: string; channel: UpdateChannel; autoUpdate: boolean; supported: boolean; status: UpdateStatus; alphaUnlocked: boolean }>;
@@ -143,6 +144,7 @@ declare global {
   type ProviderSummary = Shared.ProviderSummary;
   type ProviderPreset = Shared.ProviderPreset;
   type ModelConfig = Shared.ModelConfig;
+  type Locale = Shared.Locale;
   type SettingsSnapshot = Shared.SettingsSnapshot;
   type SettingsSavePayload = Shared.SettingsSavePayload;
   type SettingsTestInput = Shared.SettingsTestInput;

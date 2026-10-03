@@ -10,6 +10,7 @@ export const SETTINGS_RESET_SAVE_DIR = "settings:resetSaveDir";
 export const SETTINGS_OPEN_SAVE_DIR = "settings:openSaveDir";
 export const SETTINGS_CLEAR = "settings:clear";
 export const SETTINGS_TEST = "settings:test";
+export const SETTINGS_SET_LOCALE = "settings:setLocale";
 
 // —— invoke：窗口控制 ——
 export const WINDOW_MINIMIZE = "window:minimize";

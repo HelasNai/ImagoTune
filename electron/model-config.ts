@@ -2,6 +2,7 @@
 // 多供应商模型配置的纯逻辑模块（无 IPC / 无副作用 / 无 electron 依赖，仅供 vitest 与 main.ts 复用）。
 // 契约来源：.omo/plans/multi-provider-model-config.md 的 D2/D3/D5/D10/D12。
 import type {
+  Locale,
   ModelConfig,
   ModelRole,
   ProviderConfig,
@@ -212,4 +213,33 @@ export function stripProviderSecrets(providers: Array<ProviderConfig & { apiKey?
     void _stripped;
     return meta;
   });
+}
+
+// —— 界面语言 locale：纯逻辑（解析/回退/重建合并）。主进程只负责 I/O 编排。——
+
+/** 解析任意值为合法 Locale；仅接受 "zh" | "en"，其余（含缺失/非字符串）一律丢弃返回 undefined。 */
+export function parseLocale(value: unknown): Locale | undefined {
+  return value === "zh" || value === "en" ? value : undefined;
+}
+
+/** 从配置读取有效 locale；缺失或非法时回退 fallback（启动时由 app.getLocale 映射而来）。 */
+export function resolveLocale(config: ModelConfig | null | undefined, fallback: Locale): Locale {
+  return parseLocale(config?.locale) ?? fallback;
+}
+
+/**
+ * 由保存载荷重建 ModelConfig。
+ * SettingsSavePayload 形状固定、不含 locale，故必须显式并入「当前持久化的 locale」——
+ * 普通设置保存（供应商/角色/autoArchive）绝不因重建而丢失语言偏好。
+ * locale 为 undefined 时不写入字段（兼容尚未初始化/旧配置）。
+ */
+export function rebuildModelConfig(payload: SettingsSavePayload, locale: Locale | undefined): ModelConfig {
+  const next: ModelConfig = {
+    version: 1,
+    providers: stripProviderSecrets(payload.providers),
+    roles: payload.roles,
+    autoArchive: payload.autoArchive,
+  };
+  if (locale !== undefined) next.locale = locale;
+  return next;
 }

@@ -21,12 +21,12 @@ import { createDirectoryManager } from "./directory-manager";
 import { INBOX_PROJECT_ID } from "./constants";
 import { errorMessage, joinBase, withTimeout } from "./net-utils";
 import { atomicWriteJson, ensureDir, nowISO } from "./fs-utils";
-import { buildLegacyModelConfig, deriveConfigured, findProvider, parseModelsResponse, resolveJobBinding, resolveRoleBinding, runSavePlan, stripProviderSecrets, validateSavePayload } from "./model-config";
+import { buildLegacyModelConfig, deriveConfigured, findProvider, parseLocale, parseModelsResponse, rebuildModelConfig, resolveJobBinding, resolveLocale, resolveRoleBinding, runSavePlan, validateSavePayload } from "./model-config";
 import { CANVAS_MAX_EDGE, CANVAS_MAX_PIXELS, CANVAS_MULTIPLE } from "./outpaint-limits";
 import { LOCAL_AI_MAX_EDGE, LOCAL_AI_MAX_PIXELS } from "./local-ai-limits";
 import { getAdapter, PROVIDER_PRESETS } from "./providers/presets";
 import type { GenerateContext } from "./providers/types";
-import type { ApiImage, BinaryPayload, ModelConfig, ModelRole, PromptTemplate, ProviderApiStyle, ProviderSummary, QueueRetryOptions, RoleBinding, SettingsSavePayload, SettingsSnapshot, SettingsTestInput, TaskProgressEvent, UpdateChannel, UpdateStatus } from "../shared/types";
+import type { ApiImage, BinaryPayload, Locale, ModelConfig, ModelRole, PromptTemplate, ProviderApiStyle, ProviderSummary, QueueRetryOptions, RoleBinding, SettingsSavePayload, SettingsSnapshot, SettingsTestInput, TaskProgressEvent, UpdateChannel, UpdateStatus } from "../shared/types";
 import {
   CLIPBOARD_COPY_IMAGE, CLIPBOARD_COPY_TEXT, CLIPBOARD_READ_IMAGE,
   GALLERY_BULK, GALLERY_DELETE, GALLERY_EXPORT_ZIP, GALLERY_LIST, GALLERY_LOAD_IMAGE,
@@ -40,7 +40,7 @@ import {
   PROGRESS_UPDATE, PROMPT_ENHANCE, PROMPT_REVERSE,
   QUEUE_CANCEL, QUEUE_CLEAR, QUEUE_ENQUEUE, QUEUE_ERROR, QUEUE_LIST, QUEUE_REMOVE, QUEUE_RESULT, QUEUE_RETRY, QUEUE_UPDATE,
   SETTINGS_CHOOSE_SAVE_DIR, SETTINGS_CLEAR, SETTINGS_GET, SETTINGS_OPEN_SAVE_DIR, SETTINGS_RESET_SAVE_DIR,
-  SETTINGS_SAVE, SETTINGS_TEST,
+  SETTINGS_SAVE, SETTINGS_SET_LOCALE, SETTINGS_TEST,
   TEMPLATES_DELETE, TEMPLATES_LIST, TEMPLATES_SAVE,
   UPDATES_CHECK, UPDATES_DOWNLOAD, UPDATES_GET, UPDATES_INSTALL, UPDATES_SET_ALPHA_UNLOCKED,
   UPDATES_SET_AUTO_UPDATE, UPDATES_SET_CHANNEL, UPDATE_STATUS,
@@ -74,6 +74,8 @@ let updatePromptOpen = false;
 let modelConfigCache: ModelConfig | null = null;
 // 配置损坏等异常情况下的用户可见告警（中文）；正常时为 undefined。
 let modelConfigWarning: string | undefined;
+// 界面语言单例（T11 的 electron/i18n.ts 接管前的极简实现）：启动时由配置或 app.getLocale() 初始化。
+let currentLocale: Locale = "zh";
 
 type BinaryInput = BinaryPayload;
 type RequestInput = Record<string, unknown> & { requestId: string; recipe?: ImageRecipeV1; title?: string };
@@ -321,8 +323,14 @@ async function recoverCorruptModelConfig(filePath: string, error: unknown) {
     modelConfigCache = null;
     console.error("合成旧版连接设置失败：", synthesizeError);
   }
+  currentLocale = resolveLocale(modelConfigCache, systemLocale());
   modelConfigWarning = "配置文件损坏，已临时使用旧版连接设置；保存后将重建";
   console.error("模型配置文件损坏：", error);
+}
+
+// 系统语言映射：zh* → zh，其余 → en（配置无有效 locale 时的初始默认）。
+function systemLocale(): Locale {
+  return app.getLocale().toLowerCase().startsWith("zh") ? "zh" : "en";
 }
 
 // 启动时加载模型配置：缺失→合成 legacy 并写盘；损坏→幂等备份+恢复视图；绝不抛出。
@@ -342,6 +350,7 @@ async function loadModelConfig(): Promise<void> {
       await atomicWriteJson(filePath, config);
       modelConfigCache = config;
       modelConfigWarning = undefined;
+      currentLocale = resolveLocale(config, systemLocale());
       return;
     }
     let parsed: unknown;
@@ -355,11 +364,18 @@ async function loadModelConfig(): Promise<void> {
       await recoverCorruptModelConfig(filePath, new Error("配置结构不合法"));
       return;
     }
-    modelConfigCache = parsed;
+    // locale 校验：仅保留 "zh" | "en"，其余丢弃（normalize 后入缓存；序列化时保留）。
+    const loaded = parsed as ModelConfig;
+    const validLocale = parseLocale(loaded.locale);
+    if (validLocale) loaded.locale = validLocale;
+    else delete loaded.locale;
+    modelConfigCache = loaded;
     modelConfigWarning = undefined;
+    currentLocale = validLocale ?? systemLocale();
   } catch (error) {
     // 绝不阻断启动：任何意外错误都只保留空缓存并给出告警。
     modelConfigCache = null;
+    currentLocale = systemLocale();
     modelConfigWarning = "读取模型配置失败：" + errorMessage(error, "未知错误");
     console.error("读取模型配置失败：", error);
   }
@@ -382,12 +398,8 @@ async function saveModelConfig(payload: SettingsSavePayload, removalProviderIds:
   if (!plan.ok) return { ok: false, error: plan.error };
 
   // ③ 剥离 apiKey 后写 JSON（密钥红线：磁盘 JSON 永不含 apiKey）。
-  const next: ModelConfig = {
-    version: 1,
-    providers: stripProviderSecrets(payload.providers),
-    roles: payload.roles,
-    autoArchive: payload.autoArchive,
-  };
+  // SettingsSavePayload 不含 locale：重建时必须并入当前持久化的 locale，普通保存绝不丢语言偏好。
+  const next = rebuildModelConfig(payload, currentLocale);
   try {
     await ensureDir(path.dirname(modelConfigPath()));
     await atomicWriteJson(modelConfigPath(), next);
@@ -925,11 +937,12 @@ app.whenReady().then(async () => {
         saveDir,
         configured: deriveConfigured(current, (id) => hasKeyMap.get(id) === true),
         hasSavedApiKey: providers.some((provider) => provider.hasKey),
+        locale: currentLocale,
         warning: getConfigWarning(),
         presets: PROVIDER_PRESETS,
       };
     } catch (error) {
-      return { providers: [], roles: { image: null, reverse: null, enhance: null }, autoArchive: true, saveDir, configured: false, hasSavedApiKey: false, warning: errorMessage(error, "读取设置失败"), presets: PROVIDER_PRESETS };
+      return { providers: [], roles: { image: null, reverse: null, enhance: null }, autoArchive: true, saveDir, configured: false, hasSavedApiKey: false, locale: currentLocale, warning: errorMessage(error, "读取设置失败"), presets: PROVIDER_PRESETS };
     }
   });
   // D9 并集删除保护 + D5 五步保存序：removal=(当前 JSON 差集)∪removedProviderIds；被 active job 引用则整单拒绝。
@@ -950,6 +963,24 @@ app.whenReady().then(async () => {
       return await saveModelConfig(payload, Array.from(removal));
     } catch (error) {
       return { ok: false, error: errorMessage(error, "保存失败") };
+    }
+  });
+  // 语言切换：校验（仅 zh|en，否则拒绝且不改配置）→ 更新内存单例 → 原子写回配置（保留其余字段）。
+  ipcMain.handle(SETTINGS_SET_LOCALE, async (_e, locale: unknown): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      const parsed = parseLocale(locale);
+      if (!parsed) return { ok: false, error: "不支持的语言" };
+      const current = getModelConfigCache();
+      const base: ModelConfig = current ?? { version: 1, providers: [], roles: { image: null, reverse: null, enhance: null }, autoArchive: true };
+      const next: ModelConfig = { ...base, locale: parsed };
+      await ensureDir(path.dirname(modelConfigPath()));
+      await atomicWriteJson(modelConfigPath(), next);
+      modelConfigCache = next;
+      modelConfigWarning = undefined;
+      currentLocale = parsed;
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: errorMessage(error, "保存语言设置失败") };
     }
   });
   ipcMain.handle(SETTINGS_CHOOSE_SAVE_DIR, () => saveDirManager.choose());

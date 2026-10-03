@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { ModelConfig, ProviderApiStyle, ProviderConfig, ProviderModel, SettingsSavePayload } from "../shared/types";
+import type { Locale, ModelConfig, ProviderApiStyle, ProviderConfig, ProviderModel, SettingsSavePayload } from "../shared/types";
 import {
   buildLegacyModelConfig,
   deriveConfigured,
   findProvider,
   mergeFetchedModels,
+  parseLocale,
   parseModelsResponse,
+  rebuildModelConfig,
   resolveJobBinding,
+  resolveLocale,
   resolveRoleBinding,
   runSavePlan,
   stripProviderSecrets,
@@ -401,6 +404,59 @@ describe("stripProviderSecrets", () => {
 
   it("原本无 apiKey 的供应商原样保留", () => {
     expect(stripProviderSecrets([makeProvider("legacy")])).toEqual([makeProvider("legacy")]);
+  });
+});
+
+describe("parseLocale", () => {
+  it("接受 zh 与 en", () => {
+    expect(parseLocale("zh")).toBe("zh");
+    expect(parseLocale("en")).toBe("en");
+  });
+
+  it("非法值（fr / 大小写 / 空 / 非字符串）一律丢弃", () => {
+    expect(parseLocale("fr")).toBeUndefined();
+    expect(parseLocale("ZH")).toBeUndefined();
+    expect(parseLocale("")).toBeUndefined();
+    expect(parseLocale(undefined)).toBeUndefined();
+    expect(parseLocale(null)).toBeUndefined();
+    expect(parseLocale(42)).toBeUndefined();
+  });
+});
+
+describe("resolveLocale", () => {
+  it("配置含合法 locale 时原样返回", () => {
+    expect(resolveLocale(makeConfig({ locale: "en" }), "zh")).toBe("en");
+  });
+
+  it("配置缺失或非法 locale 时回退 fallback", () => {
+    expect(resolveLocale(makeConfig(), "en")).toBe("en");
+    expect(resolveLocale(null, "zh")).toBe("zh");
+    expect(resolveLocale(makeConfig({ locale: "fr" as unknown as Locale }), "en")).toBe("en");
+  });
+});
+
+describe("rebuildModelConfig", () => {
+  it("普通保存（载荷无 locale）并入既有 locale 不丢失", () => {
+    const next = rebuildModelConfig(makePayload(), "en");
+    expect(next.locale).toBe("en");
+  });
+
+  it("显式合法 locale 经序列化后仍保留", () => {
+    const next = rebuildModelConfig(makePayload(), "zh");
+    expect(JSON.parse(JSON.stringify(next)).locale).toBe("zh");
+  });
+
+  it("locale 为 undefined 时不写入该字段", () => {
+    const next = rebuildModelConfig(makePayload(), undefined);
+    expect("locale" in next).toBe(false);
+  });
+
+  it("保留 providers / roles / autoArchive 且剥离密钥", () => {
+    const payload = makePayload({ autoArchive: false });
+    const next = rebuildModelConfig(payload, "en");
+    expect(next.autoArchive).toBe(false);
+    expect(next.roles).toEqual(payload.roles);
+    expect(JSON.stringify(next)).not.toContain("apiKey");
   });
 });
 

@@ -20,7 +20,8 @@ contextBridge.exposeInMainWorld("imageStudio", {
     resetSaveDir: () => ipcRenderer.invoke("settings:resetSaveDir"),
     openSaveDir: () => ipcRenderer.invoke("settings:openSaveDir"),
     clear: () => ipcRenderer.invoke("settings:clear"),
-    test: (input?: { providerId?: string; transient?: { baseUrl?: string; apiKey?: string } }) => ipcRenderer.invoke("settings:test", input)
+    test: (input?: { providerId?: string; transient?: { baseUrl?: string; apiKey?: string } }) => ipcRenderer.invoke("settings:test", input),
+    setLocale: (locale: "zh" | "en") => ipcRenderer.invoke("settings:setLocale", locale)
   },
   updates: {
     get: () => ipcRenderer.invoke("updates:get"),

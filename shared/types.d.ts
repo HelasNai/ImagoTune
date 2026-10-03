@@ -269,11 +269,16 @@ export interface ProviderPreset {
   keyHelp: string;
 }
 
+/** 界面语言：zh（简体中文）/ en（English）。单一来源，主进程持久化与渲染层共享。 */
+export type Locale = "zh" | "en";
+
 export interface ModelConfig {
   version: 1;
   providers: ProviderConfig[];
   roles: Record<ModelRole, RoleBinding | null>;
   autoArchive: boolean;
+  /** 界面语言偏好；非法值在读取时丢弃，重启后保持。 */
+  locale?: Locale;
 }
 
 export interface SettingsSnapshot {
@@ -283,6 +288,8 @@ export interface SettingsSnapshot {
   saveDir: string;
   configured: boolean;
   hasSavedApiKey: boolean;
+  /** 当前界面语言（经主进程校验，必为 zh | en）。 */
+  locale: Locale;
   warning?: string;
   /** 内置预设平台列表（供设置页渲染，不含密钥）；暂为可选，待主进程快照填充 */
   presets?: ProviderPreset[];
