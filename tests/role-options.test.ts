@@ -1,12 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { setLocale } from "../src/lib/i18n";
 import {
   MODEL_ROLES,
-  MODEL_ROLE_LABELS,
   buildQuickSwitchPayload,
   firstAnnotatedModel,
+  modelRoleLabel,
   roleModelOptions,
   roleProviderOptions,
 } from "../src/lib/role-options";
+
+// i18n locale 为模块级单例：每个用例结束复位为默认中文，避免污染其余 zh 直通断言。
+afterEach(() => {
+  setLocale("zh");
+});
 
 // 基础 fixture：一份含三角色标注的供应商配置。
 
@@ -38,10 +44,19 @@ function makeRoles(overrides: Partial<Record<ModelRole, RoleBinding | null>> = {
   };
 }
 
-describe("MODEL_ROLES / MODEL_ROLE_LABELS", () => {
+describe("MODEL_ROLES / modelRoleLabel", () => {
   it("角色列表与显示名固定为三角色", () => {
     expect(MODEL_ROLES).toEqual(["image", "reverse", "enhance"]);
-    expect(MODEL_ROLE_LABELS).toEqual({ image: "生图", reverse: "图反推", enhance: "提示词增强" });
+    expect(modelRoleLabel("image")).toBe("生图");
+    expect(modelRoleLabel("reverse")).toBe("图反推");
+    expect(modelRoleLabel("enhance")).toBe("提示词增强");
+  });
+
+  it("en 下按 as-const key 映射经 t() 返回英文（运行时求值，非加载期常量）", () => {
+    setLocale("en");
+    expect(modelRoleLabel("image")).toBe("Image generation");
+    expect(modelRoleLabel("reverse")).toBe("Reverse prompt");
+    expect(modelRoleLabel("enhance")).toBe("Prompt enhance");
   });
 });
 

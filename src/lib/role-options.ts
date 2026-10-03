@@ -2,6 +2,7 @@
 // 本模块为纯逻辑，不导入 components/、electron/ 或任何第三方包；两处消费方须保持同步。
 
 import type { ModelRole, ProviderConfig, RoleBinding, SettingsSavePayload } from "../../shared/types";
+import { t } from "./i18n";
 
 /** 下拉候选项：value 为实际 id，label 为展示文本（失效态带 ⚠ 前缀）。 */
 export type RoleOption = { value: string; label: string };
@@ -9,7 +10,13 @@ export type RoleOption = { value: string; label: string };
 // 角色列表与显示名（顺序 = 复选框/批量按钮渲染顺序）。
 export const MODEL_ROLES: ModelRole[] = ["image", "reverse", "enhance"];
 
-export const MODEL_ROLE_LABELS: Record<ModelRole, string> = { image: "生图", reverse: "图反推", enhance: "提示词增强" };
+// 角色显示名：as-const 中文 key 映射 + t() 运行时求值（语言切换后随重渲染更新，禁止模块加载期求值）。
+const ROLE_LABEL_KEYS = { image: "生图", reverse: "图反推", enhance: "提示词增强" } as const;
+
+/** 取角色显示名（生图 / 图反推 / 提示词增强），经 i18n 运行时解析。 */
+export function modelRoleLabel(role: ModelRole): string {
+  return t(ROLE_LABEL_KEYS[role]);
+}
 
 /**
  * 供应商下拉：全部供应商映射为 {value: id, label: name}；
@@ -18,7 +25,7 @@ export const MODEL_ROLE_LABELS: Record<ModelRole, string> = { image: "生图", r
 export function roleProviderOptions(providers: ProviderConfig[], binding: RoleBinding | null): RoleOption[] {
   const options = providers.map((provider) => ({ value: provider.id, label: provider.name }));
   if (binding && !providers.some((provider) => provider.id === binding.providerId)) {
-    options.unshift({ value: binding.providerId, label: "⚠ 已删除的供应商" });
+    options.unshift({ value: binding.providerId, label: t("⚠ 已删除的供应商") });
   }
   return options;
 }
@@ -34,11 +41,11 @@ export function roleModelOptions(
 ): RoleOption[] {
   if (!binding) return [];
   const provider = providers.find((item) => item.id === binding.providerId);
-  if (!provider) return [{ value: binding.model, label: binding.model + " ⚠ 未标注" }];
+  if (!provider) return [{ value: binding.model, label: binding.model + " " + t("⚠ 未标注") }];
   const annotated = provider.models.filter((model) => model.roles.includes(role));
   const options = annotated.map((model) => ({ value: model.id, label: model.id }));
   if (!annotated.some((model) => model.id === binding.model)) {
-    options.unshift({ value: binding.model, label: binding.model + " ⚠ 未标注" });
+    options.unshift({ value: binding.model, label: binding.model + " " + t("⚠ 未标注") });
   }
   return options;
 }

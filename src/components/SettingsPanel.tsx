@@ -11,7 +11,7 @@ import { isSettingsDirty } from "../lib/settings-dirty";
 import { presetToProviderDraft } from "../lib/provider-preset";
 import {
   MODEL_ROLES,
-  MODEL_ROLE_LABELS,
+  modelRoleLabel,
   firstAnnotatedModel,
   roleModelOptions,
   roleProviderOptions,
@@ -561,8 +561,8 @@ export function SettingsPanel({
                     批量（作用于搜索结果）：
                     {MODEL_ROLES.map((role) => (
                       <span key={role} className="model-bulk-group">
-                        <button type="button" onClick={() => bulkSetRole(draft.id, role)}>设为 {MODEL_ROLE_LABELS[role]}</button>
-                        <button type="button" onClick={() => bulkClearRole(draft.id, role)}>清除 {MODEL_ROLE_LABELS[role]}</button>
+                        <button type="button" onClick={() => bulkSetRole(draft.id, role)}>设为 {modelRoleLabel(role)}</button>
+                        <button type="button" onClick={() => bulkClearRole(draft.id, role)}>清除 {modelRoleLabel(role)}</button>
                       </span>
                     ))}
                   </div>
@@ -575,7 +575,7 @@ export function SettingsPanel({
                         {model.missing && <span className="model-missing">已下线</span>}
                         {MODEL_ROLES.map((role) => (
                           <label key={role} className="model-role-check">
-                            <input type="checkbox" checked={model.roles.includes(role)} onChange={() => toggleModelRole(draft.id, model.id, role)} /> {MODEL_ROLE_LABELS[role]}
+                            <input type="checkbox" checked={model.roles.includes(role)} onChange={() => toggleModelRole(draft.id, model.id, role)} /> {modelRoleLabel(role)}
                           </label>
                         ))}
                         {model.source === "custom" && (
@@ -619,9 +619,9 @@ export function SettingsPanel({
         </div>
         {MODEL_ROLES.map((role) => (
           <div className="role-binding-row" key={role}>
-            <span className="role-label">{MODEL_ROLE_LABELS[role]}</span>
+            <span className="role-label">{modelRoleLabel(role)}</span>
             <Combobox
-              ariaLabel={`${MODEL_ROLE_LABELS[role]}供应商`}
+              ariaLabel={`${modelRoleLabel(role)}供应商`}
               className="role-provider"
               placeholder="未分配"
               options={roleProviderOptions(drafts, rolesDraft[role])}
@@ -629,7 +629,7 @@ export function SettingsPanel({
               onChange={(value) => setRoleProvider(role, value)}
             />
             <Combobox
-              ariaLabel={`${MODEL_ROLE_LABELS[role]}模型`}
+              ariaLabel={`${modelRoleLabel(role)}模型`}
               className="role-model"
               placeholder={rolesDraft[role] ? "选择模型" : "未分配"}
               options={roleModelOptions(drafts, rolesDraft[role], role)}

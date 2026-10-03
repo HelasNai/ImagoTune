@@ -7,7 +7,7 @@ import { useStudio } from "./StudioContext";
 import { Tooltip } from "./Tooltip";
 import {
   MODEL_ROLES,
-  MODEL_ROLE_LABELS,
+  modelRoleLabel,
   buildQuickSwitchPayload,
   firstAnnotatedModel,
   roleModelOptions,
@@ -125,7 +125,7 @@ export function QuickModelSwitcher({
           return;
         }
         await refreshSettings();
-        notify(`已切换「${MODEL_ROLE_LABELS[role]}」模型`);
+        notify(`已切换「${modelRoleLabel(role)}」模型`);
       } catch {
         // callIpc 在 promise reject 时上报并抛出：同样回滚，避免界面与服务端不一致。
         setDraftRoles(roles);
@@ -151,7 +151,7 @@ export function QuickModelSwitcher({
     const model = firstAnnotatedModel(providers, providerId, role);
     if (!model) {
       const name = providers.find((provider) => provider.id === providerId)?.name ?? providerId;
-      setHint(`「${name}」尚未标注「${MODEL_ROLE_LABELS[role]}」模型，请先到设置页标注`);
+      setHint(`「${name}」尚未标注「${modelRoleLabel(role)}」模型，请先到设置页标注`);
       return;
     }
     applyBinding(role, { providerId, model });
@@ -212,7 +212,7 @@ export function QuickModelSwitcher({
             const card = roleCard(role);
             return (
               <span className="aside-tip-role" key={role}>
-                <i>{MODEL_ROLE_LABELS[role]}</i>
+                <i>{modelRoleLabel(role)}</i>
                 <Tooltip content={card.title}>
                   <strong>{card.text}</strong>
                 </Tooltip>
@@ -250,9 +250,9 @@ export function QuickModelSwitcher({
             <>
               {MODEL_ROLES.map((role) => (
                 <div className="quick-switch-row" key={role}>
-                  <span className="role-label">{MODEL_ROLE_LABELS[role]}</span>
+                  <span className="role-label">{modelRoleLabel(role)}</span>
                   <Combobox
-                    ariaLabel={`${MODEL_ROLE_LABELS[role]}供应商`}
+                    ariaLabel={`${modelRoleLabel(role)}供应商`}
                     className="role-provider"
                     placeholder="未分配"
                     options={roleProviderOptions(providers, draftRoles[role])}
@@ -262,7 +262,7 @@ export function QuickModelSwitcher({
                     onChange={(value) => applyProvider(role, value)}
                   />
                   <Combobox
-                    ariaLabel={`${MODEL_ROLE_LABELS[role]}模型`}
+                    ariaLabel={`${modelRoleLabel(role)}模型`}
                     className="role-model"
                     placeholder={draftRoles[role] ? "选择模型" : "未分配"}
                     options={roleModelOptions(providers, draftRoles[role], role)}
