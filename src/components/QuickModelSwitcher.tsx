@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { createPortal } from "react-dom";
 import { Combobox } from "./Combobox";
 import { NavIcon } from "./icons";
+import { t } from "../lib/i18n";
 import { callIpc } from "./ipc";
 import { useStudio } from "./StudioContext";
 import { Tooltip } from "./Tooltip";
@@ -118,14 +119,14 @@ export function QuickModelSwitcher({
       try {
         const result = await callIpc(
           () => window.imageStudio.settings.save(buildQuickSwitchPayload(providers, nextRoles, autoArchive)),
-          { fallbackError: "模型切换保存失败", onError: (message) => notify(message, true) },
+          { fallbackError: t("模型切换保存失败"), onError: (message) => notify(message, true) },
         );
         if (!result.ok) {
           setDraftRoles(roles); // 服务端裁决失败：回滚到快照
           return;
         }
         await refreshSettings();
-        notify(`已切换「${modelRoleLabel(role)}」模型`);
+        notify(t("已切换「{role}」模型", { role: modelRoleLabel(role) }));
       } catch {
         // callIpc 在 promise reject 时上报并抛出：同样回滚，避免界面与服务端不一致。
         setDraftRoles(roles);
@@ -151,7 +152,7 @@ export function QuickModelSwitcher({
     const model = firstAnnotatedModel(providers, providerId, role);
     if (!model) {
       const name = providers.find((provider) => provider.id === providerId)?.name ?? providerId;
-      setHint(`「${name}」尚未标注「${modelRoleLabel(role)}」模型，请先到设置页标注`);
+      setHint(t("「{name}」尚未标注「{role}」模型，请先到设置页标注", { name, role: modelRoleLabel(role) }));
       return;
     }
     applyBinding(role, { providerId, model });
@@ -173,9 +174,9 @@ export function QuickModelSwitcher({
   // 卡片摘要：侧栏内容宽仅约 150px，正文只放模型名（单行省略号），完整「供应商 · 模型」放 title 提示。
   const roleCard = (role: ModelRole): { text: string; title: string } => {
     const binding = roles[role];
-    if (!binding) return { text: "未绑定", title: "未绑定：点击卡片选择" };
+    if (!binding) return { text: t("未绑定"), title: t("未绑定：点击卡片选择") };
     const provider = providers.find((item) => item.id === binding.providerId);
-    if (!provider) return { text: `⚠ ${binding.model}`, title: "绑定的供应商已不存在 · " + binding.model };
+    if (!provider) return { text: `⚠ ${binding.model}`, title: t("绑定的供应商已不存在 · {model}", { model: binding.model }) };
     return { text: binding.model, title: `${provider.name} · ${binding.model}` };
   };
 
@@ -184,7 +185,7 @@ export function QuickModelSwitcher({
   return (
     <>
       {variant === "dock" ? (
-        <Tooltip content={`当前生图模型：${imageCard.title}（点击快捷切换）`}>
+        <Tooltip content={t("当前生图模型：{title}（点击快捷切换）", { title: imageCard.title })}>
           <button
             type="button"
             ref={triggerRef}
@@ -193,7 +194,7 @@ export function QuickModelSwitcher({
             aria-expanded={open}
             onClick={togglePanel}
           >
-            <i>生图</i>
+            <i>{modelRoleLabel("image")}</i>
             <strong>{imageCard.text}</strong>
             <NavIcon name="chevron-down" size={13} />
           </button>
@@ -207,7 +208,7 @@ export function QuickModelSwitcher({
           aria-expanded={open}
           onClick={togglePanel}
         >
-          <span className="aside-tip-eyebrow">当前模型</span>
+          <span className="aside-tip-eyebrow">{t("当前模型")}</span>
           {MODEL_ROLES.map((role) => {
             const card = roleCard(role);
             return (
@@ -219,7 +220,7 @@ export function QuickModelSwitcher({
               </span>
             );
           })}
-          <span className="aside-tip-note">点击卡片快捷切换模型。图片与数据均保存在本机。</span>
+          <span className="aside-tip-note">{t("点击卡片快捷切换模型。图片与数据均保存在本机。")}</span>
         </button>
       )}
       {open && pos && createPortal(
@@ -227,7 +228,7 @@ export function QuickModelSwitcher({
           ref={panelRef}
           className="quick-switch"
           role="dialog"
-          aria-label="快捷切换模型"
+          aria-label={t("快捷切换模型")}
           tabIndex={-1}
           style={{ position: "fixed", left: pos.left, top: pos.top }}
           onKeyDown={handlePanelKeyDown}
@@ -235,16 +236,16 @@ export function QuickModelSwitcher({
           <div className="quick-switch-head">
             <div>
               <span className="eyebrow">MODEL ASSIGNMENT</span>
-              <h3>快捷切换模型</h3>
+              <h3>{t("快捷切换模型")}</h3>
             </div>
-            <button type="button" className="quick-switch-close" aria-label="关闭" onClick={close}>
+            <button type="button" className="quick-switch-close" aria-label={t("关闭|模型面板")} onClick={close}>
               <NavIcon name="x" size={16} />
             </button>
           </div>
           {providers.length === 0 ? (
             <div className="quick-switch-empty">
-              <p>尚未添加供应商。</p>
-              <button type="button" className="secondary" onClick={() => { close(); onOpenSettings(); }}>去设置添加供应商</button>
+              <p>{t("尚未添加供应商。")}</p>
+              <button type="button" className="secondary" onClick={() => { close(); onOpenSettings(); }}>{t("去设置添加供应商")}</button>
             </div>
           ) : (
             <>
@@ -252,9 +253,9 @@ export function QuickModelSwitcher({
                 <div className="quick-switch-row" key={role}>
                   <span className="role-label">{modelRoleLabel(role)}</span>
                   <Combobox
-                    ariaLabel={`${modelRoleLabel(role)}供应商`}
+                    ariaLabel={t("{role}供应商", { role: modelRoleLabel(role) })}
                     className="role-provider"
-                    placeholder="未分配"
+                    placeholder={t("未分配")}
                     options={roleProviderOptions(providers, draftRoles[role])}
                     value={draftRoles[role]?.providerId ?? ""}
                     disabled={saving}
@@ -262,9 +263,9 @@ export function QuickModelSwitcher({
                     onChange={(value) => applyProvider(role, value)}
                   />
                   <Combobox
-                    ariaLabel={`${modelRoleLabel(role)}模型`}
+                    ariaLabel={t("{role}模型", { role: modelRoleLabel(role) })}
                     className="role-model"
-                    placeholder={draftRoles[role] ? "选择模型" : "未分配"}
+                    placeholder={draftRoles[role] ? t("选择模型") : t("未分配")}
                     options={roleModelOptions(providers, draftRoles[role], role)}
                     value={draftRoles[role]?.model ?? ""}
                     disabled={saving || !draftRoles[role]}
@@ -272,12 +273,12 @@ export function QuickModelSwitcher({
                     onChange={(value) => applyModel(role, value)}
                   />
                   {draftRoles[role] && (
-                    <button type="button" className="role-clear" disabled={saving} onClick={() => applyBinding(role, null)}>清除</button>
+                    <button type="button" className="role-clear" disabled={saving} onClick={() => applyBinding(role, null)}>{t("清除")}</button>
                   )}
                 </div>
               ))}
               {hint && <p className="quick-switch-hint">{hint}</p>}
-              <p className="quick-switch-note">选择后立即保存；模型需先在设置页标注对应角色。{saving ? " 正在保存…" : ""}</p>
+              <p className="quick-switch-note">{t("选择后立即保存；模型需先在设置页标注对应角色。")}{saving ? " " + t("正在保存…") : ""}</p>
             </>
           )}
         </div>,

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createRecipe } from "../lib/creative";
 import { INBOX_PROJECT_ID } from "../lib/constants";
 import { formatBytes, formatDurationSeconds } from "../lib/format";
+import { t } from "../lib/i18n";
 import { validateUpscaleOutput } from "../lib/local-ai";
 import { b64FromDataUrl, b64ToDataUrl, fileToDataUrl } from "../lib/media";
 import { mapLocalAIProgress } from "../lib/progress";
@@ -23,6 +24,9 @@ export type LocalAISource = {
 };
 export type LocalAIAction = "upscale" | "remove-background" | "face-restore" | "pipeline";
 
+// 背景预览可选值（顺序 = 按钮渲染顺序）；label 经 t() 在渲染期求值。
+const BACKGROUND_VALUES = ["checker", "white", "gray", "custom"] as const;
+
 type WorkerResult = {
   type: "result";
   id: string;
@@ -35,37 +39,39 @@ type WorkerResult = {
 type WorkerProgress = { type: "progress"; id: string; phase: string; progress?: number; message: string; device?: "webgpu" | "wasm"; stageIndex?: number; totalStages?: number; stageLabel?: string };
 type WorkerError = { type: "error"; id: string; cancelled?: boolean; error: string };
 
+// 动作标签 getter：每次访问经 t() 运行时求值（语言切换后随重渲染更新，禁止模块加载期冻结）。
 const actionLabels: Record<LocalAIAction, string> = {
-  upscale: "高清放大",
-  "remove-background": "智能抠图",
-  "face-restore": "人脸优化 Beta",
-  pipeline: "本地组合处理",
+  get upscale() { return t("高清放大"); },
+  get "remove-background"() { return t("智能抠图"); },
+  get "face-restore"() { return t("人脸优化 Beta"); },
+  get pipeline() { return t("本地组合处理"); },
 };
 
+// 动作引导 getter：同上，消费点（actionGuides[action].title 等）零改动即逐次求值。
 const actionGuides: Record<LocalAIAction, { title: string; summary: string; output: string; badge: string }> = {
   upscale: {
-    title: "高清放大",
-    summary: "补足纹理与边缘细节，适合放大生成图、插画和产品图。",
-    output: "输出 2× 或 4× PNG，透明区域保持不变",
-    badge: "正式功能",
+    get title() { return t("高清放大"); },
+    get summary() { return t("补足纹理与边缘细节，适合放大生成图、插画和产品图。"); },
+    get output() { return t("输出 2× 或 4× PNG，透明区域保持不变"); },
+    get badge() { return t("正式功能"); },
   },
   "remove-background": {
-    title: "智能抠图",
-    summary: "识别主体并移除背景，适合人物、商品和视觉素材。",
-    output: "输出透明 PNG，可预览边缘与不同底色",
-    badge: "正式功能",
+    get title() { return t("智能抠图"); },
+    get summary() { return t("识别主体并移除背景，适合人物、商品和视觉素材。"); },
+    get output() { return t("输出透明 PNG，可预览边缘与不同底色"); },
+    get badge() { return t("正式功能"); },
   },
   "face-restore": {
-    title: "人脸优化",
-    summary: "检测并修复模糊或轻微畸变的人脸，原脸按强度混合以降低身份漂移。",
-    output: "最多处理 10 张人脸，侧脸和遮挡可能无法识别",
-    badge: "Beta",
+    get title() { return t("人脸优化"); },
+    get summary() { return t("检测并修复模糊或轻微畸变的人脸，原脸按强度混合以降低身份漂移。"); },
+    get output() { return t("最多处理 10 张人脸，侧脸和遮挡可能无法识别"); },
+    get badge() { return "Beta"; },
   },
   pipeline: {
-    title: "一键优化",
-    summary: "依次执行人脸优化、2× 高清放大和智能抠图。",
-    output: "只归档最终成品，任一步失败都不会覆盖原图",
-    badge: "组合流程",
+    get title() { return t("一键优化"); },
+    get summary() { return t("依次执行人脸优化、2× 高清放大和智能抠图。"); },
+    get output() { return t("只归档最终成品，任一步失败都不会覆盖原图"); },
+    get badge() { return t("组合流程"); },
   },
 };
 
@@ -76,12 +82,12 @@ function dataUrlToPixels(dataUrl: string) {
       const canvas = document.createElement("canvas");
       canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
       const context = canvas.getContext("2d", { willReadFrequently: true });
-      if (!context) { reject(new Error("无法读取图片像素")); return; }
+      if (!context) { reject(new Error(t("无法读取图片像素"))); return; }
       context.drawImage(image, 0, 0);
       const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
       resolve({ width: canvas.width, height: canvas.height, data: imageData.data.buffer });
     };
-    image.onerror = () => reject(new Error("无法打开待处理图片"));
+    image.onerror = () => reject(new Error(t("无法打开待处理图片")));
     image.src = dataUrl;
   });
 }
@@ -90,7 +96,7 @@ function pixelsToDataUrl(width: number, height: number, buffer: ArrayBuffer) {
   const canvas = document.createElement("canvas");
   canvas.width = width; canvas.height = height;
   const context = canvas.getContext("2d");
-  if (!context) throw new Error("无法创建结果画布");
+  if (!context) throw new Error(t("无法创建结果画布"));
   context.putImageData(new ImageData(new Uint8ClampedArray(buffer), width, height), 0, 0);
   return canvas.toDataURL("image/png");
 }
@@ -132,7 +138,7 @@ export function LocalAIToolbox({
   const [backgroundColor, setBackgroundColor] = useState("#dbe7f2");
   const [busy, setBusy] = useState(false);
   const [downloadBusy, setDownloadBusy] = useState("");
-  const [progress, setProgress] = useState<{ value: number | undefined; message: string; device: string; stageIndex: number; totalStages: number }>({ value: 0, message: "等待开始", device: "", stageIndex: 0, totalStages: 1 });
+  const [progress, setProgress] = useState<{ value: number | undefined; message: string; device: string; stageIndex: number; totalStages: number }>({ value: 0, message: t("等待开始"), device: "", stageIndex: 0, totalStages: 1 });
   const [runStartedAt, setRunStartedAt] = useState(0);
   const [result, setResult] = useState<{ dataUrl: string; width: number; height: number; recipe: ImageRecipeV1 } | null>(null);
   const [compare, setCompare] = useState(50);
@@ -144,7 +150,7 @@ export function LocalAIToolbox({
   const saveImage = useSaveImage(onNotice);
 
   const refreshModels = useCallback(async () => {
-    const response = await callIpc(() => window.imageStudio.localAI.models(), { fallbackError: "无法读取本地模型状态", onError: (message) => onNotice(message, true) });
+    const response = await callIpc(() => window.imageStudio.localAI.models(), { fallbackError: t("无法读取本地模型状态"), onError: (message) => onNotice(message, true) });
     setModels(response.items || []);
   }, []);
 
@@ -154,7 +160,7 @@ export function LocalAIToolbox({
 
   useEffect(() => {
     void refreshModels();
-    void callIpc(() => window.imageStudio.localAI.capabilities(), { fallbackError: "无法读取本地 AI 能力", onError: (message) => onNotice(message, true) }).then(setCapabilities).catch(() => { /* callIpc 已上报 */ });
+    void callIpc(() => window.imageStudio.localAI.capabilities(), { fallbackError: t("无法读取本地 AI 能力"), onError: (message) => onNotice(message, true) }).then(setCapabilities).catch(() => { /* callIpc 已上报 */ });
     // 事件订阅白名单：直连。
     const unsubscribe = window.imageStudio.onLocalAIModelProgress((value) => {
       setModels((current) => current.some((item) => item.id === value.id)
@@ -174,19 +180,19 @@ export function LocalAIToolbox({
   }, [action, scale]);
 
   const importFile = async (file: File) => {
-    if (!file.type.startsWith("image/")) { onNotice("请选择 PNG、JPEG 或 WebP 图片", true); return; }
+    if (!file.type.startsWith("image/")) { onNotice(t("请选择 PNG、JPEG 或 WebP 图片"), true); return; }
     const dataUrl = await fileToDataUrl(file);
     const decoded = await dataUrlToPixels(dataUrl);
-    onSourceChange({ dataUrl, title: file.name.replace(/\.[^.]+$/, "") || "本地图片", recipe: { ...recipeForImportedSource(decoded.width, decoded.height), projectId: projectId || INBOX_PROJECT_ID } });
+    onSourceChange({ dataUrl, title: file.name.replace(/\.[^.]+$/, "") || t("本地图片|源"), recipe: { ...recipeForImportedSource(decoded.width, decoded.height), projectId: projectId || INBOX_PROJECT_ID } });
     setResult(null);
   };
 
   const pasteImage = async () => {
-    const response = await callIpc(() => window.imageStudio.clipboard.readImage(), { fallbackError: "剪贴板中没有图片", onError: (message) => onNotice(message, true) });
+    const response = await callIpc(() => window.imageStudio.clipboard.readImage(), { fallbackError: t("剪贴板中没有图片"), onError: (message) => onNotice(message, true) });
     if (!response.b64) return;
     const dataUrl = b64ToDataUrl(response.b64);
     const decoded = await dataUrlToPixels(dataUrl);
-    onSourceChange({ dataUrl, title: "剪贴板图片", recipe: { ...recipeForImportedSource(decoded.width, decoded.height), projectId: projectId || INBOX_PROJECT_ID } });
+    onSourceChange({ dataUrl, title: t("剪贴板图片|源"), recipe: { ...recipeForImportedSource(decoded.width, decoded.height), projectId: projectId || INBOX_PROJECT_ID } });
     setResult(null);
   };
 
@@ -195,8 +201,8 @@ export function LocalAIToolbox({
       const status = models.find((item) => item.id === id);
       if (status?.installed) continue;
       setDownloadBusy(id);
-      onNotice(`首次使用需要下载 ${status?.name || id}，完成后可离线使用`);
-      await callIpc(() => window.imageStudio.localAI.downloadModel(id), { fallbackError: `${id} 下载失败` });
+      onNotice(t("首次使用需要下载 {name}，完成后可离线使用", { name: status?.name || id }));
+      await callIpc(() => window.imageStudio.localAI.downloadModel(id), { fallbackError: t("{id} 下载失败", { id }) });
       await refreshModels();
     }
     setDownloadBusy("");
@@ -204,7 +210,7 @@ export function LocalAIToolbox({
 
   const run = async () => {
     if (!source || busy) return;
-    setBusy(true); setResult(null); setRunStartedAt(Date.now()); setProgress({ value: 1, message: "正在检查本地模型", device: "", stageIndex: 0, totalStages: 1 });
+    setBusy(true); setResult(null); setRunStartedAt(Date.now()); setProgress({ value: 1, message: t("正在检查本地模型"), device: "", stageIndex: 0, totalStages: 1 });
     try {
       const sourcePixels = await dataUrlToPixels(source.dataUrl);
       if (action === "upscale") {
@@ -214,8 +220,8 @@ export function LocalAIToolbox({
       await ensureModels();
       const urls: Partial<Record<LocalAIModelId, string>> = {};
       for (const id of requiredModels) {
-        const response = await callIpc(() => window.imageStudio.localAI.modelUrl(id), { fallbackError: `${id} 未安装` });
-        if (!response.url) throw new Error(`${id} 未安装`);
+        const response = await callIpc(() => window.imageStudio.localAI.modelUrl(id), { fallbackError: t("{id} 未安装", { id }) });
+        if (!response.url) throw new Error(t("{id} 未安装", { id }));
         urls[id] = response.url;
       }
       const taskId = crypto.randomUUID(); taskIdRef.current = taskId;
@@ -230,7 +236,7 @@ export function LocalAIToolbox({
         }
         if (value.type === "error") {
           setBusy(false); setDownloadBusy("");
-          onNotice(value.cancelled ? "本地处理已取消，原图未改变" : value.error, !value.cancelled);
+          onNotice(value.cancelled ? t("本地处理已取消，原图未改变") : value.error, !value.cancelled);
           worker.terminate(); return;
         }
         const dataUrl = pixelsToDataUrl(value.width, value.height, value.data);
@@ -248,18 +254,18 @@ export function LocalAIToolbox({
           createdAt: new Date().toISOString(),
           postProcessing: [...(source.recipe.postProcessing || []), ...postProcessing],
         };
-        const archive = await callIpc(() => window.imageStudio.localAI.archiveResult({ dataUrl, title: `${source.title} - ${actionLabels[action]}`, recipe }), { fallbackError: "未知错误", onError: (message) => onNotice("处理完成，但归档失败：" + message, true) });
+        const archive = await callIpc(() => window.imageStudio.localAI.archiveResult({ dataUrl, title: `${source.title} - ${actionLabels[action]}`, recipe }), { fallbackError: t("未知错误"), onError: (message) => onNotice(t("处理完成，但归档失败：{message}", { message }), true) });
         setResult({ dataUrl, width: value.width, height: value.height, recipe });
-        setBusy(false); setProgress({ value: 100, message: `处理完成，用时 ${formatDurationSeconds(value.elapsedMs)}`, device: value.steps.at(-1)?.device || "", stageIndex: 0, totalStages: 1 });
+        setBusy(false); setProgress({ value: 100, message: t("处理完成，用时 {elapsed}", { elapsed: formatDurationSeconds(value.elapsedMs) }), device: value.steps.at(-1)?.device || "", stageIndex: 0, totalStages: 1 });
         onArchived({ b64: b64FromDataUrl(dataUrl), recipe, galleryId: archive.item?.id });
-        if (archive.ok) onNotice("本地处理完成，成品已作为新图片归档", false);
+        if (archive.ok) onNotice(t("本地处理完成，成品已作为新图片归档"), false);
         worker.terminate();
       };
-      worker.onerror = (event) => { setBusy(false); onNotice(event.message || "本地推理 Worker 异常", true); worker.terminate(); };
+      worker.onerror = (event) => { setBusy(false); onNotice(event.message || t("本地推理 Worker 异常"), true); worker.terminate(); };
       const workerType = action === "remove-background" ? "removeBackground" : action === "face-restore" ? "restoreFace" : action;
       worker.postMessage({ id: taskId, type: workerType, source: sourcePixels, modelUrls: urls, scale, feather, edgeRefine, strength: strength / 100, allFaces }, [sourcePixels.data]);
     } catch (error) {
-      setBusy(false); setDownloadBusy(""); onNotice((error as Error).message || "本地处理失败", true);
+      setBusy(false); setDownloadBusy(""); onNotice((error as Error).message || t("本地处理失败"), true);
     }
   };
 
@@ -272,7 +278,7 @@ export function LocalAIToolbox({
   // 避免准备阶段进度条长时间卡在 1%。真实百分比不可知时缺省 progress（渲染层显示不确定态）。
   const downloading = busy && downloadBusy ? models.find((item) => item.id === downloadBusy) : undefined;
   const liveProgress: TaskProgressEvent | null = downloading
-    ? { id: "local-ai", scope: "local-ai", message: `正在下载 ${downloading.name}`, progress: downloading.progress, state: "running" }
+    ? { id: "local-ai", scope: "local-ai", message: t("正在下载 {name}", { name: downloading.name }), progress: downloading.progress, state: "running" }
     : busy
       ? {
           id: "local-ai",
@@ -290,65 +296,66 @@ export function LocalAIToolbox({
         : null;
 
   const pauseDownload = async (id: LocalAIModelId) => {
-    await callIpc(() => window.imageStudio.localAI.pauseDownload(id), { fallbackError: "暂停下载失败", onError: (message) => onNotice(message, true) });
+    await callIpc(() => window.imageStudio.localAI.pauseDownload(id), { fallbackError: t("暂停下载失败"), onError: (message) => onNotice(message, true) });
   };
 
   const downloadModel = async (id: LocalAIModelId) => {
-    await callIpc(() => window.imageStudio.localAI.downloadModel(id), { fallbackError: "下载失败", onError: (message) => onNotice(message, true) });
+    await callIpc(() => window.imageStudio.localAI.downloadModel(id), { fallbackError: t("下载失败|模型"), onError: (message) => onNotice(message, true) });
     await refreshModels();
   };
 
   const deleteModel = async (id: LocalAIModelId) => {
-    if (!(await requestConfirm({ title: "删除本地模型", message: "删除后再次使用该功能需要重新下载模型，确定继续吗？", confirmLabel: "删除", danger: true }))) return;
-    await callIpc(() => window.imageStudio.localAI.deleteModel(id), { fallbackError: "模型删除失败", onError: (message) => onNotice(message, true) });
+    if (!(await requestConfirm({ title: t("删除本地模型"), message: t("删除后再次使用该功能需要重新下载模型，确定继续吗？"), confirmLabel: t("删除|模型"), danger: true }))) return;
+    await callIpc(() => window.imageStudio.localAI.deleteModel(id), { fallbackError: t("模型删除失败"), onError: (message) => onNotice(message, true) });
     await refreshModels();
   };
 
   const chooseModelDir = async () => {
-    const response = await callIpc(() => window.imageStudio.localAI.chooseModelDir(), { fallbackError: "无法更换模型位置", onError: (message) => onNotice(message, true) });
+    const response = await callIpc(() => window.imageStudio.localAI.chooseModelDir(), { fallbackError: t("无法更换模型位置"), onError: (message) => onNotice(message, true) });
     if (!response.ok) return;
     if (response.canceled) return;
     setCapabilities((current) => current && response.modelsDir ? { ...current, modelsDir: response.modelsDir } : current);
     if (response.items) setModels(response.items);
-    onNotice("模型保存位置已更换；已有模型和未完成下载已复制到新目录");
+    onNotice(t("模型保存位置已更换；已有模型和未完成下载已复制到新目录"));
   };
 
   const resetModelDir = async () => {
-    const response = await callIpc(() => window.imageStudio.localAI.resetModelDir(), { fallbackError: "无法恢复默认模型位置", onError: (message) => onNotice(message, true) });
+    const response = await callIpc(() => window.imageStudio.localAI.resetModelDir(), { fallbackError: t("无法恢复默认模型位置"), onError: (message) => onNotice(message, true) });
     if (!response.ok) return;
     setCapabilities((current) => current && response.modelsDir ? { ...current, modelsDir: response.modelsDir } : current);
     if (response.items) setModels(response.items);
-    onNotice("已恢复系统默认模型位置");
+    onNotice(t("已恢复系统默认模型位置"));
   };
 
   const openModelDir = async () => {
-    await callIpc(() => window.imageStudio.localAI.openModelDir(), { fallbackError: "无法打开模型目录", onError: (message) => onNotice(message, true) });
+    await callIpc(() => window.imageStudio.localAI.openModelDir(), { fallbackError: t("无法打开模型目录"), onError: (message) => onNotice(message, true) });
   };
 
   const saveResult = async () => {
     if (!result) return;
     await saveImage({
       dataUrl: result.dataUrl,
-      suggestedName: `${source?.title || "本地处理结果"}-${actionLabels[action]}.png`,
+      suggestedName: `${source?.title || t("本地处理结果")}-${actionLabels[action]}.png`,
       recipe: result.recipe,
-    }, { onSaved: (path) => onNotice(`PNG 已保存：${path || "已完成"}`) });
+    }, { onSaved: (path) => onNotice(t("PNG 已保存：{path}", { path: path || t("已完成|保存") })) });
   };
 
   const copyResult = async () => {
     if (!result) return;
-    await copyImage(b64FromDataUrl(result.dataUrl), "处理结果已复制到剪贴板", "复制图片失败");
+    await copyImage(b64FromDataUrl(result.dataUrl), t("处理结果已复制到剪贴板"), t("复制图片失败|剪贴板"));
   };
 
   const previewStyle = background === "white" ? { background: "#fff" } : background === "gray" ? { background: "#d8dde6" } : background === "custom" ? { background: backgroundColor } : undefined;
   const webgpuAvailable = Boolean(capabilities?.webgpu && "gpu" in navigator);
+  const backgroundLabels: Record<(typeof BACKGROUND_VALUES)[number], string> = { checker: t("棋盘格|背景"), white: t("白色|背景"), gray: t("浅灰|背景"), custom: t("自定义|背景") };
 
   return <section className="local-ai-workbench" data-tutorial="local-ai-toolbox">
     <div className="local-ai-heading">
-      <div><span className="eyebrow">LOCAL AI TOOLBOX</span><h2>本地 AI 后期工具箱</h2><p>图片只在本机处理（可离线运行），不读取 API 密钥，也不会上传到任何服务。</p></div>
-      <span className={webgpuAvailable ? "device-chip webgpu" : "device-chip"}>{webgpuAvailable ? "WebGPU 优先" : "WASM / CPU"}</span>
+      <div><span className="eyebrow">LOCAL AI TOOLBOX</span><h2>{t("本地 AI 后期工具箱")}</h2><p>{t("图片只在本机处理（可离线运行），不读取 API 密钥，也不会上传到任何服务。")}</p></div>
+      <span className={webgpuAvailable ? "device-chip webgpu" : "device-chip"}>{webgpuAvailable ? t("WebGPU 优先") : "WASM / CPU"}</span>
     </div>
 
-    <div className="local-ai-guide" aria-label="本地工具箱能力说明">
+    <div className="local-ai-guide" aria-label={t("本地工具箱能力说明")}>
       {(Object.keys(actionGuides) as LocalAIAction[]).map((value) => {
         const guide = actionGuides[value];
         return <Tooltip key={value} content={guide.output}>
@@ -363,11 +370,11 @@ export function LocalAIToolbox({
 
     <div className="local-ai-grid">
       <section className="local-ai-source card">
-        <div className="section-head"><div><span className="eyebrow">SOURCE</span><h3>待处理图片</h3></div>{source && <button className="secondary" onClick={() => { onSourceChange(null); setResult(null); }}>清除</button>}</div>
+        <div className="section-head"><div><span className="eyebrow">SOURCE</span><h3>{t("待处理图片")}</h3></div>{source && <button className="secondary" onClick={() => { onSourceChange(null); setResult(null); }}>{t("清除")}</button>}</div>
         <ImageDropInput accept="image/png,image/jpeg,image/webp" onFiles={(files) => void importFile(files[0])}>
           {({ open, dropProps }) => <>
-            {source ? <div className="local-source-preview"><img src={source.dataUrl} alt={source.title} /><strong>{source.title}</strong><small>{source.recipe.size} · 原图始终保留</small></div> : <button className="local-drop-zone" onClick={open} {...dropProps}><strong>导入一张图片</strong><span>点击选择、拖放或从剪贴板粘贴</span></button>}
-            <div className="local-source-actions"><button onClick={open}>导入文件</button><button onClick={() => void pasteImage()}>粘贴图片</button></div>
+            {source ? <div className="local-source-preview"><img src={source.dataUrl} alt={source.title} /><strong>{source.title}</strong><small>{t("{size} · 原图始终保留", { size: source.recipe.size })}</small></div> : <button className="local-drop-zone" onClick={open} {...dropProps}><strong>{t("导入一张图片")}</strong><span>{t("点击选择、拖放或从剪贴板粘贴")}</span></button>}
+            <div className="local-source-actions"><button onClick={open}>{t("导入文件")}</button><button onClick={() => void pasteImage()}>{t("粘贴图片")}</button></div>
           </>}
         </ImageDropInput>
 
@@ -375,19 +382,19 @@ export function LocalAIToolbox({
           {(Object.keys(actionLabels) as LocalAIAction[]).map((value) => <button key={value} className={action === value ? "active" : ""} onClick={() => setAction(value)}>{actionLabels[value]}</button>)}
         </div>
         <div className="active-tool-guide">
-          <strong>{actionGuides[action].title}适合什么？</strong>
+          <strong>{t("{tool}适合什么？", { tool: actionGuides[action].title })}</strong>
           <span>{actionGuides[action].summary}</span>
           <small>{actionGuides[action].output}</small>
         </div>
 
-        {action === "upscale" && <Tooltip content="自动分块并保留透明通道；输出最长边不超过 8192 px。"><div className="local-options"><label>放大倍率<select value={scale} onChange={(event) => setScale(Number(event.target.value) as 2 | 4)}><option value={2}>2× 原生模型</option><option value={4}>4× 原生模型</option></select></label></div></Tooltip>}
-        {action === "remove-background" && <div className="local-options"><label className="range-label">边缘羽化 <strong>{feather}px</strong><input type="range" min="0" max="8" value={feather} onChange={(event) => setFeather(Number(event.target.value))} /></label><label className="check"><input type="checkbox" checked={edgeRefine} onChange={(event) => setEdgeRefine(event.target.checked)} />轻度边缘优化</label></div>}
-        {(action === "face-restore" || action === "pipeline") && <Tooltip content="Beta：侧脸、遮挡和过小人脸可能无法处理；默认混合原脸以降低身份漂移。"><div className="local-options"><label className="range-label">修复强度 <strong>{strength}%</strong><input type="range" min="10" max="100" value={strength} onChange={(event) => setStrength(Number(event.target.value))} /></label><label className="check"><input type="checkbox" checked={allFaces} onChange={(event) => setAllFaces(event.target.checked)} />处理全部人脸（最多 10 张）</label></div></Tooltip>}
+        {action === "upscale" && <Tooltip content={t("自动分块并保留透明通道；输出最长边不超过 8192 px。")}><div className="local-options"><label>{t("放大倍率")}<select value={scale} onChange={(event) => setScale(Number(event.target.value) as 2 | 4)}><option value={2}>{t("2× 原生模型")}</option><option value={4}>{t("4× 原生模型")}</option></select></label></div></Tooltip>}
+        {action === "remove-background" && <div className="local-options"><label className="range-label">{t("边缘羽化")} <strong>{feather}px</strong><input type="range" min="0" max="8" value={feather} onChange={(event) => setFeather(Number(event.target.value))} /></label><label className="check"><input type="checkbox" checked={edgeRefine} onChange={(event) => setEdgeRefine(event.target.checked)} />{t("轻度边缘优化")}</label></div>}
+        {(action === "face-restore" || action === "pipeline") && <Tooltip content={t("Beta：侧脸、遮挡和过小人脸可能无法处理；默认混合原脸以降低身份漂移。")}><div className="local-options"><label className="range-label">{t("修复强度")} <strong>{strength}%</strong><input type="range" min="10" max="100" value={strength} onChange={(event) => setStrength(Number(event.target.value))} /></label><label className="check"><input type="checkbox" checked={allFaces} onChange={(event) => setAllFaces(event.target.checked)} />{t("处理全部人脸（最多 10 张）")}</label></div></Tooltip>}
 
-        <div className="local-run-row"><Tooltip content="处理顺序：人脸优化 → 2× 超分 → 智能抠图。任一步失败即停止，不保存中间结果。"><button className="primary" disabled={!source || busy} onClick={() => void run()}>{busy ? "正在本地处理…" : actionLabels[action]}</button></Tooltip>{busy && <button className="secondary" onClick={cancel}>取消</button>}</div>
+        <div className="local-run-row"><Tooltip content={t("处理顺序：人脸优化 → 2× 超分 → 智能抠图。任一步失败即停止，不保存中间结果。")}><button className="primary" disabled={!source || busy} onClick={() => void run()}>{busy ? t("正在本地处理…") : actionLabels[action]}</button></Tooltip>{busy && <button className="secondary" onClick={cancel}>{t("取消")}</button>}</div>
         {busy && progress.totalStages > 1 ? (
           <div className="stage-indicator">
-            {["人脸优化", "高清放大", "智能抠图"].map((label, index) => (
+            {[t("人脸优化"), t("高清放大"), t("智能抠图")].map((label, index) => (
               <span key={label} className={index < progress.stageIndex ? "done" : index === progress.stageIndex ? "active" : ""}>{label}</span>
             ))}
           </div>
@@ -396,24 +403,24 @@ export function LocalAIToolbox({
       </section>
 
       <section className="local-ai-result card">
-        <div className="section-head"><div><span className="eyebrow">COMPARE</span><h3>原图 / 处理图</h3></div>{result && <button className="secondary" onClick={() => setZoom((value) => !value)}>{zoom ? "适应窗口" : "100% 细节"}</button>}</div>
+        <div className="section-head"><div><span className="eyebrow">COMPARE</span><h3>{t("原图 / 处理图")}</h3></div>{result && <button className="secondary" onClick={() => setZoom((value) => !value)}>{zoom ? t("适应窗口") : t("100% 细节")}</button>}</div>
         {source && result ? <div className="local-compare-scroll">
           <div
             className={`local-compare ${zoom ? "zoom" : ""}`}
             style={{ ...previewStyle, ...(zoom ? { width: result.width, height: result.height } : {}) }}
           >
-            <img src={source.dataUrl} alt="原图" />
-            <img className="compare-after" style={{ clipPath: `inset(0 ${100 - compare}% 0 0)` }} src={result.dataUrl} alt="处理图" />
-            <i style={{ left: `${compare}%` }} /><input aria-label="对比位置" type="range" min="0" max="100" value={compare} onChange={(event) => setCompare(Number(event.target.value))} />
+            <img src={source.dataUrl} alt={t("原图|对比")} />
+            <img className="compare-after" style={{ clipPath: `inset(0 ${100 - compare}% 0 0)` }} src={result.dataUrl} alt={t("处理图|对比")} />
+            <i style={{ left: `${compare}%` }} /><input aria-label={t("对比位置")} type="range" min="0" max="100" value={compare} onChange={(event) => setCompare(Number(event.target.value))} />
           </div>
-        </div> : <div className="local-result-empty"><span><NavIcon name="image" size={40} /></span><strong>处理结果会显示在这里</strong><p>完成后自动生成新的图库记录，绝不覆盖原图。</p></div>}
-        {result && <><div className="result-dimensions"><strong>{result.width} × {result.height}</strong><span>{result.recipe.postProcessing?.at(-1)?.device.toUpperCase()}</span></div><div className="local-result-actions"><button className="primary" onClick={() => void saveResult()}>保存 PNG</button><button className="secondary" onClick={() => void copyResult()}>复制图片</button></div>{action === "remove-background" || action === "pipeline" ? <div className="background-controls"><span>背景预览</span>{(["checker", "white", "gray", "custom"] as const).map((value) => <button className={background === value ? "active" : ""} key={value} onClick={() => setBackground(value)}>{({ checker: "棋盘格", white: "白色", gray: "浅灰", custom: "自定义" })[value]}</button>)}{background === "custom" && <input type="color" value={backgroundColor} onChange={(event) => setBackgroundColor(event.target.value)} />}</div> : null}</>}
+        </div> : <div className="local-result-empty"><span><NavIcon name="image" size={40} /></span><strong>{t("处理结果会显示在这里")}</strong><p>{t("完成后自动生成新的图库记录，绝不覆盖原图。")}</p></div>}
+        {result && <><div className="result-dimensions"><strong>{result.width} × {result.height}</strong><span>{result.recipe.postProcessing?.at(-1)?.device.toUpperCase()}</span></div><div className="local-result-actions"><button className="primary" onClick={() => void saveResult()}>{t("保存 PNG")}</button><button className="secondary" onClick={() => void copyResult()}>{t("复制图片")}</button></div>{action === "remove-background" || action === "pipeline" ? <div className="background-controls"><span>{t("背景预览")}</span>{BACKGROUND_VALUES.map((value) => <button className={background === value ? "active" : ""} key={value} onClick={() => setBackground(value)}>{backgroundLabels[value]}</button>)}{background === "custom" && <input type="color" value={backgroundColor} onChange={(event) => setBackgroundColor(event.target.value)} />}</div> : null}</>}
       </section>
     </div>
 
     <section className="model-manager card">
-      <div className="section-head"><div><span className="eyebrow">MODEL MANAGER</span><h3>本地模型管理<InfoHint content="模型目录与软件安装位置、图库位置相互独立。更换目录时会复制已安装模型和未完成下载；原目录会保留。" /></h3><small>{capabilities?.modelsDir}</small></div><div className="model-directory-actions"><button className="secondary" onClick={() => void chooseModelDir()}>更换位置</button><button className="secondary" onClick={() => void openModelDir()}>打开目录</button><button className="secondary" onClick={() => void resetModelDir()}>恢复默认</button><button className="secondary" onClick={() => void refreshModels()}>刷新状态</button></div></div>
-      <div className="model-list">{models.map((model) => <article key={model.id}><div><strong>{model.name}{model.beta ? " · Beta" : ""}</strong><span>{model.version} · {formatBytes(model.size)} · {model.license}</span><a href={model.sourceUrl} target="_blank" rel="noreferrer">来源与许可证</a></div><div className="model-state"><span>{model.installed ? "已安装" : model.state === "partial" ? `已下载 ${model.progress}%` : model.state === "downloading" ? `下载中 ${model.progress}%` : model.state === "verifying" ? "校验中" : "未安装"}</span>{model.state === "downloading" ? <button onClick={() => void pauseDownload(model.id)}>暂停</button> : !model.installed ? <button disabled={Boolean(downloadBusy)} onClick={() => void downloadModel(model.id)}>{model.state === "partial" ? "继续" : "下载"}</button> : <button onClick={() => void deleteModel(model.id)}>删除</button>}</div></article>)}</div>
+      <div className="section-head"><div><span className="eyebrow">MODEL MANAGER</span><h3>{t("本地模型管理")}<InfoHint content={t("模型目录与软件安装位置、图库位置相互独立。更换目录时会复制已安装模型和未完成下载；原目录会保留。")} /></h3><small>{capabilities?.modelsDir}</small></div><div className="model-directory-actions"><button className="secondary" onClick={() => void chooseModelDir()}>{t("更换位置|模型")}</button><button className="secondary" onClick={() => void openModelDir()}>{t("打开目录|模型")}</button><button className="secondary" onClick={() => void resetModelDir()}>{t("恢复默认")}</button><button className="secondary" onClick={() => void refreshModels()}>{t("刷新状态|模型")}</button></div></div>
+      <div className="model-list">{models.map((model) => <article key={model.id}><div><strong>{model.name}{model.beta ? " · Beta" : ""}</strong><span>{model.version} · {formatBytes(model.size)} · {model.license}</span><a href={model.sourceUrl} target="_blank" rel="noreferrer">{t("来源与许可证")}</a></div><div className="model-state"><span>{model.installed ? t("已安装|模型") : model.state === "partial" ? t("已下载 {n}%", { n: model.progress }) : model.state === "downloading" ? t("下载中 {n}%", { n: model.progress }) : model.state === "verifying" ? t("校验中|模型") : t("未安装|模型")}</span>{model.state === "downloading" ? <button onClick={() => void pauseDownload(model.id)}>{t("暂停|模型")}</button> : !model.installed ? <button disabled={Boolean(downloadBusy)} onClick={() => void downloadModel(model.id)}>{model.state === "partial" ? t("继续|模型") : t("下载|模型")}</button> : <button onClick={() => void deleteModel(model.id)}>{t("删除|模型")}</button>}</div></article>)}</div>
     </section>
   </section>;
 }
