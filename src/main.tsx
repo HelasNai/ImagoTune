@@ -22,12 +22,13 @@ import { dataUrlFor } from "./components/media-utils";
 import { callIpc } from "./components/ipc";
 import { useCopyImage } from "./components/useCopy";
 import { useEscapeKey } from "./components/useKeyboard";
+import { useLocale } from "./components/useLocale";
 import type { Mode, Output } from "./components/types";
 import { createRecipe, variationOptions } from "./lib/creative";
 import { DEFAULT_CHAT_MODEL, DEFAULT_IMAGE_MODEL, INBOX_PROJECT_ID } from "./lib/constants";
 import { formatDateTime, formatDurationSeconds, formatTags } from "./lib/format";
 import { renderErrorInfo } from "./lib/error-display";
-import { setLocale } from "./lib/i18n";
+import { setLocale, t } from "./lib/i18n";
 import { b64ToDataUrl } from "./lib/media";
 import {
   parseTutorialState,
@@ -45,6 +46,8 @@ const ERROR_TOAST_MS = 12000;
 const supportsViewTransition = typeof (document as Document & { startViewTransition?: unknown }).startViewTransition === "function";
 
 function App() {
+  // 订阅 i18n 单例：语言切换后重渲染整个壳层，导航/header/灯箱/通知文案即时更新（t() 在渲染期求值）。
+  useLocale();
   const initialTutorial = useMemo(() => parseTutorialState(window.localStorage.getItem(TUTORIAL_STORAGE_KEY)), []);
   const appRef = useRef<HTMLDivElement | null>(null);
   const [mode, setModeState] = useState<Mode>("generate");
@@ -111,26 +114,26 @@ function App() {
 
   const refreshWorkspace = useCallback(async () => {
     try {
-      const workspace = await callIpc(() => window.imageStudio.gallery.workspace(), { fallbackError: "本地图库读取失败" });
+      const workspace = await callIpc(() => window.imageStudio.gallery.workspace(), { fallbackError: t("本地图库读取失败") });
       setProjects(workspace.projects || []);
       setGalleryItems(workspace.items || []);
       if (!workspace.projects.some((project) => project.id === projectId)) {
         setProjectId(INBOX_PROJECT_ID);
       }
     } catch (cause) {
-      setError("本地图库读取失败：" + ((cause as Error).message || "请检查保存目录"));
+      setError(t("本地图库读取失败：{message}", { message: (cause as Error).message || t("请检查保存目录") }));
     }
   }, [projectId]);
   const refreshQueue = useCallback(async () => {
     try {
-      const result = await callIpc(() => window.imageStudio.queue.list(), { fallbackError: "队列读取失败", onError: setError });
+      const result = await callIpc(() => window.imageStudio.queue.list(), { fallbackError: t("队列读取失败"), onError: setError });
       setQueueItems(result.items || []);
     } catch { /* callIpc 已上报 */ }
   }, []);
 
   const refreshSettings = useCallback(async (): Promise<SettingsSnapshot | null> => {
     try {
-      const value = await callIpc(() => window.imageStudio.settings.get(), { fallbackError: "无法读取设置", onError: setError });
+      const value = await callIpc(() => window.imageStudio.settings.get(), { fallbackError: t("无法读取设置"), onError: setError });
       if (!value || !Array.isArray(value.providers)) return null;
       // 持久化语言 → i18n 单例（幂等；覆盖首次到达与后续变化）。切换 UI 在 SettingsPanel。
       setLocale(value.locale);
@@ -173,8 +176,8 @@ function App() {
     const bootstrap = async () => {
       const [settingsValue, workspaceValue, queueValue] = await Promise.all([
         refreshSettings(),
-        callIpc(() => window.imageStudio.gallery.workspace(), { fallbackError: "本地图库读取失败", onError: setError }),
-        callIpc(() => window.imageStudio.queue.list(), { fallbackError: "队列读取失败", onError: setError }),
+        callIpc(() => window.imageStudio.gallery.workspace(), { fallbackError: t("本地图库读取失败"), onError: setError }),
+        callIpc(() => window.imageStudio.queue.list(), { fallbackError: t("队列读取失败"), onError: setError }),
       ]);
       const hasTutorialState = window.localStorage.getItem(TUTORIAL_STORAGE_KEY) !== null;
       if (!hasTutorialState && shouldInitializeAsExistingUser({
@@ -190,7 +193,7 @@ function App() {
       setQueueItems(queueValue.items || []);
     };
     void bootstrap().catch(() => { /* Individual panels show their own recoverable errors. */ });
-    void callIpc(() => window.imageStudio.updates.get(), { fallbackError: "无法读取版本信息", onError: setError }).then((value) => {
+    void callIpc(() => window.imageStudio.updates.get(), { fallbackError: t("无法读取版本信息"), onError: setError }).then((value) => {
       setAppVersion(value.appVersion);
     }).catch(() => { /* callIpc 已上报 */ });
     void refreshWorkspace();
@@ -254,14 +257,14 @@ function App() {
       if (value.job.id === studioComposer.activeJobId) {
         setOutputs(items);
         studioComposer.setActiveJobId("");
-        const elapsed = "生成完成，用时 " + formatDurationSeconds(result.elapsedMs || 0) + "。";
+        const seconds = formatDurationSeconds(result.elapsedMs || 0);
         setNotice(result.archiveWarning
-          ? elapsed + result.archiveWarning
+          ? t("生成完成，用时 {seconds}。{warning}", { seconds, warning: result.archiveWarning })
           : gallery.length
-            ? elapsed + "已归档到本地图库。"
-            : elapsed + "自动归档已关闭，请按需手动保存 PNG。");
+            ? t("生成完成，用时 {seconds}。已归档到本地图库。", { seconds })
+            : t("生成完成，用时 {seconds}。自动归档已关闭，请按需手动保存 PNG。", { seconds }));
       } else {
-        setNotice("队列任务已完成：" + String(items.length) + " 张图片");
+        setNotice(t("队列任务已完成：{n} 张图片", { n: items.length }));
       }
       void refreshWorkspace();
     });
@@ -269,9 +272,9 @@ function App() {
       if (job.id === studioComposer.activeJobId) {
         studioComposer.setActiveJobId("");
         setErrorInfo(job.errorInfo || null);
-        setError(job.errorInfo ? "" : job.error || "任务失败");
+        setError(job.errorInfo ? "" : job.error || t("任务失败"));
       } else {
-        setNotice("队列任务失败：" + (job.error || "未知错误"));
+        setNotice(t("队列任务失败：{message}", { message: job.error || t("未知错误") }));
       }
     });
     return () => {
@@ -352,7 +355,7 @@ function App() {
       if (item.recipe.ratio) studioComposer.actions.setRatio(item.recipe.ratio);
       if (item.recipe.resolution) studioComposer.actions.setResolution(item.recipe.resolution);
       if (item.recipe.quality) studioComposer.actions.setQuality(item.recipe.quality);
-      setNotice("已复用历史参数，可修改提示词后生成");
+      setNotice(t("已复用历史参数，可修改提示词后生成"));
     }
   };
 
@@ -360,7 +363,7 @@ function App() {
   const openGalleryFile = (galleryId: string, mode: "open" | "reveal") => {
     void callIpc(
       () => window.imageStudio.gallery.openLocal(galleryId, mode),
-      { fallbackError: mode === "reveal" ? "无法定位文件" : "无法打开文件", onError: (message) => notify(message, true) },
+      { fallbackError: t(mode === "reveal" ? "无法定位文件" : "无法打开文件"), onError: (message) => notify(message, true) },
     ).catch(() => { /* callIpc 已上报 */ });
   };
 
@@ -424,38 +427,38 @@ function App() {
             <div className="header-title-row">
               <span className="eyebrow">IMAGOTUNE · V{appVersion || "2.0.0"}</span>
             </div>
-            <p>本地创作工作台 · 提示词助手 · 项目图库 · 局部重绘 · 批量交付</p>
+            <p>{t("本地创作工作台 · 提示词助手 · 项目图库 · 局部重绘 · 批量交付")}</p>
           </div>
           <div className="header-stack">
-            <div className="status"><i className={configured ? "ok" : "off"}></i>{configured ? "已配置" : "未配置密钥"}</div>
+            <div className="status"><i className={configured ? "ok" : "off"}></i>{configured ? t("已配置") : t("未配置密钥")}</div>
             <QueueChip queueItems={queueItems} onOpen={() => setMode("queue")} />
           </div>
         </header>
         {(error || notice || errorInfo) && (
           <div className={error || errorInfo ? "feedback-toast feedback-error" : "feedback-toast feedback-success"} role={error || errorInfo ? "alert" : "status"}>
             <div>
-              <strong>{renderedError?.title || (error ? "需要处理" : "操作成功")}</strong>
+              <strong>{renderedError?.title || (error ? t("需要处理") : t("操作成功"))}</strong>
               {errorInfo?.category && <span>{errorInfo.category.replace("_", " ")}</span>}
               <span>{error || renderedError?.message || notice}</span>
               {renderedError?.suggestion && <small>{renderedError.suggestion}</small>}
               {errorInfo?.details && (
                 <details>
-                  <summary>查看接口详情</summary>
+                  <summary>{t("查看接口详情")}</summary>
                   <pre style={{ margin: 0, maxHeight: 150, overflow: "auto", whiteSpace: "pre-wrap", font: "11px/1.5 monospace" }}>{errorInfo.details}</pre>
                 </details>
               )}
             </div>
-            <button aria-label="关闭提示" onClick={() => { setError(""); setNotice(""); setErrorInfo(null); }}><NavIcon name="x" size={16} /></button>
+            <button aria-label={t("关闭提示")} onClick={() => { setError(""); setNotice(""); setErrorInfo(null); }}><NavIcon name="x" size={16} /></button>
           </div>
         )}
         <div className="layout">
           <aside>
-            <button className={mode === "generate" ? "nav active" : "nav"} data-mode="generate" onClick={() => setMode("generate")}><NavIcon name="sparkles" />创作生成</button>
-            <button className={mode === "edit" ? "nav active" : "nav"} data-mode="edit" onClick={() => setMode("edit")}><NavIcon name="pen-line" />图片编辑</button>
-            <button className={mode === "outpaint" ? "nav active" : "nav"} data-mode="outpaint" onClick={() => setMode("outpaint")}><NavIcon name="expand" />智能扩图</button>
-            <button className={mode === "gallery" ? "nav active" : "nav"} data-mode="gallery" onClick={() => setMode("gallery")}><NavIcon name="images" />项目图库</button>
-            <button className={mode === "local-ai" ? "nav active" : "nav"} data-mode="local-ai" onClick={() => setMode("local-ai")}><NavIcon name="package" />本地工具箱</button>
-            <button className={mode === "settings" ? "nav active" : "nav"} data-mode="settings" onClick={() => setMode("settings")}><NavIcon name="settings" />设置</button>
+            <button className={mode === "generate" ? "nav active" : "nav"} data-mode="generate" onClick={() => setMode("generate")}><NavIcon name="sparkles" />{t("创作生成")}</button>
+            <button className={mode === "edit" ? "nav active" : "nav"} data-mode="edit" onClick={() => setMode("edit")}><NavIcon name="pen-line" />{t("图片编辑")}</button>
+            <button className={mode === "outpaint" ? "nav active" : "nav"} data-mode="outpaint" onClick={() => setMode("outpaint")}><NavIcon name="expand" />{t("智能扩图")}</button>
+            <button className={mode === "gallery" ? "nav active" : "nav"} data-mode="gallery" onClick={() => setMode("gallery")}><NavIcon name="images" />{t("项目图库")}</button>
+            <button className={mode === "local-ai" ? "nav active" : "nav"} data-mode="local-ai" onClick={() => setMode("local-ai")}><NavIcon name="package" />{t("本地工具箱")}</button>
+            <button className={mode === "settings" ? "nav active" : "nav"} data-mode="settings" onClick={() => setMode("settings")}><NavIcon name="settings" />{t("设置")}</button>
             {/* 项目树（v3.6 起头部含任务队列入口）：不渲染「全部图库」行；「查看全部」经 openGalleryProject 落到对应项目的图库视图。 */}
             <SidebarProjects
               projects={projects}
@@ -467,8 +470,8 @@ function App() {
               queueActive={mode === "queue"}
               queueCount={runningCount}
             />
-            <Tooltip content="新手教程">
-              <button className="sidebar-help" aria-label="新手教程" onClick={() => setTutorialView("center")}>
+            <Tooltip content={t("新手教程")}>
+              <button className="sidebar-help" aria-label={t("新手教程")} onClick={() => setTutorialView("center")}>
                 <NavIcon name="graduation-cap" size={18} />
               </button>
             </Tooltip>
@@ -519,8 +522,8 @@ function App() {
 
         {preview && (
           <div className="lightbox" onClick={() => { setPreviewContextMenu(null); setPreview(null); }}>
-            <Tooltip content="点击空白处或右上角关闭">
-              <button className="lightbox-close" onClick={() => { setPreviewContextMenu(null); setPreview(null); }} aria-label="关闭预览"><NavIcon name="x" size={20} /></button>
+            <Tooltip content={t("点击空白处或右上角关闭")}>
+              <button className="lightbox-close" onClick={() => { setPreviewContextMenu(null); setPreview(null); }} aria-label={t("关闭预览")}><NavIcon name="x" size={20} /></button>
             </Tooltip>
             <img
               src={dataUrlFor(preview)}
@@ -533,7 +536,7 @@ function App() {
                   y: Math.max(8, Math.min(event.clientY, window.innerHeight - 240)),
                 });
               }}
-              alt="大图预览"
+              alt={t("大图预览")}
             />
             {previewContextMenu && (
               <div
@@ -543,29 +546,29 @@ function App() {
               >
                 <button
                   onClick={() => {
-                    void copyImage(preview.b64, "图片已复制到剪贴板");
+                    void copyImage(preview.b64, t("图片已复制到剪贴板"));
                     setPreviewContextMenu(null);
                   }}
                 >
-                  复制图片
+                  {t("复制图片")}
                 </button>
                 {(() => {
                   const galleryId = preview.galleryId;
                   if (!galleryId) return null;
                   return (
                     <>
-                      <button onClick={() => { openGalleryFile(galleryId, "open"); setPreviewContextMenu(null); }}>用系统应用打开</button>
-                      <button onClick={() => { openGalleryFile(galleryId, "reveal"); setPreviewContextMenu(null); }}>在文件夹中显示</button>
+                      <button onClick={() => { openGalleryFile(galleryId, "open"); setPreviewContextMenu(null); }}>{t("用系统应用打开")}</button>
+                      <button onClick={() => { openGalleryFile(galleryId, "reveal"); setPreviewContextMenu(null); }}>{t("在文件夹中显示")}</button>
                     </>
                   );
                 })()}
-                <button onClick={() => openLocalAI(preview, "upscale")}>高清放大</button>
-                <button onClick={() => openLocalAI(preview, "remove-background")}>智能抠图</button>
-                <button onClick={() => openLocalAI(preview, "face-restore")}>人脸优化 Beta</button>
-                <button onClick={() => openLocalAI(preview, "pipeline")}>本地组合处理</button>
+                <button onClick={() => openLocalAI(preview, "upscale")}>{t("高清放大")}</button>
+                <button onClick={() => openLocalAI(preview, "remove-background")}>{t("智能抠图")}</button>
+                <button onClick={() => openLocalAI(preview, "face-restore")}>{t("人脸优化 Beta")}</button>
+                <button onClick={() => openLocalAI(preview, "pipeline")}>{t("本地组合处理")}</button>
               </div>
             )}
-            <span>右键点击图片可复制</span>
+            <span>{t("右键点击图片可复制")}</span>
           </div>
         )}
       </div>

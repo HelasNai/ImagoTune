@@ -1,4 +1,5 @@
 import React, { createContext, useContext } from "react";
+import { t } from "../lib/i18n";
 
 /**
  * 统一通知接口：`message` 为可展示文案，`isError` 为 true 时归为错误/需处理。
@@ -43,6 +44,6 @@ export function StudioProvider({ value, children }: { value: StudioContextValue;
 
 export function useStudio() {
   const value = useContext(StudioContext);
-  if (!value) throw new Error("useStudio 必须在 StudioProvider 内使用");
+  if (!value) throw new Error(t("useStudio 必须在 StudioProvider 内使用"));
   return value;
 }
