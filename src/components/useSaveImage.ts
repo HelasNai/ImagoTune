@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { t } from "../lib/i18n";
 import { callIpc } from "./ipc";
 import type { StudioNotify } from "./StudioContext";
 
@@ -17,7 +18,7 @@ export function useSaveImage(notify: StudioNotify) {
       options: { fallbackError?: string; onSaved?: (path: string) => void } = {},
     ): Promise<boolean> => {
       const result = await callIpc(() => window.imageStudio.saveImage(request), {
-        fallbackError: options.fallbackError ?? "保存失败",
+        fallbackError: options.fallbackError ?? t("保存失败|图片"),
         onError: (message) => notify(message, true),
       });
       if (result.canceled) return false;

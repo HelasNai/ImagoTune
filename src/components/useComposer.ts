@@ -23,13 +23,15 @@ import { useCopyImage } from "./useCopy";
 import { b64ToFile, canvasToBlob, drawContain, fileToDataUrl, readImage } from "../lib/media";
 import { INBOX_PROJECT_ID } from "../lib/constants";
 import { compositeFileKey, formatTags, uniqueBy } from "../lib/format";
+import { t } from "../lib/i18n";
 import type { Mode, Output } from "./types";
 
+// label 经 getter 逐次求值（不在模块加载期调用 t()），语言切换后读取即更新；value 为协议值不变。
 export const qualities = [
-  { value: "auto", label: "自动" },
-  { value: "low", label: "快速草图" },
-  { value: "medium", label: "标准" },
-  { value: "high", label: "最高细节" },
+  { value: "auto", get label() { return t("自动|质量"); } },
+  { value: "low", get label() { return t("快速草图"); } },
+  { value: "medium", get label() { return t("标准"); } },
+  { value: "high", get label() { return t("最高细节"); } },
 ];
 
 export type SubmitOverride = {
@@ -80,11 +82,11 @@ async function resizeMaskToMatch(mask: File, target: File) {
   canvas.width = targetImage.naturalWidth;
   canvas.height = targetImage.naturalHeight;
   const context = canvas.getContext("2d");
-  if (!context) throw new Error("无法调整蒙版尺寸");
+  if (!context) throw new Error(t("无法调整蒙版尺寸"));
   context.clearRect(0, 0, canvas.width, canvas.height);
   context.drawImage(maskImage, 0, 0, canvas.width, canvas.height);
   const blob = await canvasToBlob(canvas);
-  if (!blob) throw new Error("无法导出匹配尺寸的蒙版");
+  if (!blob) throw new Error(t("无法导出匹配尺寸的蒙版"));
   return new File([blob], "image-studio-matched-mask.png", { type: "image/png" });
 }
 
@@ -130,10 +132,10 @@ async function createReferenceBoard(main: File, references: File[], kind: "edit"
     context.fillStyle = "#1b2d4a";
     context.font = "bold 34px sans-serif";
     const caption = kind === "generate"
-      ? "参考图 " + String(index + 1) + "：借鉴风格 / 元素"
+      ? t("参考图 {n}：借鉴风格 / 元素", { n: index + 1 })
       : index === 0
-        ? "主图：保持主体"
-        : "参考图 " + String(index) + "：借鉴风格 / 元素";
+        ? t("主图：保持主体")
+        : t("参考图 {n}：借鉴风格 / 元素", { n: index });
     context.fillText(caption, x + 42, y + 55);
   });
   const blob = await canvasToBlob(canvas, "image/jpeg", 0.92);
@@ -247,7 +249,7 @@ export function useComposer({
   // 原实现中 templates.list 位于 App bootstrap effect（依赖 refreshWorkspace ← projectId 变化）；
   // 迁移后用 [projectId] 复刻同一重取时机，保证行为不变（模板仍随项目切换重取）。
   useEffect(() => {
-    void callIpc(() => window.imageStudio.templates.list(), { fallbackError: "无法读取提示词模板", onError: setError }).then((value) => setTemplates(value.items)).catch(() => { /* callIpc 已上报 */ });
+    void callIpc(() => window.imageStudio.templates.list(), { fallbackError: t("无法读取提示词模板"), onError: setError }).then((value) => setTemplates(value.items)).catch(() => { /* callIpc 已上报 */ });
   }, [projectId]);
 
   const applyTemplate = (id: string) => {
@@ -274,11 +276,11 @@ export function useComposer({
     const selectedId = kind === "negative" ? selectedNegativeTemplate : selectedTemplate;
     const selected = templates.find((item) => item.id === selectedId && item.kind === kind);
     if (!value.trim()) {
-      setError(kind === "negative" ? "请先输入负面提示词" : "请先输入提示词再保存模板");
+      setError(kind === "negative" ? t("请先输入负面提示词") : t("请先输入提示词再保存模板"));
       return;
     }
     if (update && (!selected || selected.builtin)) return;
-    const title = update ? selected!.title : await requestText({ title: "保存提示词模板", defaultValue: kind === "negative" ? "我的负面词" : "我的模板", confirmLabel: "保存" });
+    const title = update ? selected!.title : await requestText({ title: t("保存提示词模板"), defaultValue: kind === "negative" ? t("我的负面词") : t("我的模板"), confirmLabel: t("保存|模板") });
     if (!title?.trim()) return;
     const result = await callIpc(() => window.imageStudio.templates.save({
       id: update ? selected!.id : undefined,
@@ -289,20 +291,20 @@ export function useComposer({
       ratio: kind === "positive" ? ratio : undefined,
       resolution: kind === "positive" ? resolution : undefined,
       quality: kind === "positive" ? quality : undefined,
-    }), { fallbackError: "模板保存失败", onError: setError });
+    }), { fallbackError: t("模板保存失败"), onError: setError });
     if (result.item) {
       setTemplates((current) => [...current.filter((item) => item.id !== result.item!.id), result.item!]);
       if (kind === "negative") setSelectedNegativeTemplate(result.item.id);
       else setSelectedTemplate(result.item.id);
-      setNotice(update ? "模板已更新" : "模板已保存");
+      setNotice(update ? t("模板已更新") : t("模板已保存"));
     }
   };
 
   const deleteTemplate = async (kind: "positive" | "negative") => {
     const selectedId = kind === "negative" ? selectedNegativeTemplate : selectedTemplate;
     const item = templates.find((value) => value.id === selectedId && value.kind === kind);
-    if (!item || item.builtin || !(await requestConfirm({ title: "删除模板", message: "删除模板“" + item.title + "”吗？", confirmLabel: "删除", danger: true }))) return;
-    const result = await callIpc(() => window.imageStudio.templates.delete(item.id), { fallbackError: "模板删除失败", onError: setError });
+    if (!item || item.builtin || !(await requestConfirm({ title: t("删除模板|标题"), message: t("删除模板“{title}”吗？", { title: item.title }), confirmLabel: t("删除|模板"), danger: true }))) return;
+    const result = await callIpc(() => window.imageStudio.templates.delete(item.id), { fallbackError: t("模板删除失败"), onError: setError });
     if (!result.ok) return;
     setTemplates((current) => current.filter((value) => value.id !== item.id));
     if (kind === "negative") setSelectedNegativeTemplate("");
@@ -311,17 +313,17 @@ export function useComposer({
 
   const optimizeLocal = (action: PromptAction) => {
     if (!prompt.trim()) {
-      setError("请先输入提示词");
+      setError(t("请先输入提示词"));
       return;
     }
     setOriginalPrompt(prompt);
     setPrompt(applyLocalPromptAction(prompt, action));
-    setNotice("已应用本地提示词优化，不会产生额外 API 调用");
+    setNotice(t("已应用本地提示词优化，不会产生额外 API 调用"));
   };
 
   const enhanceOnline = async () => {
     if (!prompt.trim()) {
-      setError("请先输入提示词");
+      setError(t("请先输入提示词"));
       return;
     }
     setEnhancing(true);
@@ -329,28 +331,28 @@ export function useComposer({
     const result = await callIpc(() => window.imageStudio.prompt.enhance({
       prompt,
       mode: mode === "edit" ? "edit" : "generate",
-    }), { fallbackError: "AI 增强失败，原提示词未改变", onError: setError });
+    }), { fallbackError: t("AI 增强失败，原提示词未改变"), onError: setError });
     setEnhancing(false);
     if (!result.ok || !result.prompt) return;
     setOriginalPrompt(prompt);
     setPrompt(result.prompt);
-    setNotice("已通过 " + chatModel + " 增强提示词");
+    setNotice(t("已通过 {model} 增强提示词", { model: chatModel }));
   };
 
   const reversePrompt = async () => {
-    if (!reverseImage) { setError("请先选择需要反推的图片"); return; }
-    if (!configured) { setError("请先到设置页保存 API 密钥"); return; }
+    if (!reverseImage) { setError(t("请先选择需要反推的图片")); return; }
+    if (!configured) { setError(t("请先到设置页保存 API 密钥")); return; }
     setReversing(true);
     setError("");
     setErrorInfo(null);
     try {
       const prepared = await prepareVisionUpload(reverseImage);
-      const result = await callIpc(async () => window.imageStudio.prompt.reverse({ image: await fileToPayload(prepared) }), { fallbackError: "图反推失败，原提示词未改变" });
+      const result = await callIpc(async () => window.imageStudio.prompt.reverse({ image: await fileToPayload(prepared) }), { fallbackError: t("图反推失败，原提示词未改变") });
       if (!result.ok) return;
       setReverseResult({ zh: result.zh || "", en: result.en || "" });
-      setNotice("已生成中英文反推提示词，原提示词尚未改变");
+      setNotice(t("已生成中英文反推提示词，原提示词尚未改变"));
     } catch (cause) {
-      setError((cause as Error).message || "图反推失败，原提示词未改变");
+      setError((cause as Error).message || t("图反推失败，原提示词未改变"));
     } finally { setReversing(false); }
   };
 
@@ -358,33 +360,33 @@ export function useComposer({
     if (!value.trim()) return;
     setOriginalPrompt(prompt);
     setPrompt(action === "append" && prompt.trim() ? prompt.trim() + "\n\n" + value.trim() : value.trim());
-    setNotice(action === "append" ? "反推提示词已追加" : "反推提示词已替换当前内容");
+    setNotice(action === "append" ? t("反推提示词已追加") : t("反推提示词已替换当前内容"));
   };
 
   const addReferenceFiles = (files: File[]) => {
     const images = files.filter((file) => file.type.startsWith("image/"));
     if (!images.length) {
-      setError("请选择有效的图片文件");
+      setError(t("请选择有效的图片文件"));
       return;
     }
     const combined = uniqueBy([...references, ...images], compositeFileKey);
     setReferences(combined.slice(0, 3));
     setError("");
-    setNotice(combined.length > 3 ? "最多使用 3 张参考图，超出的图片未导入" : `已添加 ${Math.min(combined.length, 3)} 张参考图`);
+    setNotice(combined.length > 3 ? t("最多使用 3 张参考图，超出的图片未导入") : t("已添加 {n} 张参考图", { n: Math.min(combined.length, 3) }));
   };
 
   const pasteReferenceImage = async () => {
-    const result = await callIpc(() => window.imageStudio.clipboard.readImage(), { fallbackError: "剪贴板中没有可用图片", onError: setError });
+    const result = await callIpc(() => window.imageStudio.clipboard.readImage(), { fallbackError: t("剪贴板中没有可用图片"), onError: setError });
     if (!result.ok || !result.b64) return;
     addReferenceFiles([b64ToFile(result.b64, `clipboard-reference-${Date.now()}.png`)]);
   };
 
   const copyReferenceImage = async (file: File) => {
-    await copyImage(await fileToDataUrl(file), "参考图已复制到剪贴板", "复制失败");
+    await copyImage(await fileToDataUrl(file), t("参考图已复制到剪贴板"), t("复制失败"));
   };
 
   const chooseOutpaintPreset = (preset: string) => {
-    if (!sourceDimensions) { setError("请先上传扩图原图"); return; }
+    if (!sourceDimensions) { setError(t("请先上传扩图原图")); return; }
     const size = targetSizeForRatio(sourceDimensions.width, sourceDimensions.height, preset);
     setOutpaintStrategy("target");
     setOutpaintPreset(preset);
@@ -404,7 +406,7 @@ export function useComposer({
     const activeProject = override.projectId || projectId;
     const activeTags = override.tags || parseTags(tagsText);
     if (!imageBinding) {
-      setError("请先配置生图模型");
+      setError(t("请先配置生图模型"));
       return;
     }
     const sourceImage = override.image === undefined ? image : override.image;
@@ -413,11 +415,11 @@ export function useComposer({
     if (referenceGeneration) suppliedMask = null;
 
     if (!activePrompt) {
-      setError("请先输入提示词");
+      setError(t("请先输入提示词"));
       return;
     }
     if (!configured) {
-      setError("请先到设置页保存 API 密钥");
+      setError(t("请先到设置页保存 API 密钥"));
       return;
     }
     if (activeMode !== "outpaint" && customSizeEnabled && !customCheck.ok && !override.size) {
@@ -425,15 +427,15 @@ export function useComposer({
       return;
     }
     if (activeMode !== "generate" && !sourceImage) {
-      setError(activeMode === "outpaint" ? "智能扩图需要上传原图" : "图片编辑需要上传原图");
+      setError(activeMode === "outpaint" ? t("智能扩图需要上传原图") : t("图片编辑需要上传原图"));
       return;
     }
     if (activeMode === "outpaint" && (!outpaintCheck || !outpaintCheck.ok)) {
-      setError(outpaintCheck?.error || "请设置有效的扩图范围");
+      setError(outpaintCheck?.error || t("请设置有效的扩图范围"));
       return;
     }
     if (activeMode === "edit" && references.length && suppliedMask) {
-      setError("局部蒙版暂不能与多参考图同时提交。请移除参考图或清空蒙版后再加入队列，避免接口因尺寸不一致而失败。");
+      setError(t("局部蒙版暂不能与多参考图同时提交。请移除参考图或清空蒙版后再加入队列，避免接口因尺寸不一致而失败。"));
       return;
     }
 
@@ -444,7 +446,7 @@ export function useComposer({
     try {
     const id = crypto.randomUUID();
     setRequestId(id);
-    setProgress({ requestId: id, status: "准备进入队列", progress: 2 });
+    setProgress({ requestId: id, status: t("准备进入队列"), progress: 2 });
     let finalSize = activeSize;
     let finalRatio = activeRatio;
     let preparedImage: File | null = null;
@@ -466,7 +468,7 @@ export function useComposer({
           ? outpaintFromPercent(source.naturalWidth, source.naturalHeight, outpaintMargins)
           : outpaintToSize(source.naturalWidth, source.naturalHeight, outpaintTargetSize);
         if (!layoutResult.ok) { setError(layoutResult.error); return; }
-        const validation = await callIpc(() => window.imageStudio.outpaint.prepare({ sourceWidth: source.naturalWidth, sourceHeight: source.naturalHeight, targetSize: layoutResult.layout.targetSize }), { fallbackError: "扩图尺寸无效" });
+        const validation = await callIpc(() => window.imageStudio.outpaint.prepare({ sourceWidth: source.naturalWidth, sourceHeight: source.naturalHeight, targetSize: layoutResult.layout.targetSize }), { fallbackError: t("扩图尺寸无效") });
         if (!validation.ok) return;
         const files = await createOutpaintFiles(prepared, layoutResult.layout);
         preparedImage = files.image;
@@ -484,7 +486,7 @@ export function useComposer({
         };
       }
     } catch (cause) {
-      setError((cause as Error).message || "图片预处理失败");
+      setError((cause as Error).message || t("图片预处理失败"));
       return;
     }
     const recipe = createRecipe({
@@ -518,10 +520,10 @@ export function useComposer({
         payload.mask = await fileToPayload(maskFile);
       }
     }
-    const result = await callIpc(() => window.imageStudio.queue.enqueue({ kind: activeMode === "generate" && !referenceGeneration ? "generate" : "edit", payload }), { fallbackError: "无法创建任务", onError: setError });
+    const result = await callIpc(() => window.imageStudio.queue.enqueue({ kind: activeMode === "generate" && !referenceGeneration ? "generate" : "edit", payload }), { fallbackError: t("无法创建任务"), onError: setError });
     if (!result.ok || !result.job) return;
     setActiveJobId(result.job.id);
-    setNotice("任务已加入队列，将按顺序生成");
+    setNotice(t("任务已加入队列，将按顺序生成"));
     await refreshQueue();
     } finally {
       setIsEnqueueing(false);
@@ -530,8 +532,8 @@ export function useComposer({
 
   const cancelActive = async () => {
     if (!activeJobId) return;
-    const result = await callIpc(() => window.imageStudio.queue.cancel(activeJobId), { fallbackError: "取消失败", onError: setError });
-    if (result.ok) setNotice("已取消当前任务");
+    const result = await callIpc(() => window.imageStudio.queue.cancel(activeJobId), { fallbackError: t("取消失败|任务"), onError: setError });
+    if (result.ok) setNotice(t("已取消当前任务"));
   };
 
   const quickPreset = (value: "fast" | "stable" | "detail") => {
@@ -539,17 +541,17 @@ export function useComposer({
       setResolution("1k");
       setQuality("auto");
       setN(1);
-      setNotice("快速预览：1K、自动细节、1 张");
+      setNotice(t("快速预览：1K、自动细节、1 张"));
     } else if (value === "stable") {
       setResolution("2k");
       setQuality("auto");
       setN(1);
-      setNotice("稳定创作：2K、自动细节、1 张");
+      setNotice(t("稳定创作：2K、自动细节、1 张"));
     } else {
       setResolution("4k");
       setQuality("auto");
       setN(1);
-      setNotice("最终高清：4K、自动细节、1 张");
+      setNotice(t("最终高清：4K、自动细节、1 张"));
     }
   };
 
@@ -566,7 +568,7 @@ export function useComposer({
       if (recipe.quality) setQuality(recipe.quality);
       setProjectId(recipe.projectId || INBOX_PROJECT_ID);
       setTagsText(formatTags(recipe.tags));
-      setNotice("已带入图片和参数，可局部涂抹蒙版后继续编辑");
+      setNotice(t("已带入图片和参数，可局部涂抹蒙版后继续编辑"));
     } else {
       setMode("outpaint");
       setPrompt(recipe.prompt);
@@ -577,7 +579,7 @@ export function useComposer({
       setOutpaintStrategy("percent");
       setOutpaintMargins({ top: 25, right: 25, bottom: 25, left: 25 });
       setOutpaintPreset("");
-      setNotice("已进入智能扩图，可选择快捷比例或分别设置四向扩展量");
+      setNotice(t("已进入智能扩图，可选择快捷比例或分别设置四向扩展量"));
     }
   };
 

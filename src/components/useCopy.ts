@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { t } from "../lib/i18n";
 import type { StudioNotify } from "./StudioContext";
 
 type CopyResponse = { ok: boolean; error?: string };
@@ -30,7 +31,7 @@ async function copyWithFeedback(
 /** 复制文本：成功提示 successMessage；失败优先展示 IPC 返回的 error，其次 failureMessage。 */
 export function useCopyText(notify: StudioNotify) {
   return useCallback(
-    (value: string, successMessage = "已复制到剪贴板", failureMessage = "复制失败") =>
+    (value: string, successMessage = t("已复制到剪贴板"), failureMessage = t("复制失败")) =>
       copyWithFeedback(
         () => window.imageStudio.clipboard.copyText(value),
         successMessage,
@@ -44,7 +45,7 @@ export function useCopyText(notify: StudioNotify) {
 /** 复制图片（base64）：成功提示 successMessage；失败优先展示 IPC 返回的 error，其次 failureMessage。 */
 export function useCopyImage(notify: StudioNotify) {
   return useCallback(
-    (b64: string, successMessage = "图片已复制到剪贴板", failureMessage = "复制图片失败") =>
+    (b64: string, successMessage = t("图片已复制到剪贴板|剪贴板"), failureMessage = t("复制图片失败|剪贴板")) =>
       copyWithFeedback(
         () => window.imageStudio.clipboard.copyImage(b64),
         successMessage,

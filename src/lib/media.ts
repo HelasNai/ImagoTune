@@ -1,6 +1,7 @@
 // 渲染层共享媒体助手（base64 字符串 / Canvas 导出 / 图片读取）。
 // 约束：只使用平台内建能力，不导入 components/、electron/ 或任何第三方包；
 // Output 若需要仅以结构类型内联（沿用原 media-utils.ts 做法），避免跨模块类型依赖/循环引用。
+import { t } from "./i18n";
 
 /** base64 字符串 → data URL（默认 PNG；JPEG 等其它格式须显式传入 MIME）。 */
 export function b64ToDataUrl(b64: string, mime = "image/png"): string {
@@ -37,7 +38,7 @@ export function fileToDataUrl(file: File): Promise<string> {
 }
 
 /** 读取图片为 HTMLImageElement；失败文案可参数化以保留调用点原有措辞。 */
-export function readImage(file: File, message = "无法读取图片"): Promise<HTMLImageElement> {
+export function readImage(file: File, message = t("无法读取图片|媒体")): Promise<HTMLImageElement> {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image();
     const url = URL.createObjectURL(file);
@@ -56,7 +57,7 @@ export function readImage(file: File, message = "无法读取图片"): Promise<H
 /** 读取图片的原始宽高（原 MaskPainter.tsx 的 readDimensions）。 */
 export function imageSizeFromFile(
   file: File,
-  message = "无法读取图片尺寸",
+  message = t("无法读取图片尺寸"),
 ): Promise<{ width: number; height: number }> {
   return new Promise((resolve, reject) => {
     const image = new Image();

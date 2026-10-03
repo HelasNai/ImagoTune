@@ -1,3 +1,5 @@
+import { t } from "./i18n";
+
 export const LOCAL_AI_MAX_EDGE = 8192;
 export const LOCAL_AI_MAX_PIXELS = 70_000_000;
 
@@ -5,13 +7,13 @@ export function validateUpscaleOutput(width: number, height: number, scale: 2 | 
   const outputWidth = width * scale;
   const outputHeight = height * scale;
   if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) {
-    return { ok: false as const, error: "图片尺寸无效" };
+    return { ok: false as const, error: t("图片尺寸无效") };
   }
   if (Math.max(outputWidth, outputHeight) > LOCAL_AI_MAX_EDGE) {
-    return { ok: false as const, error: `输出最长边 ${Math.max(outputWidth, outputHeight)} px，超过 8192 px 限制` };
+    return { ok: false as const, error: t("输出最长边 {n} px，超过 8192 px 限制", { n: Math.max(outputWidth, outputHeight) }) };
   }
   if (outputWidth * outputHeight > LOCAL_AI_MAX_PIXELS) {
-    return { ok: false as const, error: `输出约 ${(outputWidth * outputHeight / 1_000_000).toFixed(1)} 百万像素，超过 7000 万像素限制` };
+    return { ok: false as const, error: t("输出约 {n} 百万像素，超过 7000 万像素限制", { n: (outputWidth * outputHeight / 1_000_000).toFixed(1) }) };
   }
   return { ok: true as const, width: outputWidth, height: outputHeight };
 }
@@ -104,7 +106,7 @@ export function nms<T extends { box: [number, number, number, number]; score: nu
 }
 
 export function solveAffine(source: Array<[number, number]>, target: Array<[number, number]>) {
-  if (source.length !== target.length || source.length < 3) throw new Error("至少需要三个匹配点");
+  if (source.length !== target.length || source.length < 3) throw new Error(t("至少需要三个匹配点"));
   const matrix = Array.from({ length: 6 }, () => Array(7).fill(0) as number[]);
   for (let index = 0; index < source.length; index += 1) {
     const [x, y] = source[index]; const [u, v] = target[index];
@@ -116,7 +118,7 @@ export function solveAffine(source: Array<[number, number]>, target: Array<[numb
     for (let row = column + 1; row < 6; row += 1) if (Math.abs(matrix[row][column]) > Math.abs(matrix[pivot][column])) pivot = row;
     [matrix[column], matrix[pivot]] = [matrix[pivot], matrix[column]];
     const value = matrix[column][column];
-    if (Math.abs(value) < 1e-9) throw new Error("人脸关键点无法对齐");
+    if (Math.abs(value) < 1e-9) throw new Error(t("人脸关键点无法对齐"));
     for (let j = column; j < 7; j += 1) matrix[column][j] /= value;
     for (let row = 0; row < 6; row += 1) if (row !== column) {
       const factor = matrix[row][column];
