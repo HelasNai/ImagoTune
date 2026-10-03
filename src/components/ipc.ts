@@ -1,4 +1,6 @@
 import { useCallback, useState } from "react";
+import type { IpcCode } from "../../shared/types";
+import { tCode } from "../lib/i18n";
 
 // 渲染层统一 IPC 助手：所有需要用户反馈的 `window.imageStudio.*` 调用都经此路由，
 // 取代各组件里逐字复制的 `if (!result.ok) 提示` 模式。
@@ -23,12 +25,20 @@ function rejectionMessage(cause: unknown, fallback: string): string {
   return cause instanceof Error && cause.message ? cause.message : fallback;
 }
 
-/** 读取 IPC 返回值的 `ok` / `error`（部分只读接口没有 ok 字段，视为成功）。 */
-function ipcOutcome(result: unknown): { failed: boolean; message: string } | null {
+/** 读取 IPC 返回值的 `ok` / `error` / `code` / `params`（部分只读接口没有 ok 字段，视为成功）。 */
+function ipcOutcome(result: unknown): { failed: boolean; message: string; code?: IpcCode; params?: Record<string, string | number> } | null {
   if (!result || typeof result !== "object") return null;
-  const value = result as { ok?: unknown; error?: unknown };
+  const value = result as { ok?: unknown; error?: unknown; code?: unknown; params?: unknown };
   if (value.ok !== false) return null;
-  return { failed: true, message: typeof value.error === "string" && value.error ? value.error : "" };
+  // 仅规范失败形状 `{ ok:false; error:string; code?:IpcCode }` 才消费 code；settings:test 等其他
+  // 失败形状（`{ ok:false; message; code:"test.*" }`）没有 error 字段，保持原文/兜底回退不变。
+  const hasError = typeof value.error === "string" && value.error.length > 0;
+  return {
+    failed: true,
+    message: hasError ? (value.error as string) : "",
+    code: hasError && typeof value.code === "string" && value.code ? (value.code as IpcCode) : undefined,
+    params: hasError && value.params && typeof value.params === "object" ? (value.params as Record<string, string | number>) : undefined,
+  };
 }
 
 /**
@@ -58,7 +68,9 @@ export async function callIpc<T>(
   }
   const outcome = ipcOutcome(result);
   if (outcome) {
-    const message = outcome.message || fallbackError;
+    const fallback = outcome.message || fallbackError;
+    // 有 code：en 走 `ipc.<code>` 词典、zh 回退主进程中文原文；无 code：原文/兜底直通。
+    const message = outcome.code ? tCode("ipc", outcome.code, outcome.params, fallback) : fallback;
     if (!options.onError) throw new IpcCallError(message, result);
     options.onError(message);
   }

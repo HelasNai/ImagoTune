@@ -180,6 +180,37 @@ export interface GenerationErrorInfo {
   params?: Record<string, string | number>;
 }
 
+// 主进程 IPC 失败语义 code（值不含 `ipc.` 前缀；渲染层经 tCode("ipc", code, params, error) 查 en 词典，
+// zh 用各 handler 保留的中文 error 原文回退）。新增一条 = 新增一个 code + 对应域分片的 `ipc.<code>` 键。
+// 覆盖范围：图库/项目、队列、模板、本地 AI、剪贴板五组 handler 的用户可见失败分支。
+export type IpcCode =
+  | "gallery.notFound"
+  | "gallery.thumbnailFailed"
+  | "gallery.loadFailed"
+  | "gallery.openFailed"
+  | "gallery.nothingSelected"
+  | "gallery.projectNameRequired"
+  | "gallery.projectNotEditable"
+  | "gallery.inboxNotDeletable"
+  | "gallery.projectNotFound"
+  | "gallery.coverMismatch"
+  | "queue.noBinding"
+  | "queue.enqueueFailed"
+  | "queue.notRetryable"
+  | "queue.notCancellable"
+  | "queue.runningNotRemovable"
+  | "queue.clearFailed"
+  | "template.empty"
+  | "template.builtinNotDeletable"
+  | "localai.notInstalled"
+  | "localai.downloadFailed"
+  | "localai.deleteFailed"
+  | "localai.emptyResult"
+  | "localai.archiveFailed"
+  | "clipboard.copyImageFailed"
+  | "clipboard.noImage"
+  | "clipboard.readImageFailed";
+
 export interface ApiImage {
   b64_json?: string;
   url?: string;

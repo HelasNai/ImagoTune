@@ -61,4 +61,9 @@ export const shell = {
 
   // StudioContext 不变量错误
   "useStudio 必须在 StudioProvider 内使用": "useStudio must be used within StudioProvider",
+
+  // ipc.clipboard.* — 主进程剪贴板 IPC 失败码（T24；zh 走 handler 中文 error 回退）。
+  "ipc.clipboard.copyImageFailed": "Invalid image data",
+  "ipc.clipboard.noImage": "No usable image in the clipboard",
+  "ipc.clipboard.readImageFailed": "Could not read the clipboard image",
 } as const;

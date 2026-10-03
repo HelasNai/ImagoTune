@@ -47,4 +47,8 @@ export const composer = {
 
   // 布局默认方案名（useComposerLayout）。
   "默认": "Default",
+
+  // ipc.template.* — 主进程提示词模板 IPC 失败码（T24，模板归创作域；zh 走 handler 中文 error 回退）。
+  "ipc.template.empty": "Template title and prompt cannot be empty",
+  "ipc.template.builtinNotDeletable": "Built-in templates cannot be deleted",
 } as const;
