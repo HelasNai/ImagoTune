@@ -443,12 +443,12 @@ function App() {
         )}
         <div className="layout">
           <aside>
-            <button className={mode === "generate" ? "nav active" : "nav"} onClick={() => setMode("generate")}><NavIcon name="sparkles" />创作生成</button>
-            <button className={mode === "edit" ? "nav active" : "nav"} onClick={() => setMode("edit")}><NavIcon name="pen-line" />图片编辑</button>
-            <button className={mode === "outpaint" ? "nav active" : "nav"} onClick={() => setMode("outpaint")}><NavIcon name="expand" />智能扩图</button>
-            <button className={mode === "gallery" ? "nav active" : "nav"} onClick={() => setMode("gallery")}><NavIcon name="images" />项目图库</button>
-            <button className={mode === "local-ai" ? "nav active" : "nav"} onClick={() => setMode("local-ai")}><NavIcon name="package" />本地工具箱</button>
-            <button className={mode === "settings" ? "nav active" : "nav"} onClick={() => setMode("settings")}><NavIcon name="settings" />设置</button>
+            <button className={mode === "generate" ? "nav active" : "nav"} data-mode="generate" onClick={() => setMode("generate")}><NavIcon name="sparkles" />创作生成</button>
+            <button className={mode === "edit" ? "nav active" : "nav"} data-mode="edit" onClick={() => setMode("edit")}><NavIcon name="pen-line" />图片编辑</button>
+            <button className={mode === "outpaint" ? "nav active" : "nav"} data-mode="outpaint" onClick={() => setMode("outpaint")}><NavIcon name="expand" />智能扩图</button>
+            <button className={mode === "gallery" ? "nav active" : "nav"} data-mode="gallery" onClick={() => setMode("gallery")}><NavIcon name="images" />项目图库</button>
+            <button className={mode === "local-ai" ? "nav active" : "nav"} data-mode="local-ai" onClick={() => setMode("local-ai")}><NavIcon name="package" />本地工具箱</button>
+            <button className={mode === "settings" ? "nav active" : "nav"} data-mode="settings" onClick={() => setMode("settings")}><NavIcon name="settings" />设置</button>
             {/* 项目树（v3.6 起头部含任务队列入口）：不渲染「全部图库」行；「查看全部」经 openGalleryProject 落到对应项目的图库视图。 */}
             <SidebarProjects
               projects={projects}

@@ -76,10 +76,9 @@ const CONTROLS = { compact: 680, narrow: 560 };
 const MODE = "generate";
 
 /** 推挤回流验收：A（被拖动）落到 B（目标）上时 B 实时下推，松手后二者坐标持久化；Ctrl+Z 单步还原。
- *  A/B 均在 generate 模式下可见且横向重叠（x=0 全宽），且 A 在 B 上方；handle 标签用于定位 A 的拖动热区。 */
+ *  A/B 均在 generate 模式下可见且横向重叠（x=0 全宽），且 A 在 B 上方；handle 经 data-layout-handle-id 定位。 */
 const PUSH_A = "references";
 const PUSH_B = "controls";
-const PUSH_LABEL_A = "参考图";
 
 let child = null;
 let wsRef = null;
@@ -256,7 +255,7 @@ async function dismissTutorial(cdp) {
 /** 切到创作页并进入布局编辑模式（建立自定义快照）。现有桥未暴露模式切换 API，故驱动 DOM。 */
 async function enterLayoutEdit(cdp) {
   await cdp.evaluate(
-    `(function(){var bs=document.querySelectorAll('.nav');for(var i=0;i<bs.length;i++){if(bs[i].textContent.indexOf('创作生成')>=0){bs[i].click();return true;}}return false;})()`
+    `(function(){var b=document.querySelector('.nav[data-mode="generate"]');if(b){b.click();return true;}return false;})()`
   );
   // 等待 ComposerPanel 挂载 + 卡片宽度就绪，然后点击「调整布局」直到进入编辑态。
   // 注意：快照已存在时 .composer-modules.layout-grid 恒存在（网格渲染 ≠ 编辑态），不能以 grid 判定，
@@ -459,27 +458,21 @@ async function runPushReflow(cdp) {
 
   // A 的 handle 滚入视口中央（CDP Input 事件只命中所见元素）。
   const scrolled = await cdp.evaluate(`(function(){
-    var hs=document.querySelectorAll('.layout-handle');
-    for(var i=0;i<hs.length;i++){
-      var lab=hs[i].querySelector('.layout-handle-label');
-      if(lab && lab.textContent===${JSON.stringify(PUSH_LABEL_A)}){hs[i].scrollIntoView({block:'center',inline:'nearest'});return true;}
-    }
+    var h=document.querySelector('.layout-handle[data-layout-handle-id=${JSON.stringify(PUSH_A)}]');
+    if(h){h.scrollIntoView({block:'center',inline:'nearest'});return true;}
     return false;
   })()`);
   if (!scrolled) {
-    check("PUSH A handle found (label)", false, JSON.stringify({ label: PUSH_LABEL_A }));
+    check("PUSH A handle found (data-layout-handle-id)", false, JSON.stringify({ id: PUSH_A }));
     return;
   }
   await sleep(400);
 
   const handleRaw = await cdp.evaluate(`(function(){
-    var hs=document.querySelectorAll('.layout-handle');
-    for(var i=0;i<hs.length;i++){
-      var lab=hs[i].querySelector('.layout-handle-label');
-      if(lab && lab.textContent===${JSON.stringify(PUSH_LABEL_A)}){
-        var r=hs[i].getBoundingClientRect();
-        return JSON.stringify({found:true,x:r.left+r.width/2,y:r.top+r.height/2,top:parseFloat(hs[i].style.top),visible:(r.top+r.height/2)>0&&(r.top+r.height/2)<window.innerHeight});
-      }
+    var h=document.querySelector('.layout-handle[data-layout-handle-id=${JSON.stringify(PUSH_A)}]');
+    if(h){
+      var r=h.getBoundingClientRect();
+      return JSON.stringify({found:true,x:r.left+r.width/2,y:r.top+r.height/2,top:parseFloat(h.style.top),visible:(r.top+r.height/2)>0&&(r.top+r.height/2)<window.innerHeight});
     }
     return JSON.stringify({found:false});
   })()`);
@@ -601,34 +594,24 @@ async function runPushReflow(cdp) {
 async function dragControlsResize(cdp, targetWidth) {
   // controls 模块位于画布下部，需先把它的缩放把手滚入 .app 视口（Input 事件只命中所见元素）。
   const scrolled = await cdp.evaluate(`(function(){
-    var hs=document.querySelectorAll('.layout-handle');
-    for(var i=0;i<hs.length;i++){
-      var lab=hs[i].querySelector('.layout-handle-label');
-      if(lab && lab.textContent==='输出控制'){
-        var e=hs[i].querySelector('.layout-handle-resize.e');
-        if(!e) return false;
-        e.scrollIntoView({block:'center',inline:'nearest'});
-        return true;
-      }
-    }
-    return false;
+    var h=document.querySelector('.layout-handle[data-layout-handle-id="controls"]');
+    if(!h) return false;
+    var e=h.querySelector('.layout-handle-resize.e');
+    if(!e) return false;
+    e.scrollIntoView({block:'center',inline:'nearest'});
+    return true;
   })()`);
   if (!scrolled) return { ok: false, reason: "no controls resize handle" };
   await sleep(350);
 
   const handleRaw = await cdp.evaluate(`(function(){
-    var hs=document.querySelectorAll('.layout-handle');
-    for(var i=0;i<hs.length;i++){
-      var lab=hs[i].querySelector('.layout-handle-label');
-      if(lab && lab.textContent==='输出控制'){
-        var e=hs[i].querySelector('.layout-handle-resize.e');
-        if(!e) return JSON.stringify({found:false});
-        var r=e.getBoundingClientRect();
-        var mr=hs[i].getBoundingClientRect();
-        return JSON.stringify({found:true,x:r.left+r.width/2,y:r.top+r.height/2,visible:(r.top+r.height/2)>0&&(r.top+r.height/2)<window.innerHeight,handleRight:mr.left+mr.width,moduleWidth:mr.width});
-      }
-    }
-    return JSON.stringify({found:false});
+    var h=document.querySelector('.layout-handle[data-layout-handle-id="controls"]');
+    if(!h) return JSON.stringify({found:false});
+    var e=h.querySelector('.layout-handle-resize.e');
+    if(!e) return JSON.stringify({found:false});
+    var r=e.getBoundingClientRect();
+    var mr=h.getBoundingClientRect();
+    return JSON.stringify({found:true,x:r.left+r.width/2,y:r.top+r.height/2,visible:(r.top+r.height/2)>0&&(r.top+r.height/2)<window.innerHeight,handleRight:mr.left+mr.width,moduleWidth:mr.width});
   })()`);
   const handle = JSON.parse(handleRaw);
   if (!handle.found) return { ok: false, reason: "no controls resize handle" };
@@ -650,52 +633,38 @@ async function dragControlsResize(cdp, targetWidth) {
   return { ok: true, fromX: +fromX.toFixed(2), fromY: +fromY.toFixed(2), toX: +toX.toFixed(2), handleVisible: handle.visible, moduleWidthBefore: handle.moduleWidth };
 }
 
-/** 读指定 label 模块当前 .layout-handle 的显示高度（px；-1 = 未找到）。 */
-async function readModuleHandleHeight(cdp, label) {
+/** 读指定模块当前 .layout-handle 的显示高度（px；-1 = 未找到）。 */
+async function readModuleHandleHeight(cdp, moduleId) {
   const value = await cdp.evaluate(`(function(){
-    var hs=document.querySelectorAll('.layout-handle');
-    for(var i=0;i<hs.length;i++){
-      var lab=hs[i].querySelector('.layout-handle-label');
-      if(lab && lab.textContent===${JSON.stringify(label)}) return hs[i].getBoundingClientRect().height;
-    }
-    return -1;
+    var h=document.querySelector('.layout-handle[data-layout-handle-id=${JSON.stringify(moduleId)}]');
+    return h ? h.getBoundingClientRect().height : -1;
   })()`);
   return typeof value === "number" ? value : -1;
 }
 
 /**
- * 在指定 label 模块的 .layout-handle-resize.s 上真实拖拽（垂直缩放：正 deltaY = 拉高、负 = 拉矮）。
+ * 在指定模块的 .layout-handle-resize.s 上真实拖拽（垂直缩放：正 deltaY = 拉高、负 = 拉矮）。
  * 回归用途：修复前下限取实时实测高度（恒 ≥ 当前高度），拉矮会被永久钳住（只能拉高不能拉矮）。
  */
-async function dragModuleResizeS(cdp, label, deltaY) {
+async function dragModuleResizeS(cdp, moduleId, deltaY) {
   const scrolled = await cdp.evaluate(`(function(){
-    var hs=document.querySelectorAll('.layout-handle');
-    for(var i=0;i<hs.length;i++){
-      var lab=hs[i].querySelector('.layout-handle-label');
-      if(lab && lab.textContent===${JSON.stringify(label)}){
-        var e=hs[i].querySelector('.layout-handle-resize.s');
-        if(!e) return false;
-        e.scrollIntoView({block:'center',inline:'nearest'});
-        return true;
-      }
-    }
-    return false;
+    var h=document.querySelector('.layout-handle[data-layout-handle-id=${JSON.stringify(moduleId)}]');
+    if(!h) return false;
+    var e=h.querySelector('.layout-handle-resize.s');
+    if(!e) return false;
+    e.scrollIntoView({block:'center',inline:'nearest'});
+    return true;
   })()`);
   if (!scrolled) return { ok: false, reason: "no s handle" };
   await sleep(350);
 
   const handleRaw = await cdp.evaluate(`(function(){
-    var hs=document.querySelectorAll('.layout-handle');
-    for(var i=0;i<hs.length;i++){
-      var lab=hs[i].querySelector('.layout-handle-label');
-      if(lab && lab.textContent===${JSON.stringify(label)}){
-        var e=hs[i].querySelector('.layout-handle-resize.s');
-        if(!e) return JSON.stringify({found:false});
-        var r=e.getBoundingClientRect();
-        return JSON.stringify({found:true,x:r.left+r.width/2,y:r.top+r.height/2,visible:(r.top+r.height/2)>0&&(r.top+r.height/2)<window.innerHeight});
-      }
-    }
-    return JSON.stringify({found:false});
+    var h=document.querySelector('.layout-handle[data-layout-handle-id=${JSON.stringify(moduleId)}]');
+    if(!h) return JSON.stringify({found:false});
+    var e=h.querySelector('.layout-handle-resize.s');
+    if(!e) return JSON.stringify({found:false});
+    var r=e.getBoundingClientRect();
+    return JSON.stringify({found:true,x:r.left+r.width/2,y:r.top+r.height/2,visible:(r.top+r.height/2)>0&&(r.top+r.height/2)<window.innerHeight});
   })()`);
   const handle = JSON.parse(handleRaw);
   if (!handle.found) return { ok: false, reason: "no s handle rect" };
@@ -1001,12 +970,12 @@ async function main() {
         return;
       }
     }
-    const vLabel = "图反推";
-    const vBefore = await readModuleHandleHeight(cdp, vLabel);
-    const vGrow = await dragModuleResizeS(cdp, vLabel, 160);
-    const vGrown = await readModuleHandleHeight(cdp, vLabel);
-    const vShrink = await dragModuleResizeS(cdp, vLabel, -260);
-    const vShrunk = await readModuleHandleHeight(cdp, vLabel);
+    const vModuleId = "reverse-prompt";
+    const vBefore = await readModuleHandleHeight(cdp, vModuleId);
+    const vGrow = await dragModuleResizeS(cdp, vModuleId, 160);
+    const vGrown = await readModuleHandleHeight(cdp, vModuleId);
+    const vShrink = await dragModuleResizeS(cdp, vModuleId, -260);
+    const vShrunk = await readModuleHandleHeight(cdp, vModuleId);
     check(
       "VERTICAL grow: handle drag +160px increases height",
       vGrow.ok && vBefore > 0 && vGrown > vBefore + 80,
@@ -1024,7 +993,7 @@ async function main() {
     );
     fs.writeFileSync(
       path.join(evidenceDir, "task-15-layout-vertical-resize.json"),
-      JSON.stringify({ label: vLabel, vBefore, vGrown, vShrunk, vGrow, vShrink }, null, 2)
+      JSON.stringify({ moduleId: vModuleId, vBefore, vGrown, vShrunk, vGrow, vShrink }, null, 2)
     );
     await cdp.screenshot(path.join(evidenceDir, "task-15-layout-vertical-resize.png"));
 

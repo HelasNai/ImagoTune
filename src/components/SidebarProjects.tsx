@@ -116,6 +116,7 @@ export function SidebarProjects({
         <Tooltip content="任务队列">
           <button
             className={queueActive ? "nav sidebar-queue-nav active" : "nav sidebar-queue-nav"}
+            data-mode="queue"
             onClick={onOpenQueue}
           >
             <NavIcon name="list-todo" size={18} />

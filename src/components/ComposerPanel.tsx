@@ -515,6 +515,7 @@ export function ComposerPanel({
             <div
               key={handle.id}
               className={handle.id === layout.draggingId ? "layout-handle dragging" : "layout-handle"}
+              data-layout-handle-id={handle.id}
               style={{ left: handle.left, top: handle.top, width: handle.width, height: handle.height }}
               onPointerDown={(event) => layout.beginDrag(handle.id, "move", event)}
               onPointerMove={layout.moveDrag}
