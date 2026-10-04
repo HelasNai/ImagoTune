@@ -3,7 +3,7 @@
 // 契约（plan K4/K5/K6）：单张限制、size 哨兵校验、messages 协议、200+error 检测。
 // 不实现 listModels（K2：平台级 /v1/models 可用）。
 
-import type { ApiImage } from "../../shared/types";
+import type { ApiImage, GenerationErrorCode } from "../../shared/types";
 import { GenerationError, classifyHttpError } from "../generation-error";
 import { joinBase } from "../net-utils";
 import type { GenerateContext, ProviderAdapter } from "./types";
@@ -13,7 +13,7 @@ const MIN_EDGE = 256;
 const MAX_EDGE = 8192;
 const MAX_AREA = 16777216;
 
-function parameterError(message: string, details?: string): GenerationError {
+function parameterError(message: string, details: string | undefined, code: GenerationErrorCode): GenerationError {
   return new GenerationError({
     category: "parameters",
     title: "生成参数不兼容",
@@ -21,10 +21,11 @@ function parameterError(message: string, details?: string): GenerationError {
     suggestion: "请调整参数后重试；软件不会自动重复生成。",
     retryable: false,
     details,
+    code,
   });
 }
 
-function unknownError(message: string, details?: string): GenerationError {
+function unknownError(message: string, details: string | undefined, code: GenerationErrorCode): GenerationError {
   return new GenerationError({
     category: "unknown",
     title: "生成请求失败",
@@ -32,6 +33,7 @@ function unknownError(message: string, details?: string): GenerationError {
     suggestion: "查看详情并检查当前参数后再提交。",
     retryable: false,
     details,
+    code,
   });
 }
 
@@ -47,6 +49,7 @@ function endpointError(details: string): GenerationError {
     retryable: false,
     status: 200,
     details,
+    code: "hunyuan.endpointMissing",
   });
 }
 
@@ -54,7 +57,7 @@ function endpointError(details: string): GenerationError {
 function assertSize(size: string): void {
   const match = /^(\d+)x(\d+)$/i.exec(size.trim());
   if (!match) {
-    throw parameterError("该平台不支持所选尺寸。", size);
+    throw parameterError("该平台不支持所选尺寸。", size, "hunyuan.sizeUnsupported");
   }
   const width = Number(match[1]);
   const height = Number(match[2]);
@@ -67,7 +70,7 @@ function assertSize(size: string): void {
     height > MAX_EDGE ||
     width * height > MAX_AREA
   ) {
-    throw parameterError("该平台不支持所选尺寸。", size);
+    throw parameterError("该平台不支持所选尺寸。", size, "hunyuan.sizeUnsupported");
   }
 }
 
@@ -91,6 +94,7 @@ export const hunyuanImageAdapter: ProviderAdapter = {
         message: "该平台单次生成一张图片。",
         suggestion: "请将张数调整为 1 后再提交。",
         retryable: false,
+        code: "hunyuan.singleImage",
       });
     }
 
@@ -138,7 +142,7 @@ export const hunyuanImageAdapter: ProviderAdapter = {
     try {
       payload = JSON.parse(text);
     } catch {
-      throw unknownError("接口返回了无法解析的响应。", text.slice(0, 800));
+      throw unknownError("接口返回了无法解析的响应。", text.slice(0, 800), "hunyuan.invalidResponse");
     }
 
     if (payload && typeof payload === "object" && (payload as { error?: unknown }).error) {
@@ -152,7 +156,7 @@ export const hunyuanImageAdapter: ProviderAdapter = {
 
     const url = extractImageUrl(payload);
     if (!url) {
-      throw unknownError("接口未返回图片地址。", text.slice(0, 800));
+      throw unknownError("接口未返回图片地址。", text.slice(0, 800), "hunyuan.noImageUrl");
     }
 
     return [{ url }];

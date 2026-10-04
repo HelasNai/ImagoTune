@@ -120,6 +120,7 @@ declare global {
   type ImageRecipeV1 = Shared.ImageRecipeV1;
   type LocalAIModelStatus = Shared.LocalAIModelStatus;
   type LocalAIModelProgress = Shared.LocalAIModelProgress;
+  type LocalAIModelProgressCode = Shared.LocalAIModelProgressCode;
   type LocalAICapabilities = Shared.LocalAICapabilities;
   type GenerationErrorCategory = Shared.GenerationErrorCategory;
   type GenerationErrorInfo = Shared.GenerationErrorInfo;

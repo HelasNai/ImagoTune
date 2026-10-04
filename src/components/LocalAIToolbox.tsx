@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createRecipe } from "../lib/creative";
 import { INBOX_PROJECT_ID } from "../lib/constants";
 import { formatBytes, formatDurationSeconds } from "../lib/format";
-import { t } from "../lib/i18n";
+import { t, tCode } from "../lib/i18n";
 import { validateUpscaleOutput } from "../lib/local-ai";
 import { b64FromDataUrl, b64ToDataUrl, fileToDataUrl } from "../lib/media";
 import { mapLocalAIProgress } from "../lib/progress";
@@ -38,6 +38,13 @@ type WorkerResult = {
 };
 type WorkerProgress = { type: "progress"; id: string; phase: string; progress?: number; message: string; device?: "webgpu" | "wasm"; stageIndex?: number; totalStages?: number; stageLabel?: string };
 type WorkerError = { type: "error"; id: string; cancelled?: boolean; error: string };
+
+// 模型条目 = 状态 + 最近一次下载进度事件携带的 message/code/params（T26：进度码经 tCode 本地化）。
+type LocalAIModelEntry = LocalAIModelStatus & {
+  message?: string;
+  code?: LocalAIModelProgressCode;
+  params?: Record<string, string | number>;
+};
 
 // 动作标签 getter：每次访问经 t() 运行时求值（语言切换后随重渲染更新，禁止模块加载期冻结）。
 const actionLabels: Record<LocalAIAction, string> = {
@@ -127,7 +134,7 @@ export function LocalAIToolbox({
   onNotice: StudioNotify;
 }) {
   const [action, setAction] = useState<LocalAIAction>(initialAction);
-  const [models, setModels] = useState<LocalAIModelStatus[]>([]);
+  const [models, setModels] = useState<LocalAIModelEntry[]>([]);
   const [capabilities, setCapabilities] = useState<LocalAICapabilities | null>(null);
   const [scale, setScale] = useState<2 | 4>(2);
   const [feather, setFeather] = useState(2);
@@ -277,8 +284,15 @@ export function LocalAIToolbox({
   // 统一进度条数据：把「下载模型」与「推理进度」合并到同一条时间线，
   // 避免准备阶段进度条长时间卡在 1%。真实百分比不可知时缺省 progress（渲染层显示不确定态）。
   const downloading = busy && downloadBusy ? models.find((item) => item.id === downloadBusy) : undefined;
+  // 下载/校验进度文案：有 code 时经 tCode 本地化（en 查 localai.* 词典、zh 用 manager 中文 message 回退），
+  // 无 code（尚未收到首个进度事件）回退按模型名的中文/英文模板。
+  const downloadMessage = downloading
+    ? downloading.code
+      ? tCode("localai", downloading.code, downloading.params, downloading.message || t("正在下载 {name}", { name: downloading.name }))
+      : t("正在下载 {name}", { name: downloading.name })
+    : "";
   const liveProgress: TaskProgressEvent | null = downloading
-    ? { id: "local-ai", scope: "local-ai", message: t("正在下载 {name}", { name: downloading.name }), progress: downloading.progress, state: "running" }
+    ? { id: "local-ai", scope: "local-ai", message: downloadMessage, progress: downloading.progress, state: "running" }
     : busy
       ? {
           id: "local-ai",

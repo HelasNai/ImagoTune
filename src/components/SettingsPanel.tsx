@@ -8,7 +8,7 @@ import { useLocale } from "./useLocale";
 import { formatDateTime } from "../lib/format";
 import { getLocale, t, tCode } from "../lib/i18n";
 import { isSettingsDirty } from "../lib/settings-dirty";
-import { presetToProviderDraft } from "../lib/provider-preset";
+import { presetKeyHelp, presetToProviderDraft } from "../lib/provider-preset";
 import {
   MODEL_ROLES,
   modelRoleLabel,
@@ -503,7 +503,7 @@ export function SettingsPanel({
                     onChange={(event) => setPresetApiKey(event.target.value)}
                   />
                 </label>
-                <p className="provider-meta">{selectedPreset.keyHelp}</p>
+                <p className="provider-meta">{presetKeyHelp(selectedPreset.id, selectedPreset.keyHelp)}</p>
                 <div className="provider-form-actions">
                   <button type="button" className="primary" onClick={confirmAddPreset}>{t("添加")}</button>
                   <button type="button" className="secondary" onClick={() => setAdding(false)}>{t("取消")}</button>

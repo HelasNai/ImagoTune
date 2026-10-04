@@ -16,6 +16,17 @@ export const localai = {
   "ipc.localai.emptyResult": "The local processing result is empty",
   "ipc.localai.archiveFailed": "Failed to archive the local processing result",
 
+  // localai.* — 本地模型下载/校验进度码（T26；zh 走 manager 中文 message 回退，en 经 tCode 本地化）。
+  "localai.verifyingExisting": "Verifying the installed model",
+  "localai.verifyingSha": "Verifying SHA-256 integrity",
+  "localai.installed": "Model installed; ready for offline use",
+  "localai.paused": "Download paused; you can resume later",
+  "localai.downloading": "Downloading {name}",
+  "localai.verifyFailed": "Model verification failed: expected {expected}, got {actual}",
+  "localai.httpStatus": "The download server returned HTTP {status}",
+  "localai.noBody": "The download response has no readable data",
+  "localai.failed": "Model download failed",
+
   // --- LocalAIToolbox（T20；动作标签 高清放大/智能抠图/人脸优化 Beta/本地组合处理 已由 en/shell.ts 承载，此处不重复） ---
   // 动作引导（actionGuides getter；title 复用 shell 键，summary/output/badge 为本分片）
   "补足纹理与边缘细节，适合放大生成图、插画和产品图。":

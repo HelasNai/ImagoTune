@@ -33,6 +33,7 @@ export const settings = {
   "API 密钥": "API key",
   "粘贴 API 密钥（可留空，稍后填写）": "Paste the API key (optional; you can add it later)",
   "粘贴当前平台提供的 API 密钥": "Paste the API key provided by the current platform",
+  "在腾讯云控制台 → TokenHub → API Key 创建": "Create an API key at Tencent Cloud Console → TokenHub → API Key",
   "例如：主力平台": "e.g. Main platform",
   "例如：https://api.example.com/v1": "e.g. https://api.example.com/v1",
   "名称": "Name",

@@ -157,6 +157,28 @@ describe("settings:test 语义码（T13）", () => {
   });
 });
 
+describe("localai 进度码（T26）", () => {
+  // tCode 走动态 key（`as I18nKey`），类型系统无法保证 localai.* 词条存在——用测试锁定。
+  it("en 下 9 个 localai.* code 均命中英文并插值", () => {
+    setLocale("en");
+    expect(tCode("localai", "verifyingExisting")).toBe("Verifying the installed model");
+    expect(tCode("localai", "verifyingSha")).toBe("Verifying SHA-256 integrity");
+    expect(tCode("localai", "installed")).toBe("Model installed; ready for offline use");
+    expect(tCode("localai", "paused")).toBe("Download paused; you can resume later");
+    expect(tCode("localai", "downloading", { name: "tiny.onnx" })).toBe("Downloading tiny.onnx");
+    expect(tCode("localai", "verifyFailed", { expected: "aaaa", actual: "bbbb" })).toBe(
+      "Model verification failed: expected aaaa, got bbbb",
+    );
+    expect(tCode("localai", "httpStatus", { status: 500 })).toBe("The download server returned HTTP 500");
+    expect(tCode("localai", "noBody")).toBe("The download response has no readable data");
+    expect(tCode("localai", "failed")).toBe("Model download failed");
+  });
+
+  it("zh 下回退 manager 中文 message", () => {
+    expect(tCode("localai", "downloading", { name: "x" }, "正在下载 x")).toBe("正在下载 x");
+  });
+});
+
 describe("词典完整性", () => {
   const shards = { core, settings, gallery, composer, localai, queue, tutorial, shell, errors };
 

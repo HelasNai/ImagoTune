@@ -119,7 +119,25 @@ export interface LocalAIModelStatus {
   error?: string;
 }
 
-export type LocalAIModelProgress = LocalAIModelStatus & { message: string };
+export type LocalAIModelProgress = LocalAIModelStatus & {
+  message: string;
+  /** 下载进度语义 code（值不含 `localai.` 前缀；渲染层经 tCode("localai", code, params, message) 查 en 词典，zh 用 message 回退）。 */
+  code?: LocalAIModelProgressCode;
+  /** 消息插值参数（如 `{name}`/`{status}`/`{expected}`/`{actual}`）；缺失参数保留占位符原文。 */
+  params?: Record<string, string | number>;
+};
+
+/** 本地 AI 模型下载/校验的进度语义 code；新增一条 = 本联合 + `en/localai.ts` 的 `localai.<code>` 键。 */
+export type LocalAIModelProgressCode =
+  | "verifyingExisting"
+  | "verifyingSha"
+  | "installed"
+  | "paused"
+  | "downloading"
+  | "verifyFailed"
+  | "httpStatus"
+  | "noBody"
+  | "failed";
 
 export interface LocalAICapabilities {
   ok: boolean;
@@ -164,7 +182,12 @@ export type GenerationErrorCode =
   | "network.timeout"
   | "archive.failed"
   | "network.offline"
-  | "runtime.unknown";
+  | "runtime.unknown"
+  | "hunyuan.singleImage"
+  | "hunyuan.sizeUnsupported"
+  | "hunyuan.invalidResponse"
+  | "hunyuan.noImageUrl"
+  | "hunyuan.endpointMissing";
 
 export interface GenerationErrorInfo {
   category: GenerationErrorCategory;

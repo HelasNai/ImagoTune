@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { presetToProviderDraft } from "../src/lib/provider-preset";
+import { afterEach, describe, expect, it } from "vitest";
+import { presetKeyHelp, presetToProviderDraft } from "../src/lib/provider-preset";
+import { setLocale } from "../src/lib/i18n";
+
+// i18n 单例在用例间共享：每个用例后复位为默认中文。
+afterEach(() => setLocale("zh"));
 
 // K1 契约的内联 fixture（测试不得 import electron/；形状与 tests/provider-presets.test.ts 锁定的一致）。
 const HUNYUAN: ProviderPreset = {
@@ -53,5 +57,24 @@ describe("presetToProviderDraft", () => {
     first.models[0].roles.push("reverse");
     expect(second.models[0].roles).toEqual(["image"]);
     expect(HUNYUAN.presetModels[0].roles).toEqual(["image"]);
+  });
+});
+
+describe("presetKeyHelp", () => {
+  it("zh 下命中映射：直通中文原文（t 的 zh 分支）", () => {
+    expect(presetKeyHelp("hunyuan", "回退原文")).toBe("在腾讯云控制台 → TokenHub → API Key 创建");
+  });
+
+  it("en 下命中 en/settings.ts 译文并插值无占位符", () => {
+    setLocale("en");
+    expect(presetKeyHelp("hunyuan", "回退原文")).toBe(
+      "Create an API key at Tencent Cloud Console → TokenHub → API Key",
+    );
+  });
+
+  it("未知 id 回退传入原文（zh / en 均不泄漏 id）", () => {
+    expect(presetKeyHelp("unknown-preset", "回退原文")).toBe("回退原文");
+    setLocale("en");
+    expect(presetKeyHelp("unknown-preset", "回退原文")).toBe("回退原文");
   });
 });

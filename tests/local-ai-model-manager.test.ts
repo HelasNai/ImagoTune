@@ -4,7 +4,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { LocalAIModelManager, sha256File } from "../electron/local-ai-model-manager";
+import { LocalAIModelManager, sha256File, type ModelProgress } from "../electron/local-ai-model-manager";
 import { LocalAIModelManifest } from "../electron/local-ai-models";
 
 const temporaryDirectories: string[] = [];
@@ -63,7 +63,9 @@ describe("local AI model integrity", () => {
       input: "test",
     };
     let paused = false;
+    const progresses: ModelProgress[] = [];
     const manager = new LocalAIModelManager(directory, (progress) => {
+      progresses.push(progress);
       if (!paused && progress.state === "downloading" && progress.downloaded > 0) {
         paused = true;
         manager.pause("realesrgan-x2");
@@ -78,6 +80,10 @@ describe("local AI model integrity", () => {
       expect(ranges.some((value) => /^bytes=\d+-$/.test(value))).toBe(true);
       expect(await fs.readFile(manager.modelPath("realesrgan-x2"))).toEqual(bytes);
       expect(await fs.stat(manager.verifiedPath("realesrgan-x2"))).toBeTruthy();
+      // T26：进度事件携带语义 code 与参数（下载中 code=downloading、params.name=模型名）。
+      const downloadingEvent = progresses.find((value) => value.code === "downloading");
+      expect(downloadingEvent?.params?.name).toBe("Tiny test model");
+      expect(progresses.some((value) => value.code === "paused")).toBe(true);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
@@ -104,6 +110,31 @@ describe("local AI model integrity", () => {
       const installed = await manager.download("realesrgan-x2");
       expect(installed.installed).toBe(true);
       expect(await fs.readFile(manager.modelPath("realesrgan-x2"))).toEqual(bytes);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("下载服务器返回非 2xx 时错误进度事件携带 localai code 与 params", async () => {
+    const server = http.createServer((_request, response) => { response.writeHead(500); response.end("boom"); });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("测试服务器启动失败");
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "image-studio-model-http-"));
+    temporaryDirectories.push(directory);
+    const manifest: LocalAIModelManifest = {
+      id: "realesrgan-x2", name: "Tiny test model", fileName: "tiny.onnx", version: "test-1",
+      size: 10, sha256: "0".repeat(64),
+      urls: [`http://127.0.0.1:${address.port}/tiny.onnx`], license: "Test",
+      sourceUrl: "https://example.invalid", purpose: "upscale", input: "test",
+    };
+    const progresses: ModelProgress[] = [];
+    const manager = new LocalAIModelManager(directory, (progress) => progresses.push(progress), [manifest]);
+    try {
+      await expect(manager.download("realesrgan-x2")).rejects.toThrow();
+      const failure = progresses.find((value) => value.state === "error");
+      expect(failure?.code).toBe("httpStatus");
+      expect(failure?.params).toEqual({ status: 500 });
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }

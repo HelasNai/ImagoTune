@@ -5,12 +5,23 @@ import { createHash } from "node:crypto";
 import { pipeline } from "node:stream/promises";
 import { LOCAL_AI_MODELS, LocalAIModelId, LocalAIModelManifest } from "./local-ai-models";
 
-import type { LocalAIModelProgress as ModelProgress, LocalAIModelStatus, ModelDownloadState } from "../shared/types";
+import type { LocalAIModelProgress as ModelProgress, LocalAIModelProgressCode, LocalAIModelStatus, ModelDownloadState } from "../shared/types";
 
 export type { ModelProgress, LocalAIModelStatus, ModelDownloadState };
 
 type ActiveDownload = { controller: AbortController; promise: Promise<LocalAIModelStatus> };
 type ModelFetcher = (input: string, init?: RequestInit) => Promise<Response>;
+
+/** 带语义 code 的下载错误：runDownload 捕获后透传为进度 message 的 code/params（en 经 tCode 本地化、zh 用中文 message 回退）。 */
+class DownloadError extends Error {
+  constructor(
+    message: string,
+    readonly code?: LocalAIModelProgressCode,
+    readonly params?: Record<string, string | number>,
+  ) {
+    super(message);
+  }
+}
 
 export async function sha256File(filePath: string) {
   const hash = createHash("sha256");
@@ -106,9 +117,15 @@ export class LocalAIModelManager {
     return Promise.all(this.models.map((model) => this.status(model.id)));
   }
 
-  private async emit(id: LocalAIModelId, message: string, state?: ModelDownloadState) {
+  private async emit(
+    id: LocalAIModelId,
+    message: string,
+    state?: ModelDownloadState,
+    code?: LocalAIModelProgressCode,
+    params?: Record<string, string | number>,
+  ) {
     const status = await this.status(id);
-    this.onProgress({ ...status, state: state || status.state, message });
+    this.onProgress({ ...status, state: state || status.state, message, ...(code ? { code, params } : {}) });
   }
 
   async download(id: LocalAIModelId) {
@@ -147,7 +164,7 @@ export class LocalAIModelManager {
     const partPath = this.partPath(id);
     const finalStat = await fs.stat(finalPath).catch(() => null);
     if (finalStat?.size) {
-      await this.emit(id, "正在校验已安装模型", "verifying");
+      await this.emit(id, "正在校验已安装模型", "verifying", "verifyingExisting");
       if (await sha256File(finalPath) === model.sha256) {
         await this.writeVerifiedMarker(id);
         return this.status(id);
@@ -160,28 +177,34 @@ export class LocalAIModelManager {
     for (const url of model.urls) {
       try {
         await this.downloadFromUrl(model.id, url, partPath, controller.signal);
-        await this.emit(id, "正在进行 SHA-256 完整性校验", "verifying");
+        await this.emit(id, "正在进行 SHA-256 完整性校验", "verifying", "verifyingSha");
         const digest = await sha256File(partPath);
         if (digest !== model.sha256) {
           await fs.rm(partPath, { force: true });
-          throw new Error(`模型校验失败：期望 ${model.sha256.slice(0, 12)}，实际 ${digest.slice(0, 12)}`);
+          throw new DownloadError(
+            `模型校验失败：期望 ${model.sha256.slice(0, 12)}，实际 ${digest.slice(0, 12)}`,
+            "verifyFailed",
+            { expected: model.sha256.slice(0, 12), actual: digest.slice(0, 12) },
+          );
         }
         await fs.rm(finalPath, { force: true });
         await fs.rename(partPath, finalPath);
         await this.writeVerifiedMarker(id);
-        await this.emit(id, "模型已安装，可离线使用", "installed");
+        await this.emit(id, "模型已安装，可离线使用", "installed", "installed");
         return this.status(id);
       } catch (error) {
         if (controller.signal.aborted) {
-          await this.emit(id, "下载已暂停，可稍后继续", "partial");
+          await this.emit(id, "下载已暂停，可稍后继续", "partial", "paused");
           return this.status(id);
         }
         lastError = error as Error;
       }
     }
     const message = lastError?.message || "模型下载失败";
+    const code = lastError instanceof DownloadError ? lastError.code : "failed";
+    const params = lastError instanceof DownloadError ? lastError.params : undefined;
     this.errors.set(id, message);
-    await this.emit(id, message, "error");
+    await this.emit(id, message, "error", code, params);
     throw lastError || new Error(message);
   }
 
@@ -189,8 +212,8 @@ export class LocalAIModelManager {
     let downloaded = await fs.stat(partPath).then((value) => value.size).catch(() => 0);
     const headers: HeadersInit = downloaded ? { Range: `bytes=${downloaded}-` } : {};
     const response = await this.fetcher(url, { headers, signal, redirect: "follow" });
-    if (!response.ok) throw new Error(`下载服务器返回 HTTP ${response.status}`);
-    if (!response.body) throw new Error("下载响应没有可读取的数据");
+    if (!response.ok) throw new DownloadError(`下载服务器返回 HTTP ${response.status}`, "httpStatus", { status: response.status });
+    if (!response.body) throw new DownloadError("下载响应没有可读取的数据", "noBody");
     if (downloaded && response.status !== 206) {
       await fs.rm(partPath, { force: true });
       downloaded = 0;
@@ -208,7 +231,8 @@ export class LocalAIModelManager {
         const now = Date.now();
         if (now - lastEmit > 250) {
           lastEmit = now;
-          await this.emit(id, "正在下载模型", "downloading");
+          const label = this.model(id)?.name ?? id;
+          await this.emit(id, `正在下载 ${label}`, "downloading", "downloading", { name: label });
         }
       }
     } finally {

@@ -107,6 +107,7 @@ describe("hunyuanImageAdapter generate", () => {
     // 真实观测形态（200 + InterfaceNotExist）必须归类为 endpoint，而非 unknown
     expect((error as GenerationError).info.category).toBe("endpoint");
     expect((error as GenerationError).info.retryable).toBe(false);
+    expect((error as GenerationError).info.code).toBe("hunyuan.endpointMissing");
   });
 
   it("HTTP 200 + error 字段但非接口不存在 → 仍抛 GenerationError（unknown），绝不当作成功", async () => {
@@ -116,6 +117,16 @@ describe("hunyuanImageAdapter generate", () => {
     expect(error).toBeInstanceOf(GenerationError);
     expect((error as GenerationError).info.category).toBe("unknown");
     expect(calls).toHaveLength(1);
+  });
+
+  it("无法解析的响应 → hunyuan.invalidResponse；缺少图片地址 → hunyuan.noImageUrl", async () => {
+    const broken = makeFetcher(200, "not-json");
+    const parseError = await hunyuanImageAdapter.generate(makeCtx(), broken.fetcher).catch((e) => e);
+    expect((parseError as GenerationError).info.code).toBe("hunyuan.invalidResponse");
+
+    const noUrl = makeFetcher(200, JSON.stringify({ choices: [] }));
+    const urlError = await hunyuanImageAdapter.generate(makeCtx(), noUrl.fetcher).catch((e) => e);
+    expect((urlError as GenerationError).info.code).toBe("hunyuan.noImageUrl");
   });
 
   it("非 2xx（400 含 400004）抛 GenerationError 且 info.status === 400", async () => {
@@ -130,7 +141,7 @@ describe("hunyuanImageAdapter generate", () => {
     const { fetcher, calls } = makeFetcher(200, JSON.stringify({ choices: [] }));
 
     await expect(hunyuanImageAdapter.generate(makeCtx({ n: 2 }), fetcher)).rejects.toMatchObject({
-      info: { category: "parameters", retryable: false },
+      info: { category: "parameters", retryable: false, code: "hunyuan.singleImage" },
     });
     expect(calls).toHaveLength(0);
   });
@@ -139,7 +150,7 @@ describe("hunyuanImageAdapter generate", () => {
     for (const size of ["10000x10000", "100x100", "abc", "0x0", "-1x1024"]) {
       const { fetcher, calls } = makeFetcher(200, JSON.stringify({ choices: [] }));
       await expect(hunyuanImageAdapter.generate(makeCtx({ size }), fetcher)).rejects.toMatchObject({
-        info: { category: "parameters" },
+        info: { category: "parameters", code: "hunyuan.sizeUnsupported" },
       });
       expect(calls).toHaveLength(0);
     }

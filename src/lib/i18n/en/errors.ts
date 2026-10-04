@@ -74,6 +74,28 @@ export const errors = {
   "error.runtime.unknown.message": "The generation request failed for an unknown reason.",
   "error.runtime.unknown.suggestion": "Review the details and current parameters, then submit again.",
 
+  // 腾讯混元适配器（T26）：适配器在 GenerationError 上直接携带 code，经 main.ts 的
+  // classifyRuntimeError → GenerationErrorInfo 透传，渲染层 renderErrorInfo 本地化。
+  "error.hunyuan.singleImage.title": "Single image limit",
+  "error.hunyuan.singleImage.message": "This platform generates one image per request.",
+  "error.hunyuan.singleImage.suggestion": "Set the number of images to 1 and submit again.",
+
+  "error.hunyuan.sizeUnsupported.title": "Unsupported size for this platform",
+  "error.hunyuan.sizeUnsupported.message": "This platform does not support the selected size.",
+  "error.hunyuan.sizeUnsupported.suggestion": "Adjust the size and retry; the app will not regenerate automatically.",
+
+  "error.hunyuan.invalidResponse.title": "Generation request failed",
+  "error.hunyuan.invalidResponse.message": "The endpoint returned a response that could not be parsed.",
+  "error.hunyuan.invalidResponse.suggestion": "Review the details and current parameters, then submit again.",
+
+  "error.hunyuan.noImageUrl.title": "Generation request failed",
+  "error.hunyuan.noImageUrl.message": "The endpoint did not return an image URL.",
+  "error.hunyuan.noImageUrl.suggestion": "Review the details and current parameters, then submit again.",
+
+  "error.hunyuan.endpointMissing.title": "Model or endpoint not found",
+  "error.hunyuan.endpointMissing.message": "The server could not find the requested model or endpoint.",
+  "error.hunyuan.endpointMissing.suggestion": "Check the provider's API type, base URL, and model name.",
+
   // ===================== T23：lib 层错误与 hooks 默认文案 =====================
   // key = 中文原文（重复中文词用 `|语境` 后缀消歧，zh 直通时后缀不进界面）。
   // 涉及并行分片已有词条时直接复用，不在此重复（如「图片已复制到剪贴板」在 shell 分片）。
