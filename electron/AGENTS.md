@@ -6,7 +6,7 @@ Electron 主进程：窗口、IPC、本地存储、OpenAI 兼容 API、本地 AI
 ## STRUCTURE
 | 文件 | 职责 |
 |------|------|
-| `main.ts` | 入口(1297 行)：系统原生 WCO 窗口(1180x820、`titleBarStyle:'hidden'` + 透明 `titleBarOverlay`)、`local-ai-model://` 协议、启动早期 `force_high_performance_gpu` 开关（Windows 双显卡强制独显，见 KEY RULES）、已移除应用菜单(`Menu.setApplicationMenu(null)`)、窗口控制 IPC(`window:*` 6 个 handler + `window:maximized-changed` 推送)、electron-updater 双偏好(更新通道 stable/beta + 自动更新)、多供应商配置持久层(启动迁移 `loadModelConfig`、五步保存 `saveModelConfig`、`providerCredential`/`resolveProvider`/`resolveRole`/`providerHasKey` 解析 helper、队列快照与 fail-closed 执行)、全部 66 个 `ipcMain.handle`（通道名引用 `channels.ts`；含 `settings:setLocale`）、统一进度推送 `emitProgress`（含 `win.isDestroyed()` 守卫；增强/反推/导出三处接入） |
+| `main.ts` | 入口(1368 行)：系统原生 WCO 窗口(1180x820、`titleBarStyle:'hidden'` + 透明 `titleBarOverlay`) + v3.14 启动页窗口时序(`show:false` / `ready-to-show` 显示 / 4s 兜底)——窗口一出场即 React 首帧(`SplashScreen`)、`local-ai-model://` 协议、启动早期 `force_high_performance_gpu` 开关（Windows 双显卡强制独显，见 KEY RULES）、已移除应用菜单(`Menu.setApplicationMenu(null)`)、窗口控制 IPC(`window:*` 6 个 handler + `window:maximized-changed` 推送)、electron-updater 双偏好(更新通道 stable/beta + 自动更新)、多供应商配置持久层(启动迁移 `loadModelConfig`、五步保存 `saveModelConfig`、`providerCredential`/`resolveProvider`/`resolveRole`/`providerHasKey` 解析 helper、队列快照与 fail-closed 执行)、全部 66 个 `ipcMain.handle`（通道名引用 `channels.ts`；含 `settings:setLocale`）、统一进度推送 `emitProgress`（含 `win.isDestroyed()` 守卫；增强/反推/导出三处接入） |
 | `channels.ts` | IPC 通道名常量单一来源（共 75 个，含 `settings:setLocale` 与进度推送 `progress:update`；`main.ts` 引用；`preload.ts` 因沙箱无法 `require` 本地模块而**刻意内联**，一致性由 `tests/preload-channels.test.ts` 锁定；字符串即对外契约，不得改） |
 | `constants.ts` | 默认模型 `DEFAULT_IMAGE_MODEL`/`DEFAULT_CHAT_MODEL` + `INBOX_PROJECT_ID`（纯模块，与 `src/lib/constants` 一致性测试） |
 | `i18n.ts` | 主进程 locale 单例 + `mt()` 原生面小词典（`MainLocale`/`getMainLocale`/`setMainLocale`；32 条 `{zh;en}` + `{name}` 插值，缺失 key warn 返回 key 不抛错），纯模块可被 vitest 直接导入 |
@@ -44,6 +44,7 @@ Electron 主进程：窗口、IPC、本地存储、OpenAI 兼容 API、本地 AI
 | 本地模型下载 / 校验 | `local-ai-model-manager.ts` + `local-ai-models.ts` |
 | PNG 元数据 / 反推 | `png-metadata.ts` / `reverse-prompt.ts` |
 | 更新通道 / 自动更新偏好 | `main.ts` 的 `updateChannelPref` / `autoUpdatePref` / `applyUpdatePreferences`(keytar) + `updates:*` IPC |
+| 窗口显示时序 / 启动页兜底 | `main.ts` 的 `createWindow()`（`show:false` + `ready-to-show` 显示 + 4s 兜底 timer；渲染层退场判定在 `../src/lib/splash.ts`） |
 
 ## KEY RULES
 - IPC handler 一律返回 `{ ok: boolean; ...; error?: string }`
@@ -70,5 +71,6 @@ Electron 主进程：窗口、IPC、本地存储、OpenAI 兼容 API、本地 AI
 - 平台适配器层 `providers/`：纯逻辑无副作用、可被 vitest 直接导入；`getAdapter(api)` 未命中注册表返回 `undefined` → 上层 `callImages` 走 openai 默认路径（零回归）；适配器只强制 `generate(ctx, fetcher?)`（`fetcher` 可注入供单测），`listModels` 可选；混元单次只出一张（`n>1` 抛 `parameters`）、`size` 直传前哨兵校验（宽高 [256,8192]、面积 ≤ 16777216，越界抛 `parameters`、绝不缩放）、HTTP 200 但 body 含 `error` 同样抛错（错误文本含「接口/模型不存在」时归类 `endpoint`，其余走 `classifyHttpError`）；预设与自定义共用 `ProviderConfig`（仅多一个可选 `api`）；预设数据只经 `settings:get` 快照下发，渲染层绝不 import 本目录。
 - `BrowserWindow.backgroundColor`（`#fdf5f9`）现仅兜底窗口首帧底色（页面加载前防白闪）：`scrollbar-gutter` 槽位与透明滚动条轨道由渲染层 `.app` 自身背景绘制（见 `src/styles.css` v2.1 四层背景），不再依赖此值配色；保留它用于启动过渡。（Electron 44 的 overlay 滚动条 electron#53350 不可用，勿再走该方案）
 - 窗口为系统原生 WCO 模型（`titleBarStyle:'hidden'` + `titleBarOverlay` 对象，见 `createWindow()`）：禁止 `transparent:true`/`hasShadow:false`/`thickFrame:false`（会丢阴影与边缘 resize 能力），保留 `backgroundColor:"#fdf5f9"`；拖拽由渲染层 `header` 承担，其右上角原生按钮条以 `env(titlebar-area-*)` + `header::after` 从拖拽区挖除。
+- 启动页窗口时序（v3.14）：`createWindow` 必须保持 `show:false` + `win.once("ready-to-show", () => win.show())` + 4s 兜底 timer（`setTimeout` 内守卫 `isDestroyed`/`isVisible`）——窗口一出场即 React 首帧（启动页），消灭「先露 backgroundColor 纯色底再跳界面」的空窗；兜底防加载失败 / 极慢时窗口永不显示。不得移除 `show:false` 或兜底；渲染层退场判定见 `src/lib/splash.ts`（最短 1800ms / 上限 6s / reduced-motion 直通）。
 - 应用菜单已移除（`Menu.setApplicationMenu(null)`）：编辑类快捷键依赖输入框内 Chromium 原生行为；dev 快捷键（F12 / Ctrl+Shift+I / Ctrl+R / Ctrl+Shift+R / F5）经 `win.webContents.on("before-input-event")` 保留，且仅在 `--dev` 下注册，不用 `globalShortcut`（避免全局生效）。
 - 窗口控制走 `window:*` 通道（`minimize`/`toggleMaximize`/`close`/`isMaximized`/`getZoom`/`setZoom`，均以 `BrowserWindow.fromWebContents(event.sender)` 判空后操作），并在 `maximize`/`unmaximize` 时向渲染层 `send("window:maximized-changed", boolean)`；渲染层自绘窗口按钮已移除、改用系统原生 WCO 按钮，`window:*` IPC 与桥方法保持不变。

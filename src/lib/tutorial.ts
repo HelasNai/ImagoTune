@@ -119,7 +119,7 @@ const STEP_TEMPLATES: TutorialStepTemplate[] = [
     id: "complete",
     title: "准备开始创作",
     description: "你已经了解完整核心流程。现在可以进入创作页，也可以打开教程中心查看每项功能的详细步骤和常见问题。",
-    hint: "教程可从左侧“新手教程”或顶部“帮助”菜单随时重新打开。",
+    hint: "教程可从设置页的“关于与帮助”随时重新打开。",
   },
 ];
 

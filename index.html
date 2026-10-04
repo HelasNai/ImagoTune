@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ImagoTune</title>
+    <style>
+      /* 首屏防白（v3.14）：窗口可能先于样式 / React 就绪显示（ready-to-show 空页首帧或 4s 兜底，
+         dev 模块链较慢时尤甚）；内联与窗口 backgroundColor 同值，任何等待期都是浅底色而非白板。
+         styles.css 注入后由 html 的 --page-bg 渐变接管（其最底层渐变不透明，完整覆盖本底色）。 */
+      html {
+        background: #fdf5f9;
+      }
+    </style>
   </head>
   <body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body>
 </html>

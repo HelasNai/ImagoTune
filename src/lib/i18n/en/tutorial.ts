@@ -84,8 +84,8 @@ export const tutorial = {
   准备开始创作: "Ready to start creating",
   "你已经了解完整核心流程。现在可以进入创作页，也可以打开教程中心查看每项功能的详细步骤和常见问题。":
     "You now know the full core flow. Head to the creation page, or open the learning center for detailed steps and common issues for each feature.",
-  "教程可从左侧“新手教程”或顶部“帮助”菜单随时重新打开。":
-    "Reopen the tutorial anytime from “Tutorial” in the sidebar or the Help menu at the top.",
+  "教程可从设置页的“关于与帮助”随时重新打开。":
+    "Reopen the tutorial anytime from “About & help” in Settings.",
 
   // --- 主题模板（TOPIC_TEMPLATES 文案）---
   连接与模型配置: "Connections and model setup",

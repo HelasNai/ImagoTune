@@ -34,14 +34,15 @@ const repoRoot = path.resolve(__dirname, "..");
 const DEFAULT_OUT = path.join(".sisyphus", "evidence", "ui-capture");
 const DEFAULT_PORT = 9222;
 
-// 页面表：id → 侧栏/顶栏导航按钮文本。全部为 `button.nav`，按文本包含匹配点击。
+// 页面表：id → 侧栏/顶栏导航按钮文本。除 settings 外全部为 `button.nav`，按文本包含匹配点击；
+// v3.15 起 settings 改由 `[data-mode]` 选择器定位（侧栏底部图标按钮 .sidebar-settings 无文本）。
 const PAGES = [
   { id: "generate", nav: "创作生成" },
   { id: "edit", nav: "图片编辑" },
   { id: "outpaint", nav: "智能扩图" },
   { id: "gallery", nav: "项目图库" },
   { id: "local-ai", nav: "本地工具箱" },
-  { id: "settings", nav: "设置" },
+  { id: "settings", selector: '[data-mode="settings"]' },
   { id: "queue", nav: "任务队列" },
 ];
 
@@ -296,11 +297,16 @@ async function dismissTutorial(cdp) {
   await sleep(200);
 }
 
-/** 按导航文本点击 `button.nav`，返回 "clicked" / "not-found"。 */
-async function clickNav(cdp, text) {
+/** 按选择器或导航文本点击导航入口，返回 "clicked" / "not-found"。 */
+async function clickNav(cdp, def) {
+  if (def.selector) {
+    return cdp.evaluate(
+      `(function(){var b=document.querySelector(${JSON.stringify(def.selector)});if(!b)return "not-found";b.click();return "clicked";})()`
+    );
+  }
   return cdp.evaluate(
     `(function(){var b=[...document.querySelectorAll("button.nav")].find(function(x){return (x.textContent||"").indexOf(${JSON.stringify(
-      text
+      def.nav
     )})>=0;});if(!b)return "not-found";b.click();return "clicked";})()`
   );
 }
@@ -403,8 +409,8 @@ async function main() {
     for (const pageId of opts.pages) {
       const def = PAGES.find((p) => p.id === pageId);
       try {
-        const navResult = await clickNav(cdp, def.nav);
-        if (navResult !== "clicked") throw new Error(`导航按钮未找到: ${def.nav}`);
+        const navResult = await clickNav(cdp, def);
+        if (navResult !== "clicked") throw new Error(`导航按钮未找到: ${def.nav || def.selector}`);
         // View Transitions 页面切换（约 350ms），固定等待确保动画结束。
         await sleep(900);
         const vp = await readViewport(cdp);

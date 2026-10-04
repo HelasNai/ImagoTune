@@ -231,6 +231,8 @@ async function migrateLegacyUserData() {
 function createWindow() {
   const win = new BrowserWindow({
     width: 1180, height: 820, minWidth: 980, minHeight: 680,
+    // v3.14 启动页：先隐藏窗口（等渲染进程首帧就绪再显示，见下方 ready-to-show 逻辑）。
+    show: false,
     // 系统原生窗口按钮（WCO）：titleBarStyle:'hidden' 隐去系统标题栏，titleBarOverlay 叠加
     // 原生最小化/最大化/关闭按钮；overlay 取全透明且 RGB 用页面基色（#fdf5f9），页面渐变得以
     // 透出、hover 高亮与页面融合；height:32 与旧自绘控件等高，symbolColor 沿用旧图标色。
@@ -242,6 +244,12 @@ function createWindow() {
     icon: path.join(__dirname, "../ImagoTune.ico"),
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, nodeIntegration: false }
   });
+  // v3.14 启动页：等渲染进程首帧（React 首帧即启动页）就绪再显示窗口，消灭「窗口先露纯色底、
+  // 再跳主界面」的空窗；4s 兜底强制显示——加载失败 / 极慢时窗口绝不永不出现。
+  win.once("ready-to-show", () => win.show());
+  setTimeout(() => {
+    if (!win.isDestroyed() && !win.isVisible()) win.show();
+  }, 4000);
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
     return { action: "deny" };

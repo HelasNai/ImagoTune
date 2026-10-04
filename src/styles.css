@@ -316,7 +316,7 @@ label {
   font-size: 12px;
 }
 .settings {
-  max-width: 630px;
+  max-width: 900px;
 }
 .settings label {
   margin: 18px 0;
@@ -3061,7 +3061,10 @@ select:focus-visible {
   .tooltip-bubble,
   .layout-editor-bar,
   .progress-track div:not([style*="width: 0"]),
-  .progress-track.indeterminate {
+  .progress-track.indeterminate,
+  .splash-title,
+  .splash-mote,
+  .splash-exit {
     animation: none !important;
   }
   .card,
@@ -3079,7 +3082,7 @@ select:focus-visible {
   .sidebar-project-caret,
   .sidebar-project-actions,
   .sidebar-project-body,
-  .sidebar-help,
+  .sidebar-settings,
   .queue-thumb,
   .layout-toggle,
   .layout-handle,
@@ -3798,10 +3801,11 @@ select:focus-visible {
   }
 }
 
-/* v3.5 侧栏底部帮助入口（新手教程）：由原第 8 个导航项改为项目树之下的纯图标按钮。
+/* v3.5 侧栏底部入口：由原第 8 个导航项改为项目树之下的纯图标按钮。
+   v3.15：新手教程入口换为设置（顶部导航「设置」项删除后移至此处；教程入口现位于设置页「关于与帮助」）。
    DOM 位置在 .sidebar-projects（flex:1）之后 → 项目树吸收剩余高度、本按钮自然贴侧栏底。
-   低键外观：muted 图标 + 透明底/描边；悬停才出现浅背景与描边。语义由 title 原生 tooltip 提供。 */
-.sidebar-help {
+   低键外观：muted 图标 + 透明底/描边；悬停 / 激活（当前位于设置页）才出现浅背景与描边。语义由 aria-label + Tooltip 提供。 */
+.sidebar-settings {
   display: grid;
   place-items: center;
   align-self: flex-start;
@@ -3819,12 +3823,13 @@ select:focus-visible {
     border-color 0.18s ease,
     color 0.18s ease;
 }
-.sidebar-help:hover {
+.sidebar-settings:hover,
+.sidebar-settings.active {
   border-color: rgba(151, 180, 220, 0.35);
   background: rgba(255, 255, 255, 0.85);
   color: #5c6f9c;
 }
-.sidebar-help:focus-visible {
+.sidebar-settings:focus-visible {
   outline: 2px solid rgba(120, 160, 224, 0.6);
   outline-offset: 1px;
 }
@@ -5050,9 +5055,9 @@ header [role="button"] {
   }
 }
 
-/* v2.9 设置页保存底栏：与设置卡片（max-width:630px、在 .page-transition 内靠左）同宽同轴。
+/* v2.9 设置页保存底栏：与设置卡片（max-width:900px、在 .page-transition 内靠左）同宽同轴。
    设置卡片中心 ≠ 创作页 .composer 卡片（后者占满 .page-transition 宽），
-   故 left 需按「pt 左缘 − --dock-bleed」定位、宽 = min(630px, pt宽) + 2×--dock-bleed；
+   故 left 需按「pt 左缘 − --dock-bleed」定位、宽 = min(900px, pt宽) + 2×--dock-bleed；
    勿与 .run-row 的公式混用（后者中心 = 主区中点）。 */
 .settings-dock {
   position: fixed;
@@ -5068,7 +5073,7 @@ header [role="button"] {
     50% - var(--scrollbar-w) / 2 + var(--aside-width) / 2 - var(--settings-dock-track-w) / 2 -
       var(--dock-bleed)
   );
-  width: calc(min(630px, var(--settings-dock-track-w)) + 2 * var(--dock-bleed));
+  width: calc(min(900px, var(--settings-dock-track-w)) + 2 * var(--dock-bleed));
   display: flex;
   align-items: center;
   gap: 10px;
@@ -6449,4 +6454,119 @@ main:has(.card.settings) {
 .tooltip-hint:hover,
 .tooltip-hint:focus-visible {
   color: #5b8ed6;
+}
+
+/* ============================================================================
+   v3.13 设置页分区导航
+   - 设置卡片 630→900；卡片内部两栏：左 .settings-nav（sticky 吸顶）+ 右 .settings-panels。
+   - .settings-nav 复用全局 .nav 观感（图标 + 文字 + active 渐变），不引入独立滚动容器
+     （.app 仍是唯一页面级滚动容器；sticky 相对 .app 滚动端口，top 偏移 12px）。
+   ============================================================================ */
+.settings-layout {
+  display: grid;
+  grid-template-columns: 176px minmax(0, 1fr);
+  gap: 26px;
+  align-items: start;
+}
+.settings-nav {
+  position: sticky;
+  top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-panel,
+.settings-panels {
+  min-width: 0;
+}
+
+/* ============================================================================
+   v3.14 启动页（SplashScreen）
+   - 全屏 fixed 覆盖层（z-index 140：高于教程弹层 130 / toast 90）；背景与 .app 四层同款，
+     退场淡出时与主界面无缝；覆盖期间可拖动窗口（app-region: drag，层内无交互元素）。
+   - 艺术字「想象变成图片」：宽度 clamp(360px, 34vw, 520px)。**动画与计时锚定「窗口可见」**：
+     未 armed（hidden，组件先于窗口显示挂载时）为预备态（mask 100% + 透明，完全隐藏）；
+     窗口可见（.splash-armed）才起跑——入场 splash-title-rise（500ms）与书写显影
+     splash-title-write 并发（150ms 延迟 + 1250ms）——mask 图宽 2.5×元素、46%–54% 柔边，
+     position 100%→0% 使透明段整体滑出元素，字从左向右「写」出；armed 基础 mask-position 0%
+     即完整显示（reduced-motion 下动画被禁、静态全显）。
+   - 墨点氛围：7 粒固定参数光点（splash-mote-float 漂浮循环），退场随根淡出。
+   - 退场：splash-exit 根淡出 + 标题轻上浮（400ms，与 lib/splash.ts 的 SPLASH_EXIT_MS 对齐）。
+   - 全部动画已登记进 v1.5.1 分区的 prefers-reduced-motion 组（~3028 行）。
+   ============================================================================ */
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  -webkit-app-region: drag;
+  background-image:
+    linear-gradient(130deg, rgba(250, 253, 255, 0.5), rgba(255, 248, 252, 0.48)),
+    linear-gradient(rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.28)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0) 42%),
+    var(--page-bg);
+  background-repeat: no-repeat;
+}
+.splash-title {
+  width: clamp(360px, 34vw, 520px);
+  height: auto;
+  display: block;
+  user-select: none;
+  -webkit-user-drag: none;
+  -webkit-mask-image: linear-gradient(100deg, #000 0%, #000 46%, transparent 54%);
+  mask-image: linear-gradient(100deg, #000 0%, #000 46%, transparent 54%);
+  -webkit-mask-size: 250% 100%;
+  mask-size: 250% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  /* 未 armed（窗口尚不可见）＝预备态：完全隐藏，等窗口一出场再起笔。 */
+  -webkit-mask-position: 100% 0;
+  mask-position: 100% 0;
+  opacity: 0;
+  will-change: mask-position, opacity, transform;
+}
+.splash-armed .splash-title {
+  /* armed 基础值：无动画时（reduced-motion）完整静态显示；正常态动画 backwards 填充从 0 帧起笔。 */
+  -webkit-mask-position: 0% 0;
+  mask-position: 0% 0;
+  opacity: 1;
+  animation:
+    splash-title-rise 500ms ease-out both,
+    splash-title-write 1250ms cubic-bezier(0.4, 0.55, 0.25, 1) 150ms both;
+}
+@keyframes splash-title-rise {
+  from { opacity: 0; transform: translateY(10px) scale(0.99); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes splash-title-write {
+  from { -webkit-mask-position: 100% 0; mask-position: 100% 0; }
+  to { -webkit-mask-position: 0% 0; mask-position: 0% 0; }
+}
+.splash-mote {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(91, 142, 214, 0.5), rgba(91, 142, 214, 0) 70%);
+  animation: splash-mote-float 4s ease-in-out 0s infinite alternate;
+}
+.splash-mote:nth-child(3n) {
+  background: radial-gradient(circle, rgba(233, 148, 187, 0.42), rgba(233, 148, 187, 0) 70%);
+}
+@keyframes splash-mote-float {
+  from { transform: translateY(6px) scale(0.9); opacity: 0.16; }
+  to { transform: translateY(-10px) scale(1.05); opacity: 0.44; }
+}
+.splash-exit {
+  animation: splash-fade-out 400ms ease-in both;
+}
+@keyframes splash-fade-out {
+  to { opacity: 0; }
+}
+.splash-exit .splash-title {
+  /* 退场替换入场/书写动画：mask 回基础值（完整显示），标题轻上浮，随根整体淡出。 */
+  animation: splash-title-out 400ms ease-in both;
+}
+@keyframes splash-title-out {
+  to { transform: translateY(-8px) scale(0.995); }
 }

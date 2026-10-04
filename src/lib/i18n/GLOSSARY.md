@@ -44,7 +44,7 @@ tCode("test", "noKey", {}, "尚未配置 API 密钥");
 | 任务队列 | Queue | 导航/侧栏入口；短标签用 Queue |
 | 设置 | Settings | 导航项 |
 | 本地 AI 工具箱 | Local AI toolbox | 导航项；短标签可作 Local AI |
-| 新手教程 | Tutorial | 侧栏帮助入口 |
+| 新手教程 | Tutorial | 教程中心标题；入口位于设置页「关于与帮助」 |
 
 ### 功能与模式
 

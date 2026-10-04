@@ -4,6 +4,7 @@ import { useDialog } from "./Dialogs";
 import { useStudio } from "./StudioContext";
 import { Combobox } from "./Combobox";
 import { Tooltip, InfoHint } from "./Tooltip";
+import { NavIcon, type NavIconName } from "./icons";
 import { useLocale } from "./useLocale";
 import { formatDateTime } from "../lib/format";
 import { getLocale, t, tCode } from "../lib/i18n";
@@ -19,6 +20,17 @@ import {
 
 /** 供应商草稿：完整配置 + 可选的未保存密钥（仅存在于本次会话内存，保存时才提交）。 */
 type ProviderDraft = ProviderConfig & { apiKey?: string };
+
+// 设置页分区导航（v3.13）：4 个标签顺序固定；图标名取自 icons.tsx 已登记条目（无需翻译）。
+// 标签文案必须在组件内求值——禁止模块加载期 t()（语言切换后不更新）。
+const SETTINGS_TABS = ["connection", "general", "updates", "about"] as const;
+type SettingsTab = (typeof SETTINGS_TABS)[number];
+const SETTINGS_TAB_ICONS: Record<SettingsTab, NavIconName> = {
+  connection: "cpu",
+  general: "settings",
+  updates: "refresh-cw",
+  about: "info",
+};
 
 // D10 刷新的渲染层轻量复刻：与 electron/model-config.ts 的 mergeFetchedModels 同语义
 // （渲染层不得 import electron/——tsconfig include 仅 src——故就地实现，保持 ≤20 行）。
@@ -64,6 +76,22 @@ export function SettingsPanel({
   const { requestConfirm, requestText } = useDialog();
   // 语言切换独立于设置草稿/保存底栏：点击即生效（乐观），失败回滚并提示。
   const [locale, applyLocale] = useLocale();
+
+  // —— 设置页分区导航（v3.13）：4 个面板条件渲染（未激活面板卸载）——
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("connection");
+  const cardRef = useRef<HTMLElement | null>(null);
+  // 分区标签在组件体内求值（禁止模块加载期 t()）；「软件更新」「关于与帮助」复用既有词条。
+  const tabLabels: Record<SettingsTab, string> = {
+    connection: t("连接与模型"),
+    general: t("通用设置"),
+    updates: t("软件更新"),
+    about: t("关于与帮助"),
+  };
+  // 切换分区后把卡片滚回 .app 滚动端口顶部（默认瞬时滚动，不引入未登记动效）。
+  const switchSettingsTab = (next: SettingsTab) => {
+    setSettingsTab(next);
+    cardRef.current?.scrollIntoView({ block: "start" });
+  };
 
   // —— 供应商/角色/归档草稿（保存的权威来源；providers 快照同步后重置）——
   const [drafts, setDrafts] = useState<ProviderDraft[]>([]);
@@ -460,305 +488,342 @@ export function SettingsPanel({
   );
 
   return (
-    <section className="card settings" data-tutorial="connection-settings">
-      <span className="eyebrow">CONNECTION & STORAGE</span>
-      <h2>{t("连接设置")}</h2>
-      <p className="muted">
-        {t("支持添加多个符合当前请求格式的 OpenAI 兼容服务，并可为生图、图反推与提示词增强分别绑定模型。API 密钥仅保存到 Windows 凭据库，不会显示原文或写入项目文件。")}
-      </p>
-      <section className="provider-block">
-        <div className="provider-block-head">
-          <div>
-            <span className="eyebrow">PROVIDERS</span>
-            <h3>{t("供应商")}</h3>
-          </div>
-          <button type="button" className="secondary" onClick={beginAdd}>{t("+ 添加供应商")}</button>
-        </div>
-        {adding && (
-          <div className="provider-card provider-card-new" data-provider-form="add">
-            {presets.length > 0 && (
-              // 双态切换：复用更新渠道分段控件的视觉（.update-channel-options）；只切模式，两态草稿互不清空。
-              <div className="update-channel-options" role="group" aria-label={t("添加方式")}>
-                <button type="button" className={effectiveAddMode === "preset" ? "active" : ""} onClick={() => setAddMode("preset")}>{t("预设平台")}</button>
-                <button type="button" className={effectiveAddMode === "custom" ? "active" : ""} onClick={() => setAddMode("custom")}>{t("自定义|设置")}</button>
-              </div>
-            )}
-            {effectiveAddMode === "preset" && selectedPreset ? (
-              <>
-                <label>{t("平台")}
-                  <Combobox
-                    ariaLabel={t("预设平台")}
-                    placeholder={t("选择平台")}
-                    options={presets.map((item) => ({ value: item.id, label: item.label }))}
-                    value={presetId}
-                    onChange={setPresetId}
-                  />
-                </label>
-                <label>{t("API 密钥")}
-                  <input
-                    data-provider-field="presetApiKey"
-                    type="password"
-                    placeholder={t("粘贴 API 密钥（可留空，稍后填写）")}
-                    value={presetApiKey}
-                    onChange={(event) => setPresetApiKey(event.target.value)}
-                  />
-                </label>
-                <p className="provider-meta">{presetKeyHelp(selectedPreset.id, selectedPreset.keyHelp)}</p>
-                <div className="provider-form-actions">
-                  <button type="button" className="primary" onClick={confirmAddPreset}>{t("添加")}</button>
-                  <button type="button" className="secondary" onClick={() => setAdding(false)}>{t("取消")}</button>
-                </div>
-              </>
-            ) : (
-              <>
-                <label>{t("名称")}<input data-provider-field="name" placeholder={t("例如：主力平台")} value={draftForm.name} onChange={(event) => setDraftForm((current) => ({ ...current, name: event.target.value }))} /></label>
-                <label>Base URL<input data-provider-field="baseUrl" placeholder={t("例如：https://api.example.com/v1")} value={draftForm.baseUrl} onChange={(event) => setDraftForm((current) => ({ ...current, baseUrl: event.target.value }))} /></label>
-                <label>{t("API 密钥")}
-                  <input
-                    data-provider-field="apiKey"
-                    type="password"
-                    placeholder={t("粘贴当前平台提供的 API 密钥")}
-                    value={draftForm.apiKey}
-                    onChange={(event) => setDraftForm((current) => ({ ...current, apiKey: event.target.value }))}
-                  />
-                </label>
-                <div className="provider-form-actions">
-                  <button type="button" className="primary" onClick={confirmAdd}>{t("添加")}</button>
-                  <button type="button" className="secondary" onClick={() => setAdding(false)}>{t("取消")}</button>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-        {drafts.length === 0 && !adding && <p className="muted">{t("尚未添加供应商。")}</p>}
-        {drafts.map((draft) => {
-          const hasKey = Boolean(draft.apiKey) || serverHasKey.has(draft.id);
-          // 模型面板过滤：大小写不敏感、空搜索 = 全部（同一结果集供批量按钮使用，D11）。
-          const query = (modelSearch[draft.id] ?? "").trim().toLowerCase();
-          const filteredModels = query ? draft.models.filter((model) => model.id.toLowerCase().includes(query)) : draft.models;
-          return (
-            <article className="provider-card" data-provider-id={draft.id} key={draft.id}>
-              <div className="provider-card-head">
-                <div className="provider-card-title">
-                  <strong>{draft.name}</strong>
-                  {hasKey ? <span className="key-badge ok">{t("已保存密钥")}</span> : <span className="key-badge missing">{t("缺少密钥")}</span>}
-                </div>
-                <div className="provider-card-actions">
-                  <button type="button" className="secondary" onClick={() => beginEdit(draft)}>{t("编辑")}</button>
-                  <Tooltip content={t("测试连接与刷新模型不会保存任何数据：未保存的新密钥只用于当次请求，不写入凭据库。")}>
-                    <button type="button" className="secondary" onClick={() => void runProviderCheck(draft, "test")}>{t("测试连接")}</button>
-                  </Tooltip>
-                  <button type="button" className="secondary" onClick={() => void runProviderCheck(draft, "refresh")}>{t("刷新模型")}</button>
-                  <button type="button" className="secondary" onClick={() => setExpandedModelsId((current) => (current === draft.id ? null : draft.id))}>{t("模型")}</button>
-                  <button type="button" className="secondary" onClick={() => void removeProvider(draft)}>{t("删除|供应商")}</button>
-                </div>
-              </div>
-              <code>{draft.baseUrl}</code>
-              <p className="provider-meta">
-                {draft.modelsUpdatedAt
-                  ? t("{n} 个模型 · 更新于 {time}", { n: draft.models.length, time: formatDateTime(draft.modelsUpdatedAt) })
-                  : t("{n} 个模型", { n: draft.models.length })}
+    <section className="card settings" data-tutorial="connection-settings" ref={cardRef}>
+      <span className="eyebrow">SETTINGS</span>
+      <h2>{t("设置")}</h2>
+      <div className="settings-layout">
+        <nav className="settings-nav" aria-label={t("设置")}>
+          {SETTINGS_TABS.map((id) => (
+            <button
+              key={id}
+              type="button"
+              className={"nav" + (settingsTab === id ? " active" : "")}
+              data-settings-tab={id}
+              aria-current={settingsTab === id ? "page" : undefined}
+              onClick={() => switchSettingsTab(id)}
+            >
+              <NavIcon name={SETTINGS_TAB_ICONS[id]} />
+              {tabLabels[id]}
+            </button>
+          ))}
+        </nav>
+        <div className="settings-panels">
+          {settingsTab === "connection" && (
+            <div className="settings-panel" data-settings-panel="connection">
+              <p className="muted">
+                {t("支持添加多个符合当前请求格式的 OpenAI 兼容服务，并可为生图、图反推与提示词增强分别绑定模型。API 密钥仅保存到 Windows 凭据库，不会显示原文或写入项目文件。")}
               </p>
-              {expandedModelsId === draft.id && (
-                <div className="model-role-block">
-                  <div className="model-role-head">
-                    <input
-                      className="model-search"
-                      placeholder={t("搜索模型")}
-                      value={modelSearch[draft.id] ?? ""}
-                      onChange={(event) => setModelSearch((current) => ({ ...current, [draft.id]: event.target.value }))}
-                    />
-                    <button type="button" onClick={() => void runProviderCheck(draft, "refresh")}>{t("刷新模型")}</button>
-                    <button type="button" onClick={() => void addCustomModel(draft)}>{`+ ${t("自定义模型")}`}</button>
+              <section className="provider-block">
+                <div className="provider-block-head">
+                  <div>
+                    <span className="eyebrow">PROVIDERS</span>
+                    <h3>{t("供应商")}</h3>
                   </div>
-                  <div className="model-bulk">
-                    {t("批量（作用于搜索结果）：")}
-                    {MODEL_ROLES.map((role) => (
-                      <span key={role} className="model-bulk-group">
-                        <button type="button" onClick={() => bulkSetRole(draft.id, role)}>{t("设为 {role}", { role: modelRoleLabel(role) })}</button>
-                        <button type="button" onClick={() => bulkClearRole(draft.id, role)}>{t("清除 {role}", { role: modelRoleLabel(role) })}</button>
-                      </span>
-                    ))}
-                  </div>
-                  <div className="model-list">
-                    {filteredModels.length === 0 && <p className="model-empty">{t("无匹配模型")}</p>}
-                    {filteredModels.map((model) => (
-                      <div className={"model-row" + (model.missing ? " missing" : "")} key={model.id}>
-                        <span className="model-id">{model.id}</span>
-                        {model.source === "custom" && <span className="model-custom">{t("自定义|设置")}</span>}
-                        {model.missing && <span className="model-missing">{t("已下线")}</span>}
-                        {MODEL_ROLES.map((role) => (
-                          <label key={role} className="model-role-check">
-                            <input type="checkbox" checked={model.roles.includes(role)} onChange={() => toggleModelRole(draft.id, model.id, role)} /> {modelRoleLabel(role)}
-                          </label>
-                        ))}
-                        {model.source === "custom" && (
-                          <button type="button" className="model-remove" onClick={() => void removeCustomModel(draft.id, model.id)}>{t("删除|供应商")}</button>
-                        )}
+                  <button type="button" className="secondary" onClick={beginAdd}>{t("+ 添加供应商")}</button>
+                </div>
+                {adding && (
+                  <div className="provider-card provider-card-new" data-provider-form="add">
+                    {presets.length > 0 && (
+                      // 双态切换：复用更新渠道分段控件的视觉（.update-channel-options）；只切模式，两态草稿互不清空。
+                      <div className="update-channel-options" role="group" aria-label={t("添加方式")}>
+                        <button type="button" className={effectiveAddMode === "preset" ? "active" : ""} onClick={() => setAddMode("preset")}>{t("预设平台")}</button>
+                        <button type="button" className={effectiveAddMode === "custom" ? "active" : ""} onClick={() => setAddMode("custom")}>{t("自定义|设置")}</button>
                       </div>
-                    ))}
+                    )}
+                    {effectiveAddMode === "preset" && selectedPreset ? (
+                      <>
+                        <label>{t("平台")}
+                          <Combobox
+                            ariaLabel={t("预设平台")}
+                            placeholder={t("选择平台")}
+                            options={presets.map((item) => ({ value: item.id, label: item.label }))}
+                            value={presetId}
+                            onChange={setPresetId}
+                          />
+                        </label>
+                        <label>{t("API 密钥")}
+                          <input
+                            data-provider-field="presetApiKey"
+                            type="password"
+                            placeholder={t("粘贴 API 密钥（可留空，稍后填写）")}
+                            value={presetApiKey}
+                            onChange={(event) => setPresetApiKey(event.target.value)}
+                          />
+                        </label>
+                        <p className="provider-meta">{presetKeyHelp(selectedPreset.id, selectedPreset.keyHelp)}</p>
+                        <div className="provider-form-actions">
+                          <button type="button" className="primary" onClick={confirmAddPreset}>{t("添加")}</button>
+                          <button type="button" className="secondary" onClick={() => setAdding(false)}>{t("取消")}</button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <label>{t("名称")}<input data-provider-field="name" placeholder={t("例如：主力平台")} value={draftForm.name} onChange={(event) => setDraftForm((current) => ({ ...current, name: event.target.value }))} /></label>
+                        <label>Base URL<input data-provider-field="baseUrl" placeholder={t("例如：https://api.example.com/v1")} value={draftForm.baseUrl} onChange={(event) => setDraftForm((current) => ({ ...current, baseUrl: event.target.value }))} /></label>
+                        <label>{t("API 密钥")}
+                          <input
+                            data-provider-field="apiKey"
+                            type="password"
+                            placeholder={t("粘贴当前平台提供的 API 密钥")}
+                            value={draftForm.apiKey}
+                            onChange={(event) => setDraftForm((current) => ({ ...current, apiKey: event.target.value }))}
+                          />
+                        </label>
+                        <div className="provider-form-actions">
+                          <button type="button" className="primary" onClick={confirmAdd}>{t("添加")}</button>
+                          <button type="button" className="secondary" onClick={() => setAdding(false)}>{t("取消")}</button>
+                        </div>
+                      </>
+                    )}
                   </div>
+                )}
+                {drafts.length === 0 && !adding && <p className="muted">{t("尚未添加供应商。")}</p>}
+                {drafts.map((draft) => {
+                  const hasKey = Boolean(draft.apiKey) || serverHasKey.has(draft.id);
+                  // 模型面板过滤：大小写不敏感、空搜索 = 全部（同一结果集供批量按钮使用，D11）。
+                  const query = (modelSearch[draft.id] ?? "").trim().toLowerCase();
+                  const filteredModels = query ? draft.models.filter((model) => model.id.toLowerCase().includes(query)) : draft.models;
+                  return (
+                    <article className="provider-card" data-provider-id={draft.id} key={draft.id}>
+                      <div className="provider-card-head">
+                        <div className="provider-card-title">
+                          <strong>{draft.name}</strong>
+                          {hasKey ? <span className="key-badge ok">{t("已保存密钥")}</span> : <span className="key-badge missing">{t("缺少密钥")}</span>}
+                        </div>
+                        <div className="provider-card-actions">
+                          <button type="button" className="secondary" onClick={() => beginEdit(draft)}>{t("编辑")}</button>
+                          <Tooltip content={t("测试连接与刷新模型不会保存任何数据：未保存的新密钥只用于当次请求，不写入凭据库。")}>
+                            <button type="button" className="secondary" onClick={() => void runProviderCheck(draft, "test")}>{t("测试连接")}</button>
+                          </Tooltip>
+                          <button type="button" className="secondary" onClick={() => void runProviderCheck(draft, "refresh")}>{t("刷新模型")}</button>
+                          <button type="button" className="secondary" onClick={() => setExpandedModelsId((current) => (current === draft.id ? null : draft.id))}>{t("模型")}</button>
+                          <button type="button" className="secondary" onClick={() => void removeProvider(draft)}>{t("删除|供应商")}</button>
+                        </div>
+                      </div>
+                      <code>{draft.baseUrl}</code>
+                      <p className="provider-meta">
+                        {draft.modelsUpdatedAt
+                          ? t("{n} 个模型 · 更新于 {time}", { n: draft.models.length, time: formatDateTime(draft.modelsUpdatedAt) })
+                          : t("{n} 个模型", { n: draft.models.length })}
+                      </p>
+                      {expandedModelsId === draft.id && (
+                        <div className="model-role-block">
+                          <div className="model-role-head">
+                            <input
+                              className="model-search"
+                              placeholder={t("搜索模型")}
+                              value={modelSearch[draft.id] ?? ""}
+                              onChange={(event) => setModelSearch((current) => ({ ...current, [draft.id]: event.target.value }))}
+                            />
+                            <button type="button" onClick={() => void runProviderCheck(draft, "refresh")}>{t("刷新模型")}</button>
+                            <button type="button" onClick={() => void addCustomModel(draft)}>{`+ ${t("自定义模型")}`}</button>
+                          </div>
+                          <div className="model-bulk">
+                            {t("批量（作用于搜索结果）：")}
+                            {MODEL_ROLES.map((role) => (
+                              <span key={role} className="model-bulk-group">
+                                <button type="button" onClick={() => bulkSetRole(draft.id, role)}>{t("设为 {role}", { role: modelRoleLabel(role) })}</button>
+                                <button type="button" onClick={() => bulkClearRole(draft.id, role)}>{t("清除 {role}", { role: modelRoleLabel(role) })}</button>
+                              </span>
+                            ))}
+                          </div>
+                          <div className="model-list">
+                            {filteredModels.length === 0 && <p className="model-empty">{t("无匹配模型")}</p>}
+                            {filteredModels.map((model) => (
+                              <div className={"model-row" + (model.missing ? " missing" : "")} key={model.id}>
+                                <span className="model-id">{model.id}</span>
+                                {model.source === "custom" && <span className="model-custom">{t("自定义|设置")}</span>}
+                                {model.missing && <span className="model-missing">{t("已下线")}</span>}
+                                {MODEL_ROLES.map((role) => (
+                                  <label key={role} className="model-role-check">
+                                    <input type="checkbox" checked={model.roles.includes(role)} onChange={() => toggleModelRole(draft.id, model.id, role)} /> {modelRoleLabel(role)}
+                                  </label>
+                                ))}
+                                {model.source === "custom" && (
+                                  <button type="button" className="model-remove" onClick={() => void removeCustomModel(draft.id, model.id)}>{t("删除|供应商")}</button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {expandedId === draft.id && (
+                        <div className="provider-form" data-provider-form="edit">
+                          <label>{t("名称")}<input data-provider-field="name" value={draftForm.name} onChange={(event) => setDraftForm((current) => ({ ...current, name: event.target.value }))} /></label>
+                          <label>Base URL<input data-provider-field="baseUrl" value={draftForm.baseUrl} onChange={(event) => setDraftForm((current) => ({ ...current, baseUrl: event.target.value }))} /></label>
+                          <label>{t("API 密钥")}
+                            <input
+                              data-provider-field="apiKey"
+                              type="password"
+                              placeholder={t("已保存，输入新值可覆盖")}
+                              value={draftForm.apiKey}
+                              onChange={(event) => setDraftForm((current) => ({ ...current, apiKey: event.target.value }))}
+                            />
+                          </label>
+                          <div className="provider-form-actions">
+                            <button type="button" className="primary" onClick={() => finishEdit(draft.id)}>{t("完成")}</button>
+                            <button type="button" className="secondary" onClick={cancelEdit}>{t("取消")}</button>
+                          </div>
+                        </div>
+                      )}
+                      {providerMessages[draft.id] && (
+                        <p className={providerMessageErrors[draft.id] ? "provider-message error-text" : "provider-message"}>{providerMessages[draft.id]}</p>
+                      )}
+                    </article>
+                  );
+                })}
+              </section>
+              <section className="role-binding-block">
+                <div>
+                  <span className="eyebrow">MODEL ASSIGNMENT</span>
+                  <h3>{t("模型分配")}<InfoHint content={t("为生图、图反推、提示词增强分别选择供应商与模型；只显示已标注该角色的模型。")} /></h3>
                 </div>
-              )}
-              {expandedId === draft.id && (
-                <div className="provider-form" data-provider-form="edit">
-                  <label>{t("名称")}<input data-provider-field="name" value={draftForm.name} onChange={(event) => setDraftForm((current) => ({ ...current, name: event.target.value }))} /></label>
-                  <label>Base URL<input data-provider-field="baseUrl" value={draftForm.baseUrl} onChange={(event) => setDraftForm((current) => ({ ...current, baseUrl: event.target.value }))} /></label>
-                  <label>{t("API 密钥")}
-                    <input
-                      data-provider-field="apiKey"
-                      type="password"
-                      placeholder={t("已保存，输入新值可覆盖")}
-                      value={draftForm.apiKey}
-                      onChange={(event) => setDraftForm((current) => ({ ...current, apiKey: event.target.value }))}
+                {MODEL_ROLES.map((role) => (
+                  <div className="role-binding-row" key={role}>
+                    <span className="role-label">{modelRoleLabel(role)}</span>
+                    <Combobox
+                      ariaLabel={t("{role}供应商", { role: modelRoleLabel(role) })}
+                      className="role-provider"
+                      placeholder={t("未分配")}
+                      options={roleProviderOptions(drafts, rolesDraft[role])}
+                      value={rolesDraft[role]?.providerId ?? ""}
+                      onChange={(value) => setRoleProvider(role, value)}
                     />
-                  </label>
-                  <div className="provider-form-actions">
-                    <button type="button" className="primary" onClick={() => finishEdit(draft.id)}>{t("完成")}</button>
-                    <button type="button" className="secondary" onClick={cancelEdit}>{t("取消")}</button>
+                    <Combobox
+                      ariaLabel={t("{role}模型", { role: modelRoleLabel(role) })}
+                      className="role-model"
+                      placeholder={rolesDraft[role] ? t("选择模型") : t("未分配")}
+                      options={roleModelOptions(drafts, rolesDraft[role], role)}
+                      value={rolesDraft[role]?.model ?? ""}
+                      disabled={!rolesDraft[role]}
+                      onChange={(value) => setRoleModel(role, value)}
+                    />
+                    {rolesDraft[role] && <button type="button" className="role-clear" onClick={() => clearRole(role)}>{t("清除")}</button>}
+                  </div>
+                ))}
+              </section>
+            </div>
+          )}
+          {settingsTab === "general" && (
+            <div className="settings-panel" data-settings-panel="general">
+              <label className="archive-toggle">
+                <input type="checkbox" checked={autoArchiveDraft} onChange={(event) => setAutoArchiveDraft(event.target.checked)} />
+                {t("自动归档生成图片到本地图库与收件箱")}
+              </label>
+              {saveDir && <div className="storage-path">
+                <div className="storage-head">
+                  <strong>{t("本地保存位置")}</strong>
+                  <div className="storage-actions">
+                    <Tooltip content={t("新图片、自动图库和导出文件将使用此位置；切换目录不会移动或删除原目录中的文件。")}>
+                      <button type="button" onClick={() => void chooseSaveDirectory()}>{t("选择文件夹")}</button>
+                    </Tooltip>
+                    <button type="button" onClick={() => void openSaveDirectory()}>{t("打开目录")}</button>
+                    <button type="button" onClick={() => void resetSaveDirectory()}>{t("恢复默认")}</button>
                   </div>
                 </div>
-              )}
-              {providerMessages[draft.id] && (
-                <p className={providerMessageErrors[draft.id] ? "provider-message error-text" : "provider-message"}>{providerMessages[draft.id]}</p>
-              )}
-            </article>
-          );
-        })}
-      </section>
-      <section className="role-binding-block">
-        <div>
-          <span className="eyebrow">MODEL ASSIGNMENT</span>
-          <h3>{t("模型分配")}<InfoHint content={t("为生图、图反推、提示词增强分别选择供应商与模型；只显示已标注该角色的模型。")} /></h3>
+                <code>{saveDir}</code>
+              </div>}
+              {/* 语言 / Language：仅两选项（endonym，两种语言下均不翻译）；点击即乐观切换，不走保存底栏。 */}
+              <section className="update-settings">
+                <div>
+                  <span className="eyebrow">LANGUAGE</span>
+                  <h3>{t("语言 / Language")}</h3>
+                </div>
+                <div className="update-channel-options" role="group" aria-label={t("语言 / Language")}>
+                  <button
+                    type="button"
+                    className={locale === "zh" ? "active" : ""}
+                    aria-pressed={locale === "zh"}
+                    data-i18n-skip="true"
+                    onClick={() => void switchLocale("zh")}
+                  >
+                    简体中文
+                  </button>
+                  <button
+                    type="button"
+                    className={locale === "en" ? "active" : ""}
+                    aria-pressed={locale === "en"}
+                    onClick={() => void switchLocale("en")}
+                  >
+                    English
+                  </button>
+                </div>
+              </section>
+              <section className="update-settings">
+                <div>
+                  <span className="eyebrow">INTERFACE ZOOM</span>
+                  <h3>{t("界面缩放")}</h3>
+                  <p>{t("当前缩放：{n}%。", { n: Math.round(zoomFactor * 100) })}</p>
+                </div>
+                <Tooltip content={t("调整整个界面的缩放比例，范围为 50%–200%。")}>
+                  <div className="update-actions">
+                    <button type="button" className="secondary" onClick={() => applyZoom(Math.max(0.5, Number((zoomFactor - 0.1).toFixed(2))))}>{t("缩小")}</button>
+                    <button type="button" className="secondary" onClick={() => applyZoom(1)}>{t("重置")}</button>
+                    <button type="button" className="secondary" onClick={() => applyZoom(Math.min(2, Number((zoomFactor + 0.1).toFixed(2))))}>{t("放大")}</button>
+                  </div>
+                </Tooltip>
+              </section>
+            </div>
+          )}
+          {settingsTab === "updates" && (
+            <div className="settings-panel" data-settings-panel="updates">
+              <section className="update-settings">
+                <div>
+                  <span className="eyebrow">APPLICATION UPDATE</span>
+                  <h3>{t("软件更新")}</h3>
+                  <p onClick={handleVersionClick}>{t("当前版本：v{version}。", { version: appVersion || "—" })}</p>
+                </div>
+                <div className="update-channel">
+                  <span className="update-channel-label">{t("更新渠道")}</span>
+                  <div className={alphaUnlocked ? "update-channel-options alpha-unlocked" : "update-channel-options"}>
+                    <button type="button" className={updateChannel === "stable" ? "active" : ""} onClick={() => void setUpdateChannelPreference("stable")}>{t("正式版")}</button>
+                    <button type="button" className={updateChannel === "beta" ? "active" : ""} onClick={() => void setUpdateChannelPreference("beta")}>{t("测试版 Beta")}</button>
+                    {alphaUnlocked && <button type="button" className={updateChannel === "alpha" ? "active" : ""} onClick={() => void setUpdateChannelPreference("alpha")}>{t("Alpha 测试版")}</button>}
+                  </div>
+                  {alphaUnlocked && <button type="button" className="update-alpha-exit" onClick={() => void exitAlphaChannel()}>{t("退出内测")}</button>}
+                </div>
+                <Tooltip content={t("开启自动更新后会在后台检查并下载新版本，安装前仍会询问，不会强制重启；关闭后仅在你手动检查时提示下载。")}>
+                  <label className="archive-toggle">
+                    <input type="checkbox" checked={autoUpdate} onChange={(event) => void setAutoUpdatePreference(event.target.checked)} />
+                    {t("自动检查并在后台下载更新（安装前询问）")}
+                  </label>
+                </Tooltip>
+                <div className="update-actions">
+                  <button className="secondary" onClick={() => void checkUpdates()} disabled={updateStatus.phase === "checking"}>
+                    {updateStatus.phase === "checking" ? t("检查中…") : t("检查更新")}
+                  </button>
+                  {updateStatus.phase === "available" && <button className="primary" onClick={() => void downloadUpdate()}>{t("下载 v{version}", { version: updateStatus.version ?? "" })}</button>}
+                  {updateStatus.phase === "downloading" && <span className="update-progress">{t("下载中 {progress}%", { progress: updateStatus.progress || 0 })}</span>}
+                  {updateStatus.phase === "downloaded" && <button className="primary" onClick={() => void installUpdate()}>{t("重启并安装 v{version}", { version: updateStatus.version ?? "" })}</button>}
+                </div>
+                <p className={updateStatus.phase === "error" ? "update-status error-text" : "update-status"}>{updateStatus.message}</p>
+              </section>
+            </div>
+          )}
+          {settingsTab === "about" && (
+            <div className="settings-panel" data-settings-panel="about">
+              <section className="update-settings">
+                <div>
+                  <span className="eyebrow">ABOUT & HELP</span>
+                  <h3>{t("关于与帮助")}</h3>
+                  <p>{t("本地 OpenAI 兼容图片创作工具，支持自定义基础地址、模型、文生图、图片编辑和常用输出尺寸。")}</p>
+                  <p>{t("Copyright (C) 2026 zztnbnb。本项目以 GNU Affero General Public License v3.0 only 发布，不提供任何担保。")}</p>
+                </div>
+                <div className="update-actions">
+                  <button type="button" className="secondary" data-open-tutorial onClick={onOpenTutorial}>{t("打开新手教程")}</button>
+                  <a href="https://github.com/zztnbnb/image-studio/blob/main/LICENSE" target="_blank" rel="noreferrer" className="secondary">{t("查看许可证与源代码")}</a>
+                </div>
+              </section>
+            </div>
+          )}
         </div>
-        {MODEL_ROLES.map((role) => (
-          <div className="role-binding-row" key={role}>
-            <span className="role-label">{modelRoleLabel(role)}</span>
-            <Combobox
-              ariaLabel={t("{role}供应商", { role: modelRoleLabel(role) })}
-              className="role-provider"
-              placeholder={t("未分配")}
-              options={roleProviderOptions(drafts, rolesDraft[role])}
-              value={rolesDraft[role]?.providerId ?? ""}
-              onChange={(value) => setRoleProvider(role, value)}
-            />
-            <Combobox
-              ariaLabel={t("{role}模型", { role: modelRoleLabel(role) })}
-              className="role-model"
-              placeholder={rolesDraft[role] ? t("选择模型") : t("未分配")}
-              options={roleModelOptions(drafts, rolesDraft[role], role)}
-              value={rolesDraft[role]?.model ?? ""}
-              disabled={!rolesDraft[role]}
-              onChange={(value) => setRoleModel(role, value)}
-            />
-            {rolesDraft[role] && <button type="button" className="role-clear" onClick={() => clearRole(role)}>{t("清除")}</button>}
-          </div>
-        ))}
-      </section>
-      <label className="archive-toggle">
-        <input type="checkbox" checked={autoArchiveDraft} onChange={(event) => setAutoArchiveDraft(event.target.checked)} />
-        {t("自动归档生成图片到本地图库与收件箱")}
-      </label>
-      {saveDir && <div className="storage-path">
-        <div className="storage-head">
-          <strong>{t("本地保存位置")}</strong>
-          <div className="storage-actions">
-            <Tooltip content={t("新图片、自动图库和导出文件将使用此位置；切换目录不会移动或删除原目录中的文件。")}>
-              <button type="button" onClick={() => void chooseSaveDirectory()}>{t("选择文件夹")}</button>
-            </Tooltip>
-            <button type="button" onClick={() => void openSaveDirectory()}>{t("打开目录")}</button>
-            <button type="button" onClick={() => void resetSaveDirectory()}>{t("恢复默认")}</button>
-          </div>
-        </div>
-        <code>{saveDir}</code>
-      </div>}
-      {/* 语言 / Language：仅两选项（endonym，两种语言下均不翻译）；点击即乐观切换，不走保存底栏。 */}
-      <section className="update-settings">
-        <div>
-          <span className="eyebrow">LANGUAGE</span>
-          <h3>{t("语言 / Language")}</h3>
-        </div>
-        <div className="update-channel-options" role="group" aria-label={t("语言 / Language")}>
-          <button
-            type="button"
-            className={locale === "zh" ? "active" : ""}
-            aria-pressed={locale === "zh"}
-            data-i18n-skip="true"
-            onClick={() => void switchLocale("zh")}
-          >
-            简体中文
-          </button>
-          <button
-            type="button"
-            className={locale === "en" ? "active" : ""}
-            aria-pressed={locale === "en"}
-            onClick={() => void switchLocale("en")}
-          >
-            English
-          </button>
-        </div>
-      </section>
-      <section className="update-settings">
-        <div>
-          <span className="eyebrow">APPLICATION UPDATE</span>
-          <h3>{t("软件更新")}</h3>
-          <p onClick={handleVersionClick}>{t("当前版本：v{version}。", { version: appVersion || "—" })}</p>
-        </div>
-        <div className="update-channel">
-          <span className="update-channel-label">{t("更新渠道")}</span>
-          <div className={alphaUnlocked ? "update-channel-options alpha-unlocked" : "update-channel-options"}>
-            <button type="button" className={updateChannel === "stable" ? "active" : ""} onClick={() => void setUpdateChannelPreference("stable")}>{t("正式版")}</button>
-            <button type="button" className={updateChannel === "beta" ? "active" : ""} onClick={() => void setUpdateChannelPreference("beta")}>{t("测试版 Beta")}</button>
-            {alphaUnlocked && <button type="button" className={updateChannel === "alpha" ? "active" : ""} onClick={() => void setUpdateChannelPreference("alpha")}>{t("Alpha 测试版")}</button>}
-          </div>
-          {alphaUnlocked && <button type="button" className="update-alpha-exit" onClick={() => void exitAlphaChannel()}>{t("退出内测")}</button>}
-        </div>
-        <Tooltip content={t("开启自动更新后会在后台检查并下载新版本，安装前仍会询问，不会强制重启；关闭后仅在你手动检查时提示下载。")}>
-          <label className="archive-toggle">
-            <input type="checkbox" checked={autoUpdate} onChange={(event) => void setAutoUpdatePreference(event.target.checked)} />
-            {t("自动检查并在后台下载更新（安装前询问）")}
-          </label>
-        </Tooltip>
-        <div className="update-actions">
-          <button className="secondary" onClick={() => void checkUpdates()} disabled={updateStatus.phase === "checking"}>
-            {updateStatus.phase === "checking" ? t("检查中…") : t("检查更新")}
-          </button>
-          {updateStatus.phase === "available" && <button className="primary" onClick={() => void downloadUpdate()}>{t("下载 v{version}", { version: updateStatus.version ?? "" })}</button>}
-          {updateStatus.phase === "downloading" && <span className="update-progress">{t("下载中 {progress}%", { progress: updateStatus.progress || 0 })}</span>}
-          {updateStatus.phase === "downloaded" && <button className="primary" onClick={() => void installUpdate()}>{t("重启并安装 v{version}", { version: updateStatus.version ?? "" })}</button>}
-        </div>
-        <p className={updateStatus.phase === "error" ? "update-status error-text" : "update-status"}>{updateStatus.message}</p>
-      </section>
-      <section className="update-settings">
-        <div>
-          <span className="eyebrow">INTERFACE ZOOM</span>
-          <h3>{t("界面缩放")}</h3>
-          <p>{t("当前缩放：{n}%。", { n: Math.round(zoomFactor * 100) })}</p>
-        </div>
-        <Tooltip content={t("调整整个界面的缩放比例，范围为 50%–200%。")}>
-          <div className="update-actions">
-            <button type="button" className="secondary" onClick={() => applyZoom(Math.max(0.5, Number((zoomFactor - 0.1).toFixed(2))))}>{t("缩小")}</button>
-            <button type="button" className="secondary" onClick={() => applyZoom(1)}>{t("重置")}</button>
-            <button type="button" className="secondary" onClick={() => applyZoom(Math.min(2, Number((zoomFactor + 0.1).toFixed(2))))}>{t("放大")}</button>
-          </div>
-        </Tooltip>
-      </section>
-      <section className="update-settings">
-        <div>
-          <span className="eyebrow">ABOUT & HELP</span>
-          <h3>{t("关于与帮助")}</h3>
-          <p>{t("本地 OpenAI 兼容图片创作工具，支持自定义基础地址、模型、文生图、图片编辑和常用输出尺寸。")}</p>
-          <p>{t("Copyright (C) 2026 zztnbnb。本项目以 GNU Affero General Public License v3.0 only 发布，不提供任何担保。")}</p>
-        </div>
-        <div className="update-actions">
-          <button type="button" className="secondary" onClick={onOpenTutorial}>{t("打开新手教程")}</button>
-          <a href="https://github.com/zztnbnb/image-studio/blob/main/LICENSE" target="_blank" rel="noreferrer" className="secondary">{t("查看许可证与源代码")}</a>
-        </div>
-      </section>
-      <div className="settings-dock">
-        <button className="primary" onClick={() => void saveSettings()} disabled={saving}>{saving ? t("保存中…") : t("保存设置")}</button>
-        <span className="save-note">{saving ? t("正在保存…") : settingsDirty ? t("有未保存的更改") : t("所有更改已保存")}</span>
       </div>
+      {(settingsTab === "connection" || settingsTab === "general") && (
+        <div className="settings-dock">
+          <button className="primary" onClick={() => void saveSettings()} disabled={saving}>{saving ? t("保存中…") : t("保存设置")}</button>
+          <span className="save-note">{saving ? t("正在保存…") : settingsDirty ? t("有未保存的更改") : t("所有更改已保存")}</span>
+        </div>
+      )}
     </section>
   );
 }

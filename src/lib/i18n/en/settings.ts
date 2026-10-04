@@ -12,6 +12,8 @@ export const settings = {
 
   // --- 区块标题 ---
   "连接设置": "Connection settings",
+  "连接与模型": "Connection & models",
+  "通用设置": "General",
   "供应商": "Providers",
   "模型分配": "Model assignment",
   "语言 / Language": "Language",

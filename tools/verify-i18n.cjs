@@ -20,7 +20,7 @@
  *   1) 启动构建产物（隔离 userData）→ 等待 renderer；
  *   2) 如 --locale=en：经设置页真实语言 UI 切换并轮询 settings.get().locale 确认持久化；
  *      --locale=zh：已是 zh 则跳过，否则同样经 UI 切回；
- *   3) 遍历请求的页面（经 .nav[data-mode=...] 导航；queue 入口在 SidebarProjects），
+ *   3) 遍历请求的页面（经 [data-mode=...] 导航（v3.15 起 settings 入口在侧栏底部 .sidebar-settings、queue 入口在 SidebarProjects）），
  *      打开关键面板 / 聚焦信息提示以露出 tooltip 文本，然后采集：
  *        a. 可见文本（等价 document.body.innerText，但按 skip 选择器与可见性过滤）
  *        b. 全部 [placeholder] / [aria-label] / [title] 值
@@ -57,12 +57,15 @@ const PAGES = ["all", "settings", "gallery", "composer", "localai", "queue", "tu
 /** all 的遍历顺序。 */
 const PAGE_ORDER = ["composer", "settings", "gallery", "localai", "queue", "tutorial", "shell"];
 
+/** 设置页分区标签（v3.13 卡片内分区导航）：面板条件渲染，逐标签切换后采集合并。 */
+const SETTINGS_TABS = ["connection", "general", "updates", "about"];
+
 /** CJK 判定范围（与计划一致：汉字基本区）。 */
 const CJK_RE = /[\u4e00-\u9fff]/;
 
 /**
  * 页面 → 导航与就绪锚点。tutorial / shell 特殊处理（见 preparePage / activatePage）。
- * 导航锚点：.nav[data-mode]（T5 约定）；queue 入口在 SidebarProjects 的 .nav[data-mode="queue"]。
+ * 导航锚点：[data-mode]（T5 约定）；v3.15 起 settings 入口在侧栏底部 .sidebar-settings（顶部导航项已删除）、queue 入口在 SidebarProjects。
  */
 const PAGE_SPECS = {
   composer: { mode: "generate", ready: ".composer" },
@@ -337,7 +340,14 @@ async function waitForSelector(cdp, selector, timeoutMs = 8000) {
 }
 
 async function clickMode(cdp, mode) {
-  return cdp.evaluate(`(function(){var b=document.querySelector('.nav[data-mode=${JSON.stringify(mode)}]');if(b){b.click();return true;}return false;})()`);
+  return cdp.evaluate(`(function(){var b=document.querySelector('[data-mode=${JSON.stringify(mode)}]');if(b){b.click();return true;}return false;})()`);
+}
+
+/** v3.13：点击设置页分区标签并等待对应面板出现（面板条件渲染，切换即挂载）。 */
+async function activateSettingsTab(cdp, tab) {
+  const clicked = await cdp.evaluate(`(function(){var b=document.querySelector('[data-settings-tab=${JSON.stringify(tab)}]');if(b){b.click();return true;}return false;})()`);
+  if (!clicked) return false;
+  return waitForSelector(cdp, `[data-settings-panel="${tab}"]`, 4000);
 }
 
 /** 经设置页真实语言 UI 切换语言，并轮询 settings.get().locale 确认持久化生效。 */
@@ -351,6 +361,12 @@ async function ensureLocale(cdp, target) {
   const clickedMode = await clickMode(cdp, "settings");
   if (!clickedMode || !(await waitForSelector(cdp, ".card.settings"))) {
     fail("could not open settings page to switch language");
+    return false;
+  }
+  // v3.13：语言按钮位于「通用设置」面板（默认激活「连接与模型」）——先切到 general；
+  // 标签不存在（旧版本）时保持原行为；切换后 general 面板必须存在。
+  if ((await selectorCount(cdp, '[data-settings-tab="general"]')) > 0 && !(await activateSettingsTab(cdp, "general"))) {
+    fail("could not open settings general tab for language switch");
     return false;
   }
   const buttonText = target === "en" ? "English" : "简体中文";
@@ -370,7 +386,7 @@ async function ensureLocale(cdp, target) {
   return false;
 }
 
-/** tutorial 页：打开教程中心模态；shell 页：只扫描 header / aside / toast 外壳。 */
+/** tutorial 页：打开教程中心模态（v3.15 路径：设置页 → 「关于与帮助」分区 → [data-open-tutorial] 按钮）；shell 页：只扫描 header / aside / toast 外壳。 */
 const SHELL_ROOT_SELECTOR = "header, aside, .feedback-toast";
 
 /**
@@ -378,9 +394,20 @@ const SHELL_ROOT_SELECTOR = "header, aside, .feedback-toast";
  */
 async function preparePage(cdp, page) {
   if (page === "tutorial") {
-    const opened = await cdp.evaluate(`(function(){if(document.querySelector('.tutorial-center-modal'))return true;var b=document.querySelector('.sidebar-help');if(b){b.click();return true;}return false;})()`);
+    // v3.15：教程入口迁至设置页「关于与帮助」（原侧栏帮助入口已换为设置按钮）——
+    // 先导航设置页并激活 about 分区，再经 [data-open-tutorial] 打开教程中心。
+    const navigated = await clickMode(cdp, "settings");
+    if (!navigated || !(await waitForSelector(cdp, ".card.settings"))) {
+      fail("tutorial: could not open settings page");
+      return null;
+    }
+    if ((await selectorCount(cdp, '[data-settings-tab="about"]')) > 0 && !(await activateSettingsTab(cdp, "about"))) {
+      fail("tutorial: could not activate about tab");
+      return null;
+    }
+    const opened = await cdp.evaluate(`(function(){if(document.querySelector('.tutorial-center-modal'))return true;var b=document.querySelector('[data-open-tutorial]');if(b){b.click();return true;}return false;})()`);
     if (!opened) {
-      fail("tutorial: .sidebar-help not found");
+      fail("tutorial: [data-open-tutorial] not found");
       return null;
     }
     await waitForSelector(cdp, ".tutorial-center-modal", 4000);
@@ -400,7 +427,7 @@ async function preparePage(cdp, page) {
   }
   const navigated = await clickMode(cdp, spec.mode);
   if (!navigated) {
-    fail(`page ${page}: nav .nav[data-mode="${spec.mode}"] not found`);
+    fail(`page ${page}: [data-mode="${spec.mode}"] not found`);
     return null;
   }
   if (!(await waitForSelector(cdp, spec.ready))) {
@@ -414,6 +441,12 @@ async function preparePage(cdp, page) {
     await cdp.evaluate(`(function(){var b=document.querySelector('.dock-model-trigger');if(b){b.click();return true;}return false;})()`);
     await sleep(300);
   } else if (page === "settings") {
+    // v3.13：分区导航可能被 ensureLocale 留在 general——先切回 connection，
+    // 否则添加按钮（.provider-block-head button.secondary）不在 DOM（面板条件渲染）。
+    if ((await selectorCount(cdp, '[data-settings-tab="connection"]')) > 0 && !(await activateSettingsTab(cdp, "connection"))) {
+      fail("settings: could not activate connection tab");
+      return null;
+    }
     await cdp.evaluate(`(function(){var b=document.querySelector('.provider-block-head button.secondary');if(b){b.click();return true;}return false;})()`);
     await sleep(300);
   }
@@ -593,7 +626,24 @@ async function runPage(cdp, page, locale) {
     await closePanels(cdp, page);
     return null;
   }
-  const collected = await collectPage(cdp, page, rootSelector);
+  let collected;
+  if (page === "settings") {
+    // v3.13：设置卡片 4 个分区条件渲染——逐标签切换采集并合并到同一 "settings" 结果
+    // （connection 的添加入口已由 preparePage 展开；切回 connection 幂等，不重置面板状态）。
+    collected = { page: page, items: [], truncated: false, innerTextLength: 0 };
+    for (const tab of SETTINGS_TABS) {
+      if (!(await activateSettingsTab(cdp, tab))) {
+        fail(`settings: could not activate tab "${tab}"`);
+        continue;
+      }
+      const partial = await collectPage(cdp, page, rootSelector);
+      collected.items.push(...(partial.items || []));
+      collected.truncated = collected.truncated || Boolean(partial.truncated);
+      collected.innerTextLength = partial.innerTextLength;
+    }
+  } else {
+    collected = await collectPage(cdp, page, rootSelector);
+  }
   await closePanels(cdp, page);
 
   const items = collected.items || [];

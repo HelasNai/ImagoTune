@@ -13,6 +13,7 @@ import { QueuePanel } from "./components/QueuePanel";
 import { ResultPanel } from "./components/ResultPanel";
 import { SidebarProjects } from "./components/SidebarProjects";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { SplashScreen } from "./components/SplashScreen";
 import { StudioProvider, type StudioNotify } from "./components/StudioContext";
 import { Tooltip } from "./components/Tooltip";
 import { ProgressProvider } from "./components/ProgressContext";
@@ -111,6 +112,10 @@ function App() {
   // 跨页跳转意图（图片级 / 项目级，二选一）：由 openGalleryAt / openGalleryProject 写入，
   // GalleryWorkspace 定位（或目标失效）后经 onFocusConsumed 清空。
   const [galleryTarget, setGalleryTarget] = useState<{ imageId?: string; projectId?: string } | null>(null);
+  // v3.14 启动页：bootReady = 启动期数据（bootstrap）已 settle；splashDone = 启动页已退场可卸载。
+  const [bootReady, setBootReady] = useState(false);
+  const [splashDone, setSplashDone] = useState(false);
+  const handleSplashExited = useCallback(() => setSplashDone(true), []);
 
   const updateTutorialState = useCallback((next: TutorialState) => {
     setTutorialState(next);
@@ -199,7 +204,9 @@ function App() {
       }
       setQueueItems(queueValue.items || []);
     };
-    void bootstrap().catch(() => { /* Individual panels show their own recoverable errors. */ });
+    void bootstrap()
+      .catch(() => { /* Individual panels show their own recoverable errors. */ })
+      .finally(() => setBootReady(true));
     void callIpc(() => window.imageStudio.updates.get(), { fallbackError: t("无法读取版本信息"), onError: setError }).then((value) => {
       setAppVersion(value.appVersion);
     }).catch(() => { /* callIpc 已上报 */ });
@@ -468,7 +475,6 @@ function App() {
             <button className={mode === "outpaint" ? "nav active" : "nav"} data-mode="outpaint" onClick={() => setMode("outpaint")}><NavIcon name="expand" />{t("智能扩图")}</button>
             <button className={mode === "gallery" ? "nav active" : "nav"} data-mode="gallery" onClick={() => setMode("gallery")}><NavIcon name="images" />{t("项目图库")}</button>
             <button className={mode === "local-ai" ? "nav active" : "nav"} data-mode="local-ai" onClick={() => setMode("local-ai")}><NavIcon name="package" />{t("本地工具箱")}</button>
-            <button className={mode === "settings" ? "nav active" : "nav"} data-mode="settings" onClick={() => setMode("settings")}><NavIcon name="settings" />{t("设置")}</button>
             {/* 项目树（v3.6 起头部含任务队列入口）：不渲染「全部图库」行；「查看全部」经 openGalleryProject 落到对应项目的图库视图。 */}
             <SidebarProjects
               projects={projects}
@@ -480,9 +486,9 @@ function App() {
               queueActive={mode === "queue"}
               queueCount={runningCount}
             />
-            <Tooltip content={t("新手教程")}>
-              <button className="sidebar-help" aria-label={t("新手教程")} onClick={() => setTutorialView("center")}>
-                <NavIcon name="graduation-cap" size={18} />
+            <Tooltip content={t("设置")}>
+              <button className={mode === "settings" ? "sidebar-settings active" : "sidebar-settings"} data-mode="settings" aria-label={t("设置")} onClick={() => setMode("settings")}>
+                <NavIcon name="settings" size={18} />
               </button>
             </Tooltip>
           </aside>
@@ -581,6 +587,9 @@ function App() {
             <span>{t("右键点击图片可复制")}</span>
           </div>
         )}
+
+        {/* v3.14 启动页：全屏覆盖层；数据就绪 + 最短展示后自动退场，退场后卸载。 */}
+        {!splashDone && <SplashScreen ready={bootReady} onExited={handleSplashExited} />}
       </div>
     </StudioProvider>
   );
