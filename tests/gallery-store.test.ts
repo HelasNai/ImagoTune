@@ -113,4 +113,29 @@ describe("gallery display helpers (T29)", () => {
     // 纯用户标题（无 code / 无标记）→ 冻结。
     expect(galleryItemTitle({ title: "用户自定义标题", recipe: {} })).toBe("用户自定义标题");
   });
+
+  it("keeps user renames for recovered defaults and local-AI archives", () => {
+    // recovered：用户重命名后标题不再等于恢复默认哨兵 → 冻结用户标题（zh/en 均不翻译、不覆盖）。
+    const renamedRecovered = { title: "我的修复图", recipe: { recovered: true } };
+    expect(galleryItemTitle(renamedRecovered)).toBe("我的修复图");
+    setLocale("en");
+    expect(galleryItemTitle(renamedRecovered)).toBe("我的修复图");
+
+    // 本地 AI 归档：标题既非 ` - <code>` 后缀、也非裸 code（用户重命名）→ 冻结用户标题。
+    setLocale("zh");
+    const renamedLocalAI = { title: "客户海报 终稿", recipe: { variationLabel: "matting" } };
+    expect(galleryItemTitle(renamedLocalAI)).toBe("客户海报 终稿");
+    setLocale("en");
+    expect(galleryItemTitle(renamedLocalAI)).toBe("客户海报 终稿");
+
+    // 标题恰为 code（旧「title=code」写法）→ 仍返回当前语言标签。
+    setLocale("zh");
+    expect(galleryItemTitle({ title: "matting", recipe: { variationLabel: "matting" } })).toBe("智能抠图");
+    setLocale("en");
+    expect(galleryItemTitle({ title: "matting", recipe: { variationLabel: "matting" } })).toBe("Background removal");
+
+    // 正常归档（标题尾部 ` - <code>`）→ 替换后缀、保留用户源标题。
+    setLocale("en");
+    expect(galleryItemTitle({ title: "源图 - upscale", recipe: { variationLabel: "upscale" } })).toBe("源图 - Upscale");
+  });
 });
