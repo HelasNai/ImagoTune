@@ -116,6 +116,8 @@ const DATA_LITERALS = ["收件箱"];
 let child = null;
 let wsRef = null;
 let userDataDir = null;
+/** fail() 调用计数：runPage 用它判定「本页 preparePage 是否失败」（而非全局 exitCode）。 */
+let failCount = 0;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -129,6 +131,7 @@ function log(line) {
 function fail(label, raw) {
   log(`[FAIL] ${label}`);
   if (raw !== undefined) log(`RAW: ${raw}`);
+  failCount += 1;
   process.exitCode = 1;
 }
 
@@ -583,9 +586,10 @@ function summarizeItems(items) {
 async function runPage(cdp, page, locale) {
   log("");
   log(`--- PAGE ${page} (locale=${locale}) ---`);
+  const failCountBefore = failCount;
   const rootSelector = await preparePage(cdp, page);
-  if (process.exitCode === 1 && page !== "tutorial" && page !== "shell") {
-    // 导航失败：preparePage 已记录；跳过采集。
+  if (failCount > failCountBefore && page !== "tutorial" && page !== "shell") {
+    // 本页导航失败：preparePage 已记录；跳过采集。前页违规不得短路本页。
     await closePanels(cdp, page);
     return null;
   }
