@@ -285,7 +285,7 @@ export function useComposer({
     const result = await callIpc(() => window.imageStudio.templates.save({
       id: update ? selected!.id : undefined,
       title,
-      category: "自定义",
+      category: "custom",
       prompt: value,
       kind,
       ratio: kind === "positive" ? ratio : undefined,

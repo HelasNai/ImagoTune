@@ -232,6 +232,27 @@ export const composer = {
   "清空|蒙版": "Clear",
   "编辑原图": "Source image for editing",
 
+  // ===================== T30：提示词模板（内置按 id 映射；prompt 不译） =====================
+  // 内置模板的 title/category 由稳定 id 派生（渲染层 lib/template-labels.ts）；
+  // 非内置模板的 title/category 是用户数据，不进词典。`自定义` 裸 key 由 T13 预留（设置页用 `自定义|设置`）。
+  "科技产品海报": "Tech product poster",
+  "海报": "Poster",
+  "内容平台封面": "Content platform cover",
+  "封面": "Cover",
+  "产品展示图": "Product showcase",
+  "产品": "Product",
+  "社交媒体配图": "Social media image",
+  "社交媒体": "Social media",
+  "通用高质量": "General high quality",
+  "通用": "General",
+  "人像无畸变": "Portrait, no distortion",
+  "人像": "Portrait",
+  "写实去 AI 感": "Realistic, no AI look",
+  "写实": "Realistic",
+  "干净背景": "Clean background",
+  "背景": "Background",
+  "自定义": "Custom",
+
   // ipc.outpaint.* / ipc.prompt.* — 主进程扩图 / 提示词 IPC 失败码（T25；zh 走 handler 中文 error 回退）。
   "ipc.outpaint.invalidTarget": "Invalid target resolution format",
   "ipc.outpaint.targetTooSmall": "The outpaint target cannot be smaller than the source image",

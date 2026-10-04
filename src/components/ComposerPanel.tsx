@@ -18,6 +18,7 @@ import { useStudio } from "./StudioContext";
 import { useCopyText } from "./useCopy";
 import { useObjectUrl } from "./useObjectUrl";
 import { t } from "../lib/i18n";
+import { templateCategory, templateTitle } from "../lib/template-labels";
 import type { Mode } from "./types";
 
 function ReferenceThumbnail({
@@ -314,7 +315,7 @@ export function ComposerPanel({
           <div className="prompt-template-actions">
             <select value={selectedTemplate} onChange={(event) => applyTemplate(event.target.value)}>
               <option value="">{t("选择模板…")}</option>
-              {templates.filter((item) => item.kind === "positive").map((item) => <option key={item.id} value={item.id}>[{item.category}] {item.title}</option>)}
+              {templates.filter((item) => item.kind === "positive").map((item) => <option key={item.id} value={item.id}>[{templateCategory(item)}] {templateTitle(item)}</option>)}
             </select>
             <button onClick={() => void saveTemplate("positive")}>{t("保存为模板")}</button>
             {selectedTemplate && !templates.find((item) => item.id === selectedTemplate)?.builtin && (
@@ -354,7 +355,7 @@ export function ComposerPanel({
           <div className="negative-template-actions">
             <select value={selectedNegativeTemplate} onChange={(event) => applyNegativeTemplate(event.target.value)}>
               <option value="">{t("选择负面词模板…")}</option>
-              {templates.filter((item) => item.kind === "negative").map((item) => <option key={item.id} value={item.id}>[{item.category}] {item.title}</option>)}
+              {templates.filter((item) => item.kind === "negative").map((item) => <option key={item.id} value={item.id}>[{templateCategory(item)}] {templateTitle(item)}</option>)}
             </select>
             <button onClick={() => void saveTemplate("negative")}>{t("保存为模板")}</button>
             {selectedNegativeTemplate && !templates.find((item) => item.id === selectedNegativeTemplate)?.builtin && <button onClick={() => void saveTemplate("negative", true)}>{t("更新模板")}</button>}
