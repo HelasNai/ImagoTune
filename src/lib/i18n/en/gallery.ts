@@ -6,6 +6,10 @@
 export const gallery = {
   图库: "Gallery",
 
+  // --- T29：持久化标记 / 收件箱稳定渲染（收件箱显示名按 id，忽略存储 name） ---
+  收件箱: "Inbox",
+  "恢复的历史图片": "Recovered historical image",
+
   // --- T18：GalleryWorkspace ---
   "图库读取失败": "Failed to read the gallery",
   "图库读取失败：{message}": "Failed to read the gallery: {message}",

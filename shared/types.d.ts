@@ -94,7 +94,18 @@ export interface ImageRecipeV1 {
   tags: string[];
   createdAt: string;
   sourceId?: string;
+  /**
+   * 变体/衍生动作标签。本地 AI 归档（upscale/matting/face/combo 工具）写**动作 code**
+   * （`"upscale" | "matting" | "face" | "combo"`），渲染层经 `localAIArchiveLabel` 按语言翻译；
+   * 其它来源（如在线变体）与历史记录仍为已本地化字符串，渲染层冻结原样。
+   */
   variationLabel?: string;
+  /**
+   * 图库恢复标记（T29）：`rebuildFromPngFiles` 为「无内嵌配方」的 PNG 写入系统默认名
+   * `"恢复的历史图片"` 时置 true，渲染层据此把该默认名按当前语言渲染；无标记的历史记录冻结原样。
+   * 内嵌配方的恢复项保留真实 prompt，不置此标记。
+   */
+  recovered?: boolean;
   referenceCount?: number;
   seed?: string;
   outpaint?: OutpaintRecipe;

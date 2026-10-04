@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { parseTags, resolutionLevels } from "../lib/creative";
 import { INBOX_PROJECT_ID } from "../lib/constants";
 import { formatTags } from "../lib/format";
+import { galleryItemTitle, projectDisplayName } from "../lib/gallery";
 import { resolveFocusLocation } from "../lib/gallery-focus";
 import { b64ToDataUrl } from "../lib/media";
 import { t } from "../lib/i18n";
@@ -407,7 +408,7 @@ export function GalleryWorkspace({
           {projects.map((project) => (
             <div className={activeProject === project.id ? "project-row active" : "project-row"} key={project.id}>
               <button onClick={() => setActiveProject(project.id)}>
-                {project.name}{project.id === INBOX_PROJECT_ID ? t("（收件箱）") : ""}
+                {projectDisplayName(project)}
               </button>
               {project.id !== INBOX_PROJECT_ID && (
                 <>
@@ -433,7 +434,7 @@ export function GalleryWorkspace({
         <div className="section-head">
           <div>
             <span className="eyebrow">LOCAL LIBRARY</span>
-            <h2>{activeProject === "all" ? t("本地图库") : projectName.get(activeProject) || t("项目图库")}</h2>
+            <h2>{activeProject === "all" ? t("本地图库") : activeProject === INBOX_PROJECT_ID ? t("收件箱") : projectName.get(activeProject) || t("项目图库")}</h2>
             <small>{t("图片原文件始终保存在本地；删除项目只会将图片移回收件箱。")}</small>
           </div>
           <span className="muted">{t("{n} 张|图库", { n: total })}</span>
@@ -483,7 +484,7 @@ export function GalleryWorkspace({
             <div className="bulk-group">
             <label>{t("移动到项目")}
               <select value={bulkProjectId} onChange={(event) => setBulkProjectId(event.target.value)}>
-                {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                {projects.map((project) => <option key={project.id} value={project.id}>{projectDisplayName(project)}</option>)}
               </select>
             </label>
             <button disabled={!selected.size} onClick={() => void bulk("move", { projectId: bulkProjectId })}>{t("移动|图库")}</button>
@@ -512,16 +513,19 @@ export function GalleryWorkspace({
           </div>
         ) : (
           <div className="archive-grid" ref={gridRef}>
-            {items.map((item) => (
+            {items.map((item) => {
+              // T29：recovery / 本地 AI 动作 code 标题按当前语言渲染。
+              const displayTitle = galleryItemTitle(item);
+              return (
               <article className={selected.has(item.id) ? "archive-card selected" : "archive-card"} key={item.id} data-item-id={item.id}>
                 <label className="select-box">
                   <input type="checkbox" checked={selected.has(item.id)} onChange={() => toggleSelection(item.id)} />
                 </label>
                 <button className={thumbs[item.id] ? "archive-preview" : "archive-preview loading"} onClick={() => void open(item, "preview")}>
-                  {thumbs[item.id] ? <img src={b64ToDataUrl(thumbs[item.id], "image/jpeg")} alt={item.title} /> : <span>{t("加载预览…")}</span>}
+                  {thumbs[item.id] ? <img src={b64ToDataUrl(thumbs[item.id], "image/jpeg")} alt={displayTitle} /> : <span>{t("加载预览…")}</span>}
                 </button>
                 <div className="archive-meta">
-                  <strong>{item.title}</strong>
+                  <strong>{displayTitle}</strong>
                   <small>{item.recipe.size} · {item.recipe.model}{item.recipe.seed ? " · Seed " + item.recipe.seed : ""}</small>
                   <p>{item.recipe.prompt}</p>
                   <div className="tag-row">{item.recipe.tags.map((value) => <span key={value}>#{value}</span>)}</div>
@@ -550,7 +554,8 @@ export function GalleryWorkspace({
                   </div>
                 </details>
               </article>
-            ))}
+              );
+            })}
           </div>
         )}
         {total > items.length && (
@@ -565,13 +570,16 @@ export function GalleryWorkspace({
             <span className="eyebrow">COMPARE</span>
             <h2>{t("图片对比")}</h2>
             <div className="compare-grid">
-              {compare.map((value) => (
+              {compare.map((value) => {
+                const displayTitle = galleryItemTitle(value.item);
+                return (
                 <article key={value.item.id}>
-                  <img src={b64ToDataUrl(value.b64)} alt={value.item.title} />
-                  <strong>{value.item.title}</strong>
+                  <img src={b64ToDataUrl(value.b64)} alt={displayTitle} />
+                  <strong>{displayTitle}</strong>
                   <button onClick={() => void setCover(value.item)}>{t("设为项目封面")}</button>
                 </article>
-              ))}
+                );
+              })}
             </div>
           </section>
         </div>

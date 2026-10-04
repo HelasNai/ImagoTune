@@ -1,13 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   boxBlurMask,
   chooseTileSize,
+  isLocalAIArchiveCode,
+  localAIArchiveCode,
+  localAIArchiveLabel,
   nms,
   resizeAlphaBilinear,
   solveAffine,
   tileOrigins,
   validateUpscaleOutput,
 } from "../src/lib/local-ai";
+import { setLocale } from "../src/lib/i18n";
 
 describe("local AI image helpers", () => {
   it("validates 2x and 4x output dimensions and hard limits", () => {
@@ -52,5 +56,36 @@ describe("local AI image helpers", () => {
     const target = source.map(([x, y]) => [2 * x + 3 * y + 5, -x + 4 * y + 7] as [number, number]);
     const matrix = solveAffine(source, target);
     expect(matrix).toEqual(expect.arrayContaining(matrix.map((value, index) => expect.closeTo([2, 3, 5, -1, 4, 7][index], 8))));
+  });
+});
+
+describe("local AI archive action codes (T29)", () => {
+  afterEach(() => setLocale("zh"));
+
+  it("maps toolbox actions to stable persistence codes", () => {
+    expect(localAIArchiveCode("upscale")).toBe("upscale");
+    expect(localAIArchiveCode("remove-background")).toBe("matting");
+    expect(localAIArchiveCode("face-restore")).toBe("face");
+    expect(localAIArchiveCode("pipeline")).toBe("combo");
+    expect(localAIArchiveCode("unknown")).toBeUndefined();
+  });
+
+  it("recognizes only the four action codes", () => {
+    for (const code of ["upscale", "matting", "face", "combo"]) expect(isLocalAIArchiveCode(code)).toBe(true);
+    expect(isLocalAIArchiveCode("高清放大")).toBe(false);
+    expect(isLocalAIArchiveCode(undefined)).toBe(false);
+  });
+
+  it("translates action codes and returns undefined for non-codes (frozen legacy)", () => {
+    expect(localAIArchiveLabel("upscale")).toBe("高清放大");
+    expect(localAIArchiveLabel("matting")).toBe("智能抠图");
+    expect(localAIArchiveLabel("face")).toBe("人脸优化 Beta");
+    expect(localAIArchiveLabel("combo")).toBe("本地组合处理");
+    setLocale("en");
+    expect(localAIArchiveLabel("upscale")).toBe("Upscale");
+    expect(localAIArchiveLabel("matting")).toBe("Background removal");
+    // 旧数据/用户内容不是 code → undefined，调用方回退存储文本。
+    expect(localAIArchiveLabel("高清放大")).toBeUndefined();
+    expect(localAIArchiveLabel(undefined)).toBeUndefined();
   });
 });

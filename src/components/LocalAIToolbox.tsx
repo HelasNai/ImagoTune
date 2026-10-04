@@ -3,7 +3,7 @@ import { createRecipe } from "../lib/creative";
 import { INBOX_PROJECT_ID } from "../lib/constants";
 import { formatBytes, formatDurationSeconds } from "../lib/format";
 import { t, tCode } from "../lib/i18n";
-import { validateUpscaleOutput } from "../lib/local-ai";
+import { localAIArchiveCode, validateUpscaleOutput } from "../lib/local-ai";
 import { b64FromDataUrl, b64ToDataUrl, fileToDataUrl } from "../lib/media";
 import { mapLocalAIProgress } from "../lib/progress";
 import { useDialog } from "./Dialogs";
@@ -253,15 +253,18 @@ export function LocalAIToolbox({
           modelVersion: modelVersions.get(step.modelId as LocalAIModelId) || "unknown",
           createdAt: new Date().toISOString(),
         }));
+        // T29：归档标题 / 变体标签持久化动作 code（upscale|matting|face|combo），渲染层按语言翻译；
+        // 不再把本地化标签写进图库（旧记录的中文冻结原样）。
+        const archiveCode = localAIArchiveCode(action) ?? "upscale";
         const recipe: ImageRecipeV1 = {
           ...source.recipe,
           size: `${value.width}x${value.height}`,
           sourceId: source.sourceId || source.recipe.sourceId,
-          variationLabel: actionLabels[action],
+          variationLabel: archiveCode,
           createdAt: new Date().toISOString(),
           postProcessing: [...(source.recipe.postProcessing || []), ...postProcessing],
         };
-        const archive = await callIpc(() => window.imageStudio.localAI.archiveResult({ dataUrl, title: `${source.title} - ${actionLabels[action]}`, recipe }), { fallbackError: t("未知错误"), onError: (message) => onNotice(t("处理完成，但归档失败：{message}", { message }), true) });
+        const archive = await callIpc(() => window.imageStudio.localAI.archiveResult({ dataUrl, title: `${source.title} - ${archiveCode}`, recipe }), { fallbackError: t("未知错误"), onError: (message) => onNotice(t("处理完成，但归档失败：{message}", { message }), true) });
         setResult({ dataUrl, width: value.width, height: value.height, recipe });
         setBusy(false); setProgress({ value: 100, message: t("处理完成，用时 {elapsed}", { elapsed: formatDurationSeconds(value.elapsedMs) }), device: value.steps.at(-1)?.device || "", stageIndex: 0, totalStages: 1 });
         onArchived({ b64: b64FromDataUrl(dataUrl), recipe, galleryId: archive.item?.id });

@@ -1151,7 +1151,8 @@ app.whenReady().then(async () => {
       const base64 = stripDataUrlPrefix(String(input.dataUrl || ""));
       if (!base64) return { ok: false, error: "本地处理结果为空", code: "localai.emptyResult" };
       const recipe = normalizeRecipe({ recipe: input.recipe }, input.recipe.mode);
-      const created = await galleryStore.addImages([{ b64_json: base64 }], { title: String(input.title || recipe.variationLabel || "本地 AI 处理结果"), recipe }, true);
+      // T29：标题由渲染层以「源标题 - 动作 code」写入；缺失时回退动作 code（不再落中文默认，交由渲染层按 code 本地化）。
+      const created = await galleryStore.addImages([{ b64_json: base64 }], { title: String(input.title || recipe.variationLabel || "local-ai-result"), recipe }, true);
       return created[0] ? { ok: true, item: created[0] } : { ok: false, error: "本地处理结果归档失败", code: "localai.archiveFailed" };
     } catch (error) { return { ok: false, error: errorMessage(error, "本地处理结果归档失败"), code: "localai.archiveFailed" }; }
   });

@@ -8,6 +8,7 @@ import { useEscapeKey } from "./useKeyboard";
 import { useSaveImage } from "./useSaveImage";
 import { b64ToFile, dataUrlFor, drawContain, readImage } from "./media-utils";
 import { formatGenerationParameters, variationOptions } from "../lib/creative";
+import { localAIArchiveLabel } from "../lib/local-ai";
 import { modeLabel, parsePixelSize } from "../lib/format";
 import { t } from "../lib/i18n";
 import type { Output } from "./types";
@@ -125,7 +126,7 @@ export function ResultPanel({
             <article key={output.id}>
               <img className="result-image" onClick={() => onOpenPreview(output)} src={dataUrlFor(output)} alt={t("生成结果|结果")} />
               <div className="result-caption">
-                <strong>{output.recipe.variationLabel || modeLabel(output.recipe, { fallback: t("新生成图片|结果") })}</strong>
+                <strong>{localAIArchiveLabel(output.recipe.variationLabel) || output.recipe.variationLabel || modeLabel(output.recipe, { fallback: t("新生成图片|结果") })}</strong>
                 <small>{output.recipe.size} · {output.recipe.projectId}{output.recipe.seed ? " · Seed " + output.recipe.seed : ""}</small>
               </div>
               {output.recipe.seed && <button className="seed-chip" onClick={() => void copyText(output.recipe.seed!, t("Seed 已复制"))}>{t("Seed：{seed} · 点击复制", { seed: output.recipe.seed })}</button>}

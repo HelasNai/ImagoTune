@@ -112,6 +112,8 @@ export function createGalleryStore(galleryDir: string) {
         const [buffer, stat] = await Promise.all([fs.readFile(filePath), fs.stat(filePath)]);
         const embedded = readRecipeFromPng(buffer);
         const createdAt = embedded?.createdAt || stat.birthtime.toISOString() || stat.mtime.toISOString();
+        // T29：无内嵌配方时写入系统默认名「恢复的历史图片」并置 recovered 标记（渲染层按语言翻译）；
+        // 内嵌配方保留真实 prompt，不置标记（历史/用户内容冻结）。索引版本号不变、历史文件不迁移。
         const recipe = normalizeRecipe({
           recipe: embedded || {
             prompt: "恢复的历史图片",
@@ -120,6 +122,7 @@ export function createGalleryStore(galleryDir: string) {
             createdAt,
           },
         });
+        if (!embedded) recipe.recovered = true;
         recipe.projectId = INBOX_PROJECT_ID;
         state.items.push({
           id: randomUUID(),

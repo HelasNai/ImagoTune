@@ -43,6 +43,7 @@ export function normalizeRecipe(
     createdAt: stringValue(nested.createdAt, new Date().toISOString()),
     sourceId: stringValue(nested.sourceId) || undefined,
     variationLabel: stringValue(nested.variationLabel) || undefined,
+    recovered: nested.recovered === true ? true : undefined,
     referenceCount: Math.max(0, Math.min(3, Number(nested.referenceCount) || 0)) || undefined,
     seed: seedValue === undefined || seedValue === null || String(seedValue).trim() === ""
       ? undefined

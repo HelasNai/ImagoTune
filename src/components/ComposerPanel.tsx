@@ -11,6 +11,7 @@ import { qualities } from "./useComposer";
 import type { ComposerActions, ComposerState } from "./useComposer";
 import { outpaintQuickRatios, ratioOptions, resolutionOptions } from "../lib/creative";
 import { compositeFileKey } from "../lib/format";
+import { projectDisplayName } from "../lib/gallery";
 import { decodeLayoutCode, encodeLayoutCode, moduleLabel, type LayoutMode } from "../lib/layout";
 import { useDialog } from "./Dialogs";
 import { useStudio } from "./StudioContext";
@@ -298,7 +299,7 @@ export function ComposerPanel({
         <label>{t("归属项目")}
           <Tooltip content={t("默认归档到收件箱，可随时批量移动。")}>
             <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>
-              {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+              {projects.map((project) => <option key={project.id} value={project.id}>{projectDisplayName(project)}</option>)}
             </select>
           </Tooltip>
         </label>
@@ -563,7 +564,7 @@ export function ComposerPanel({
           size: displaySize,
           mode: mode === "outpaint" ? outpaintPreset || t("扩展画布") : t("{ratio} 比例", { ratio }),
           resolution: resolution.toUpperCase(),
-          project: projects.find((project) => project.id === projectId)?.name || t("收件箱|创作"),
+          project: projectDisplayName(projects.find((project) => project.id === projectId) || { id: projectId, name: t("收件箱|创作") }),
         })}
       </p>
       {heavyRequest && (

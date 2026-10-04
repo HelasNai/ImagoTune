@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { INBOX_PROJECT_ID } from "../lib/constants";
 import { formatShortDate } from "../lib/format";
+import { galleryItemTitle, projectDisplayName } from "../lib/gallery";
 import { t } from "../lib/i18n";
 import { useDialog } from "./Dialogs";
 import { GalleryThumb } from "./GalleryThumb";
@@ -162,6 +163,8 @@ export function SidebarProjects({
           {ordered.map((project) => {
             const list = grouped.get(project.id) ?? [];
             const open = expanded.has(project.id);
+            // T29：收件箱按 id 渲染（忽略存储 name），历史记录无需迁移。
+            const displayName = projectDisplayName(project);
             return (
               <div className="sidebar-project" key={project.id}>
                 <div className="sidebar-project-row">
@@ -169,8 +172,8 @@ export function SidebarProjects({
                     <span className={open ? "sidebar-project-caret open" : "sidebar-project-caret"}>
                       <NavIcon name="chevron-right" size={12} />
                     </span>
-                    <Tooltip content={project.name}>
-                      <span className="sidebar-project-name">{project.name}</span>
+                    <Tooltip content={displayName}>
+                      <span className="sidebar-project-name">{displayName}</span>
                     </Tooltip>
                     <span className="sidebar-project-count">{list.length}</span>
                   </button>
@@ -198,20 +201,24 @@ export function SidebarProjects({
                       <p className="sidebar-project-empty">{t("还没有图片")}</p>
                     ) : (
                       <div className="sidebar-project-items">
-                        {list.slice(0, PREVIEW_LIMIT).map((item) => (
-                          <Tooltip key={item.id} content={item.title}>
-                            <button
-                              className="sidebar-project-item"
-                              onClick={() => onOpenImage(item.id)}
-                            >
-                              <GalleryThumb id={item.id} className="sidebar-project-item-thumb" alt={item.title} />
-                              <span className="sidebar-project-item-text">
-                                <span className="sidebar-project-item-title">{item.title || t("未命名图片")}</span>
-                                <span className="sidebar-project-item-time">{formatShortDate(item.createdAt)}</span>
-                              </span>
-                            </button>
-                          </Tooltip>
-                        ))}
+                        {list.slice(0, PREVIEW_LIMIT).map((item) => {
+                          // T29：recovery / 本地 AI 动作 code 标题按当前语言渲染，其余冻结原样。
+                          const title = galleryItemTitle(item);
+                          return (
+                            <Tooltip key={item.id} content={title}>
+                              <button
+                                className="sidebar-project-item"
+                                onClick={() => onOpenImage(item.id)}
+                              >
+                                <GalleryThumb id={item.id} className="sidebar-project-item-thumb" alt={title} />
+                                <span className="sidebar-project-item-text">
+                                  <span className="sidebar-project-item-title">{title || t("未命名图片")}</span>
+                                  <span className="sidebar-project-item-time">{formatShortDate(item.createdAt)}</span>
+                                </span>
+                              </button>
+                            </Tooltip>
+                          );
+                        })}
                       </div>
                     )}
                     <button className="sidebar-project-more" onClick={() => onOpenProject(project.id)}>{t("查看全部 ({n})", { n: list.length })}</button>

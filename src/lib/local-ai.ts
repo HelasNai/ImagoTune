@@ -1,7 +1,41 @@
-import { t } from "./i18n";
+import { t, type I18nKey } from "./i18n";
 
 export const LOCAL_AI_MAX_EDGE = 8192;
 export const LOCAL_AI_MAX_PIXELS = 70_000_000;
+
+/** 本地 AI 归档动作 code：持久化契约（`recipe.variationLabel` 与归档标题后缀），渲染层经 localAIArchiveLabel 翻译。 */
+export const LOCAL_AI_ARCHIVE_CODES = ["upscale", "matting", "face", "combo"] as const;
+export type LocalAIArchiveCode = (typeof LOCAL_AI_ARCHIVE_CODES)[number];
+
+/** LocalAIToolbox 的动作（upscale / remove-background / face-restore / pipeline）→ 持久化 code。 */
+const ARCHIVE_CODE_BY_ACTION: Record<string, LocalAIArchiveCode> = {
+  upscale: "upscale",
+  "remove-background": "matting",
+  "face-restore": "face",
+  pipeline: "combo",
+};
+
+/** 动作 code → 已登记的本地 AI 动作标签 key（复用 T14/T20 的 shell 词条，不新增重复 key）。 */
+const ARCHIVE_LABEL_KEYS: Record<LocalAIArchiveCode, I18nKey> = {
+  upscale: "高清放大",
+  matting: "智能抠图",
+  face: "人脸优化 Beta",
+  combo: "本地组合处理",
+};
+
+/** 组件动作 → 归档 code；未知动作返回 undefined。 */
+export function localAIArchiveCode(action: string): LocalAIArchiveCode | undefined {
+  return ARCHIVE_CODE_BY_ACTION[action];
+}
+
+export function isLocalAIArchiveCode(value: unknown): value is LocalAIArchiveCode {
+  return typeof value === "string" && (LOCAL_AI_ARCHIVE_CODES as readonly string[]).includes(value);
+}
+
+/** 动作 code → 当前语言标签；非 code（旧数据 / 用户内容）返回 undefined，调用方回退存储文本。 */
+export function localAIArchiveLabel(code: unknown): string | undefined {
+  return isLocalAIArchiveCode(code) ? t(ARCHIVE_LABEL_KEYS[code]) : undefined;
+}
 
 export function validateUpscaleOutput(width: number, height: number, scale: 2 | 4) {
   const outputWidth = width * scale;

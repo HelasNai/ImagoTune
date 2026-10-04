@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createInitialState, createGalleryStore, migrateGallery, searchGallery } from "../electron/gallery-store";
 import { embedRecipeInPng } from "../electron/png-metadata";
+import { setLocale } from "../src/lib/i18n";
+import { galleryItemTitle, projectDisplayName } from "../src/lib/gallery";
 
 const onePixelPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 
@@ -38,10 +40,77 @@ describe("gallery migration and search", () => {
       const state = await createGalleryStore(directory).read();
       expect(state.items).toHaveLength(1);
       expect(state.items[0].recipe.prompt).toBe("恢复海报");
+      // T29：内嵌配方的恢复项保留真实 prompt，不置 recovered 标记（用户内容冻结、不翻译）。
+      expect(state.items[0].recipe.recovered).toBeUndefined();
       const files = await import("node:fs/promises").then((fs) => fs.readdir(directory));
       expect(files.some((name) => name.startsWith("index.corrupt-") && name.endsWith(".json"))).toBe(true);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  });
+
+  it("marks recipe-less PNG rebuilds as recovered and keeps the marker across reads", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "image-studio-gallery-recovered-"));
+    try {
+      // 无内嵌配方的 PNG：默认名分支 → 写 recovered 标记。
+      await writeFile(path.join(directory, "plain.png"), onePixelPng);
+      await writeFile(path.join(directory, "index.json"), "{ broken json");
+      const rebuilt = await createGalleryStore(directory).read();
+      const plain = rebuilt.items.find((item) => item.fileName === "plain.png");
+      expect(plain?.recipe.recovered).toBe(true);
+      expect(plain?.title).toBe("恢复的历史图片");
+      // 再次读取：标记须经 migrateGallery → normalizeRecipe 往返后仍保留（否则重启即丢）。
+      const again = await createGalleryStore(directory).read();
+      expect(again.items.find((item) => item.fileName === "plain.png")?.recipe.recovered).toBe(true);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the persisted inbox project name untouched so the renderer can override by id", () => {
+    const state = migrateGallery({
+      version: 3,
+      projects: [{ id: "inbox", name: "旧名字", createdAt: "2025-01-01T00:00:00.000Z", updatedAt: "2025-01-01T00:00:00.000Z" }],
+      items: [],
+    });
+    // 存储层不迁移/不翻译：历史 name（含 "收件箱"）原样保留，显示名由渲染层按 id 决定。
+    expect(state.projects.find((project) => project.id === "inbox")?.name).toBe("旧名字");
+    expect(createInitialState().projects[0].name).toBe("收件箱");
+  });
+});
+
+describe("gallery display helpers (T29)", () => {
+  afterEach(() => setLocale("zh"));
+
+  it("renders the inbox project by id and ignores its stored name", () => {
+    const inbox = { id: "inbox", name: "收件箱" };
+    expect(projectDisplayName(inbox)).toBe("收件箱");
+    setLocale("en");
+    expect(projectDisplayName(inbox)).toBe("Inbox");
+    // 非收件箱项目保持存储 name（用户内容，不翻译）。
+    expect(projectDisplayName({ id: "p1", name: "我的项目" })).toBe("我的项目");
+  });
+
+  it("translates recovered defaults and local-AI action codes, freezing user/legacy titles", () => {
+    const recovered = { title: "恢复的历史图片", recipe: { recovered: true } };
+    expect(galleryItemTitle(recovered)).toBe("恢复的历史图片");
+    setLocale("en");
+    expect(galleryItemTitle(recovered)).toBe("Recovered historical image");
+
+    setLocale("zh");
+    const localAI = { title: "源图 - matting", recipe: { variationLabel: "matting" } };
+    expect(galleryItemTitle(localAI)).toBe("源图 - 智能抠图");
+    setLocale("en");
+    expect(galleryItemTitle(localAI)).toBe("源图 - Background removal");
+
+    // 旧数据：variationLabel 为已本地化中文、无 recovered 标记 → 一律冻结原样。
+    setLocale("zh");
+    const legacy = { title: "旧图 - 高清放大", recipe: { variationLabel: "高清放大" } };
+    expect(galleryItemTitle(legacy)).toBe("旧图 - 高清放大");
+    setLocale("en");
+    expect(galleryItemTitle(legacy)).toBe("旧图 - 高清放大");
+
+    // 纯用户标题（无 code / 无标记）→ 冻结。
+    expect(galleryItemTitle({ title: "用户自定义标题", recipe: {} })).toBe("用户自定义标题");
   });
 });
