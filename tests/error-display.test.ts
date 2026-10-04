@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { renderErrorInfo } from "../src/lib/error-display";
+import { renderErrorInfo, statusErrorInfo } from "../src/lib/error-display";
 import { setLocale } from "../src/lib/i18n";
 import type { GenerationErrorCode, GenerationErrorInfo } from "../shared/types";
 
@@ -80,5 +80,35 @@ describe("renderErrorInfo", () => {
     expect(rendered.suggestion).toBe(base.suggestion);
     expect(rendered.message).not.toContain("error.");
     expect(warn).toHaveBeenCalled();
+  });
+});
+
+describe("statusErrorInfo（T28 状态派生）", () => {
+  it("interrupted 返回带 cancel.interrupt 的规范信息", () => {
+    const info = statusErrorInfo("interrupted");
+    expect(info?.code).toBe("cancel.interrupt");
+    expect(info?.category).toBe("cancelled");
+    expect(info?.retryable).toBe(true);
+  });
+
+  it("interrupted 经 renderErrorInfo：zh 用规范中文、en 用词典英文", () => {
+    const info = statusErrorInfo("interrupted")!;
+    expect(renderErrorInfo(info)).toEqual({
+      title: "任务已中断",
+      message: "应用关闭时任务仍在运行。",
+      suggestion: "确认参数后手动重试，软件不会自动重复计费。",
+    });
+    setLocale("en");
+    expect(renderErrorInfo(info)).toEqual({
+      title: "Task interrupted",
+      message: "The task was still running when the app closed.",
+      suggestion: "Confirm the parameters and retry manually; the app will not bill you again automatically.",
+    });
+  });
+
+  it("非 interrupted 状态返回 null（调用方回退已存 errorInfo / job.error）", () => {
+    expect(statusErrorInfo("failed")).toBeNull();
+    expect(statusErrorInfo("cancelled")).toBeNull();
+    expect(statusErrorInfo("completed")).toBeNull();
   });
 });

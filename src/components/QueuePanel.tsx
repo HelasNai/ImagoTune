@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { t } from "../lib/i18n";
 import { formatDateTime, formatDurationSeconds, queueStatusLabel } from "../lib/format";
-import { renderErrorInfo } from "../lib/error-display";
+import { renderErrorInfo, statusErrorInfo } from "../lib/error-display";
 import { historyQueueCount, orderQueueForDisplay, waitingAheadCount } from "../lib/queue";
 import { recipeFromQueueInput, recipeModeLabel } from "./queue-utils";
 import { NavIcon } from "./icons";
@@ -85,8 +85,10 @@ export function QueuePanel({ queueItems, onRefresh, onOpenGalleryAt }: {
             // 多图时角标显示总数；悬空 id（图片已删）由 GalleryThumb 渲染占位、跳转后由图库提示不存在。
             const resultId = job.status === "completed" ? job.resultGalleryIds?.[0] : undefined;
             const resultCount = job.status === "completed" ? job.resultGalleryIds?.length ?? 0 : 0;
-            // 错误展示统一经 renderErrorInfo：有 code 按语言渲染，历史错误回退存储文本。
-            const renderedError = job.errorInfo ? renderErrorInfo(job.errorInfo) : null;
+            // 错误展示统一经 renderErrorInfo：interrupted 按状态派生规范文案（历史无 code 记录也能本地化），
+            // 其余状态优先已存 errorInfo（有 code 按语言渲染），无 code 的历史错误冻结回退存储文本。
+            const errorSource = statusErrorInfo(job.status) ?? job.errorInfo ?? null;
+            const renderedError = errorSource ? renderErrorInfo(errorSource) : null;
             return (
             <article key={job.id}>
               <div>

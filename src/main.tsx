@@ -281,7 +281,10 @@ function App() {
         setErrorInfo(job.errorInfo || null);
         setError(job.errorInfo ? "" : job.error || t("任务失败"));
       } else {
-        setNotice(t("队列任务失败：{message}", { message: job.error || t("未知错误") }));
+        // 后台任务失败通知同样优先 code 路径：有 errorInfo 时经 renderErrorInfo 本地化
+        // （zh 用存储中文回退，与 job.error 逐字一致），无 errorInfo 才回退存储文本。
+        const rendered = job.errorInfo ? renderErrorInfo(job.errorInfo) : null;
+        setNotice(t("队列任务失败：{message}", { message: rendered ? `${rendered.title}：${rendered.message}` : job.error || t("未知错误") }));
       }
     });
     return () => {

@@ -187,7 +187,11 @@ export type GenerationErrorCode =
   | "hunyuan.sizeUnsupported"
   | "hunyuan.invalidResponse"
   | "hunyuan.noImageUrl"
-  | "hunyuan.endpointMissing";
+  | "hunyuan.endpointMissing"
+  // 队列绑定失败（T28）：执行期解析不到原快照必需的供应商/模型。旧记录此字段缺省，
+  // 渲染层回退存储中文；新增记录必须带码，en 才可本地化。
+  | "provider.unavailable"
+  | "queue.missingModel";
 
 export interface GenerationErrorInfo {
   category: GenerationErrorCategory;

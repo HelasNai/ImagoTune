@@ -96,6 +96,16 @@ export const errors = {
   "error.hunyuan.endpointMissing.message": "The server could not find the requested model or endpoint.",
   "error.hunyuan.endpointMissing.suggestion": "Check the provider's API type, base URL, and model name.",
 
+  // 队列绑定失败（T28）：processQueue 执行期解析不到原快照必需的供应商/模型；
+  // 新记录带 code 落盘（zh 走存储中文回退，en 命中此处）。
+  "error.provider.unavailable.title": "Original provider unavailable",
+  "error.provider.unavailable.message": "The original provider saved with this task is unavailable.",
+  "error.provider.unavailable.suggestion": "Restore the provider configuration in Settings, or delete this task and add it again.",
+
+  "error.queue.missingModel.title": "Original task is missing its model",
+  "error.queue.missingModel.message": "Add the task to the queue again and retry.",
+  "error.queue.missingModel.suggestion": "The original task has no model record, so it cannot safely reuse the current configuration.",
+
   // ===================== T23：lib 层错误与 hooks 默认文案 =====================
   // key = 中文原文（重复中文词用 `|语境` 后缀消歧，zh 直通时后缀不进界面）。
   // 涉及并行分片已有词条时直接复用，不在此重复（如「图片已复制到剪贴板」在 shell 分片）。
