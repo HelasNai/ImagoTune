@@ -231,4 +231,12 @@ export const composer = {
   "撤销|蒙版": "Undo",
   "清空|蒙版": "Clear",
   "编辑原图": "Source image for editing",
+
+  // ipc.outpaint.* / ipc.prompt.* — 主进程扩图 / 提示词 IPC 失败码（T25；zh 走 handler 中文 error 回退）。
+  "ipc.outpaint.invalidTarget": "Invalid target resolution format",
+  "ipc.outpaint.targetTooSmall": "The outpaint target cannot be smaller than the source image",
+  "ipc.outpaint.targetUnsafe": "The target size is out of the safe range or not a multiple of 16",
+  "ipc.prompt.empty": "Enter a prompt first",
+  "ipc.prompt.enhanceFailed": "Prompt enhancement failed",
+  "ipc.prompt.reverseFailed": "Reverse prompt failed; the original prompt is unchanged",
 } as const;

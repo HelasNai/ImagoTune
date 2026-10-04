@@ -182,7 +182,7 @@ export interface GenerationErrorInfo {
 
 // 主进程 IPC 失败语义 code（值不含 `ipc.` 前缀；渲染层经 tCode("ipc", code, params, error) 查 en 词典，
 // zh 用各 handler 保留的中文 error 原文回退）。新增一条 = 新增一个 code + 对应域分片的 `ipc.<code>` 键。
-// 覆盖范围：图库/项目、队列、模板、本地 AI、剪贴板五组 handler 的用户可见失败分支。
+// 覆盖范围：图库/项目、队列、模板、本地 AI、剪贴板（T24），以及设置/更新/目录/扩图/提示词/PNG（T25）。
 export type IpcCode =
   | "gallery.notFound"
   | "gallery.thumbnailFailed"
@@ -209,7 +209,41 @@ export type IpcCode =
   | "localai.archiveFailed"
   | "clipboard.copyImageFailed"
   | "clipboard.noImage"
-  | "clipboard.readImageFailed";
+  | "clipboard.readImageFailed"
+  // —— T25：设置 / 更新 / 目录 / 扩图 / 提示词 / PNG ——
+  | "settings.invalidPayload"
+  | "settings.providerBusy"
+  | "settings.saveFailed"
+  | "settings.unsupportedLocale"
+  | "settings.localeSaveFailed"
+  | "settings.providerIdRequired"
+  | "settings.providerIdDuplicate"
+  | "settings.providerNameRequired"
+  | "settings.providerApiInvalid"
+  | "settings.providerIdReserved"
+  | "settings.providerIdFormat"
+  | "settings.bindingProviderMissing"
+  | "settings.bindingModelRequired"
+  | "settings.credentialFailed"
+  | "settings.configWriteFailed"
+  | "updates.alphaLocked"
+  | "updates.channelSaveFailed"
+  | "updates.alphaUnlockSaveFailed"
+  | "updates.autoUpdateSaveFailed"
+  | "directory.saveDirBusy"
+  | "directory.modelDirBusy"
+  | "directory.saveChooseFailed"
+  | "directory.modelChooseFailed"
+  | "directory.saveResetFailed"
+  | "directory.modelResetFailed"
+  | "outpaint.invalidTarget"
+  | "outpaint.targetTooSmall"
+  | "outpaint.targetUnsafe"
+  | "prompt.empty"
+  | "prompt.enhanceFailed"
+  | "prompt.reverseFailed"
+  | "png.noRecipe"
+  | "png.readFailed";
 
 export interface ApiImage {
   b64_json?: string;

@@ -27,7 +27,7 @@ import { CANVAS_MAX_EDGE, CANVAS_MAX_PIXELS, CANVAS_MULTIPLE } from "./outpaint-
 import { LOCAL_AI_MAX_EDGE, LOCAL_AI_MAX_PIXELS } from "./local-ai-limits";
 import { getAdapter, PROVIDER_PRESETS } from "./providers/presets";
 import type { GenerateContext } from "./providers/types";
-import type { ApiImage, BinaryPayload, Locale, ModelConfig, ModelRole, PromptTemplate, ProviderApiStyle, ProviderSummary, QueueRetryOptions, RoleBinding, SettingsSavePayload, SettingsSnapshot, SettingsTestInput, TaskProgressEvent, UpdateChannel, UpdateStatus } from "../shared/types";
+import type { ApiImage, BinaryPayload, IpcCode, Locale, ModelConfig, ModelRole, PromptTemplate, ProviderApiStyle, ProviderSummary, QueueRetryOptions, RoleBinding, SettingsSavePayload, SettingsSnapshot, SettingsTestInput, TaskProgressEvent, UpdateChannel, UpdateStatus } from "../shared/types";
 import {
   CLIPBOARD_COPY_IMAGE, CLIPBOARD_COPY_TEXT, CLIPBOARD_READ_IMAGE,
   GALLERY_BULK, GALLERY_DELETE, GALLERY_EXPORT_ZIP, GALLERY_LIST, GALLERY_LOAD_IMAGE,
@@ -81,6 +81,12 @@ let currentLocale: Locale = "zh";
 function applyMainLocale(locale: Locale) {
   currentLocale = locale;
   setMainLocale(locale);
+  // updateStatus 在模块加载期用默认 zh 生成 message（mt 早于配置加载）；切换语言后必须按当前
+  // locale 重建 message 并推送，否则设置页 p.update-status 会永远冻结在初始中文（T13/T17/T22 交接）。
+  if (updateStatus.code) {
+    updateStatus = { ...updateStatus, message: mt(updateStatus.code, updateStatus.params) };
+    broadcast(UPDATE_STATUS, updateStatus);
+  }
 }
 
 type BinaryInput = BinaryPayload;
@@ -111,9 +117,11 @@ const saveDirManager = createDirectoryManager({
   currentDir: () => saveDir,
   dialogTitle: () => mt("dialog.chooseSaveDir"),
   resultKey: "saveDir",
-  guard: () => (activeQueueJobId ? { ok: false, error: "当前有任务正在生成，请等待完成后再切换保存位置" } : null),
+  guard: () => (activeQueueJobId ? { ok: false, error: "当前有任务正在生成，请等待完成后再切换保存位置", code: "directory.saveDirBusy" } : null),
   chooseError: "无法使用所选保存位置",
+  chooseErrorCode: "directory.saveChooseFailed",
   resetError: "无法恢复系统默认保存位置",
+  resetErrorCode: "directory.saveResetFailed",
   readCredential: storedCredential,
   writeCredential: (account, value) => keytar.setPassword(SERVICE, account, value),
 });
@@ -125,10 +133,12 @@ const modelDirManager = createDirectoryManager({
   currentDir: () => localAIModels.modelsDir,
   dialogTitle: () => mt("dialog.chooseModelDir"),
   resultKey: "modelsDir",
-  guard: () => (localAIModels.hasActiveDownloads() ? { ok: false, error: "当前有模型正在下载，请先暂停或等待完成" } : null),
+  guard: () => (localAIModels.hasActiveDownloads() ? { ok: false, error: "当前有模型正在下载，请先暂停或等待完成", code: "directory.modelDirBusy" } : null),
   resultExtras: async () => ({ items: await localAIModels.list() }),
   chooseError: "无法使用所选模型位置",
+  chooseErrorCode: "directory.modelChooseFailed",
   resetError: "无法恢复默认模型位置",
+  resetErrorCode: "directory.modelResetFailed",
   readCredential: storedCredential,
   writeCredential: (account, value) => keytar.setPassword(SERVICE, account, value),
 });
@@ -387,11 +397,26 @@ async function loadModelConfig(): Promise<void> {
   }
 }
 
+// model-config.ts 是纯逻辑、只返回校验文案；映射到 IpcCode 由本文件在构造 IPC 返回时完成（T25）。
+const SAVE_VALIDATION_CODES: Record<string, IpcCode> = {
+  "供应商 id 不能为空": "settings.providerIdRequired",
+  "供应商 id 重复": "settings.providerIdDuplicate",
+  "供应商名称不能为空": "settings.providerNameRequired",
+  "供应商接口风格无效": "settings.providerApiInvalid",
+  "保留 id 不可作为新供应商 id": "settings.providerIdReserved",
+  "新增供应商 id 必须是 UUID 格式": "settings.providerIdFormat",
+  "角色绑定的供应商不存在": "settings.bindingProviderMissing",
+  "模型名不能为空": "settings.bindingModelRequired",
+};
+function validationErrorCode(message: string): IpcCode {
+  return SAVE_VALIDATION_CODES[message] ?? "settings.invalidPayload";
+}
+
 // D5 保存事务（固定五步）：①校验 → ②写变更 secret → ③剥离密钥写 JSON → ④best-effort 删 removal → ⑤前缀限定 GC。
-async function saveModelConfig(payload: SettingsSavePayload, removalProviderIds: string[]): Promise<{ ok: boolean; error?: string }> {
+async function saveModelConfig(payload: SettingsSavePayload, removalProviderIds: string[]): Promise<{ ok: boolean; error?: string; code?: IpcCode }> {
   // ① D12 校验：失败则不写任何东西。
   const validation = validateSavePayload(payload, modelConfigCache?.providers.map((provider) => provider.id) ?? []);
-  if (!validation.ok) return { ok: false, error: validation.error };
+  if (!validation.ok) return { ok: false, error: validation.error, code: validationErrorCode(validation.error) };
 
   // ② 先写凭据库：legacy 供应商沿用 legacy ACCOUNT，其余用 provider:<id>；失败即中止且不写 JSON。
   const steps = payload.providers
@@ -401,7 +426,7 @@ async function saveModelConfig(payload: SettingsSavePayload, removalProviderIds:
       value: (provider.apiKey as string).trim(),
     }));
   const plan = await runSavePlan(steps, (account, value) => keytar.setPassword(SERVICE, account, value));
-  if (!plan.ok) return { ok: false, error: plan.error };
+  if (!plan.ok) return { ok: false, error: plan.error, code: "settings.credentialFailed" };
 
   // ③ 剥离 apiKey 后写 JSON（密钥红线：磁盘 JSON 永不含 apiKey）。
   // SettingsSavePayload 不含 locale：重建时必须并入当前持久化的 locale，普通保存绝不丢语言偏好。
@@ -410,7 +435,7 @@ async function saveModelConfig(payload: SettingsSavePayload, removalProviderIds:
     await ensureDir(path.dirname(modelConfigPath()));
     await atomicWriteJson(modelConfigPath(), next);
   } catch (error) {
-    return { ok: false, error: "写入配置失败：" + errorMessage(error, "未知错误") };
+    return { ok: false, error: "写入配置失败：" + errorMessage(error, "未知错误"), code: "settings.configWriteFailed" };
   }
 
   // ④ best-effort 删除本次移除的供应商密钥（legacy 跳过；失败仅记日志，绝不回显密钥值）。
@@ -955,7 +980,7 @@ app.whenReady().then(async () => {
   ipcMain.handle(SETTINGS_SAVE, async (_e, payload: SettingsSavePayload) => {
     try {
       if (!payload || !Array.isArray(payload.providers) || !Array.isArray(payload.removedProviderIds) || !payload.roles) {
-        return { ok: false, error: "保存参数无效" };
+        return { ok: false, error: "保存参数无效", code: "settings.invalidPayload" };
       }
       const current = getModelConfigCache();
       const currentIds = current?.providers.map((provider) => provider.id) ?? [];
@@ -965,17 +990,17 @@ app.whenReady().then(async () => {
       for (const id of payload.removedProviderIds) if (typeof id === "string" && id) removal.add(id);
       const jobs = await queueStore.read();
       const activeProviderIds = new Set(jobs.filter((job) => job.status === "queued" || job.status === "running").map((job) => job.providerId).filter((value): value is string => typeof value === "string" && value.length > 0));
-      for (const id of removal) if (activeProviderIds.has(id)) return { ok: false, error: "供应商有未完成任务" };
+      for (const id of removal) if (activeProviderIds.has(id)) return { ok: false, error: "供应商有未完成任务", code: "settings.providerBusy" };
       return await saveModelConfig(payload, Array.from(removal));
     } catch (error) {
-      return { ok: false, error: errorMessage(error, "保存失败") };
+      return { ok: false, error: errorMessage(error, "保存失败"), code: "settings.saveFailed" };
     }
   });
   // 语言切换：校验（仅 zh|en，否则拒绝且不改配置）→ 更新内存单例 → 原子写回配置（保留其余字段）。
-  ipcMain.handle(SETTINGS_SET_LOCALE, async (_e, locale: unknown): Promise<{ ok: boolean; error?: string }> => {
+  ipcMain.handle(SETTINGS_SET_LOCALE, async (_e, locale: unknown): Promise<{ ok: boolean; error?: string; code?: IpcCode }> => {
     try {
       const parsed = parseLocale(locale);
-      if (!parsed) return { ok: false, error: "不支持的语言" };
+      if (!parsed) return { ok: false, error: "不支持的语言", code: "settings.unsupportedLocale" };
       const current = getModelConfigCache();
       const base: ModelConfig = current ?? { version: 1, providers: [], roles: { image: null, reverse: null, enhance: null }, autoArchive: true };
       const next: ModelConfig = { ...base, locale: parsed };
@@ -986,7 +1011,7 @@ app.whenReady().then(async () => {
       applyMainLocale(parsed);
       return { ok: true };
     } catch (error) {
-      return { ok: false, error: errorMessage(error, "保存语言设置失败") };
+      return { ok: false, error: errorMessage(error, "保存语言设置失败"), code: "settings.localeSaveFailed" };
     }
   });
   ipcMain.handle(SETTINGS_CHOOSE_SAVE_DIR, () => saveDirManager.choose());
@@ -1138,12 +1163,12 @@ app.whenReady().then(async () => {
     try {
       const next: UpdateChannel = channel === "beta" ? "beta" : channel === "alpha" ? "alpha" : "stable";
       // Alpha 渠道必须先经隐藏手势解锁，未解锁时拒绝写入。
-      if (next === "alpha" && !(await alphaChannelUnlocked())) return { ok: false, error: "Alpha 测试渠道尚未解锁" };
+      if (next === "alpha" && !(await alphaChannelUnlocked())) return { ok: false, error: "Alpha 测试渠道尚未解锁", code: "updates.alphaLocked" };
       await keytar.setPassword(SERVICE, `${ACCOUNT}:updateChannel`, next);
       await applyUpdatePreferences();
       if ((await autoUpdatePref()) && app.isPackaged) void checkForAppUpdate();
       return { ok: true, channel: next };
-    } catch (error) { return { ok: false, error: errorMessage(error, "无法保存更新通道设置") }; }
+    } catch (error) { return { ok: false, error: errorMessage(error, "无法保存更新通道设置"), code: "updates.channelSaveFailed" }; }
   });
   ipcMain.handle(UPDATES_SET_ALPHA_UNLOCKED, async (_e, enabled: boolean) => {
     try {
@@ -1157,7 +1182,7 @@ app.whenReady().then(async () => {
         if ((await autoUpdatePref()) && app.isPackaged) void checkForAppUpdate();
       }
       return { ok: true, channel };
-    } catch (error) { return { ok: false, error: errorMessage(error, "无法保存内测渠道解锁状态") }; }
+    } catch (error) { return { ok: false, error: errorMessage(error, "无法保存内测渠道解锁状态"), code: "updates.alphaUnlockSaveFailed" }; }
   });
   ipcMain.handle(UPDATES_SET_AUTO_UPDATE, async (_e, enabled: boolean) => {
     try {
@@ -1165,7 +1190,7 @@ app.whenReady().then(async () => {
       await applyUpdatePreferences();
       if (enabled && app.isPackaged && updateStatus.phase === "available") void downloadAppUpdate();
       return { ok: true, autoUpdate: enabled };
-    } catch (error) { return { ok: false, error: errorMessage(error, "无法保存自动更新设置") }; }
+    } catch (error) { return { ok: false, error: errorMessage(error, "无法保存自动更新设置"), code: "updates.autoUpdateSaveFailed" }; }
   });
   ipcMain.handle(UPDATES_CHECK, async () => checkForAppUpdate());
   ipcMain.handle(UPDATES_DOWNLOAD, async () => downloadAppUpdate());
@@ -1197,15 +1222,15 @@ app.whenReady().then(async () => {
     try {
       const raw = value.data ? Buffer.from(value.data) : Buffer.from(stripDataUrlPrefix(String(value.dataUrl || "")), "base64");
       const recipe = readRecipeFromPng(raw);
-      return recipe ? { ok: true, recipe } : { ok: false, error: "PNG 中没有 ImagoTune 配方元数据" };
-    } catch (error) { return { ok: false, error: errorMessage(error, "无法读取 PNG 元数据") }; }
+      return recipe ? { ok: true, recipe } : { ok: false, error: "PNG 中没有 ImagoTune 配方元数据", code: "png.noRecipe" };
+    } catch (error) { return { ok: false, error: errorMessage(error, "无法读取 PNG 元数据"), code: "png.readFailed" }; }
   });
   ipcMain.handle(OUTPAINT_PREPARE, async (_e, input: { sourceWidth: number; sourceHeight: number; targetSize: string }) => {
     const match = /^(\d+)x(\d+)$/.exec(String(input.targetSize || ""));
-    if (!match) return { ok: false, error: "目标分辨率格式无效" };
+    if (!match) return { ok: false, error: "目标分辨率格式无效", code: "outpaint.invalidTarget" };
     const width = Number(match[1]); const height = Number(match[2]);
-    if (width < Number(input.sourceWidth) || height < Number(input.sourceHeight)) return { ok: false, error: "扩图目标不能小于原图" };
-    if (width % CANVAS_MULTIPLE || height % CANVAS_MULTIPLE || width > CANVAS_MAX_EDGE || height > CANVAS_MAX_EDGE || width * height > CANVAS_MAX_PIXELS) return { ok: false, error: "目标尺寸超出安全范围或不是 16 的倍数" };
+    if (width < Number(input.sourceWidth) || height < Number(input.sourceHeight)) return { ok: false, error: "扩图目标不能小于原图", code: "outpaint.targetTooSmall" };
+    if (width % CANVAS_MULTIPLE || height % CANVAS_MULTIPLE || width > CANVAS_MAX_EDGE || height > CANVAS_MAX_EDGE || width * height > CANVAS_MAX_PIXELS) return { ok: false, error: "目标尺寸超出安全范围或不是 16 的倍数", code: "outpaint.targetUnsafe" };
     return { ok: true, size: `${width}x${height}` };
   });
   ipcMain.handle(GALLERY_LIST, async () => { const result = await galleryStore.search({ pageSize: 100 }); return { ok: true, ...result, projects: await galleryStore.getProjects() }; });
@@ -1243,7 +1268,7 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle(PROMPT_ENHANCE, async (e, input: { prompt: string; mode: "generate" | "edit" }) => {
     const prompt = String(input?.prompt || "").trim();
-    if (!prompt) return { ok: false, error: "请先输入提示词" };
+    if (!prompt) return { ok: false, error: "请先输入提示词", code: "prompt.empty" };
     // 增强没有可用的真实百分比：只发 startedAt 让渲染层本地计时，绝不编造进度（单例操作，固定 id）。
     const report = (event: Omit<TaskProgressEvent, "id" | "scope">) => emitProgress(BrowserWindow.fromWebContents(e.sender), { id: "prompt-enhance", scope: "enhance", ...event });
     const startedAt = Date.now();
@@ -1254,7 +1279,7 @@ app.whenReady().then(async () => {
       return { ok: true, prompt: enhanced };
     } catch (error) {
       report({ message: "AI 增强失败", elapsedMs: Date.now() - startedAt, state: "error" });
-      return { ok: false, error: errorMessage(error, "提示词增强失败") };
+      return { ok: false, error: errorMessage(error, "提示词增强失败"), code: "prompt.enhanceFailed" };
     }
   });
   ipcMain.handle(PROMPT_REVERSE, async (e, input: { image: BinaryInput }) => {
@@ -1268,7 +1293,7 @@ app.whenReady().then(async () => {
       return { ok: true, ...result };
     } catch (error) {
       report({ message: "图反推失败", elapsedMs: Date.now() - startedAt, state: "error" });
-      return { ok: false, error: errorMessage(error, "图反推失败，原提示词未改变") };
+      return { ok: false, error: errorMessage(error, "图反推失败，原提示词未改变"), code: "prompt.reverseFailed" };
     }
   });
   ipcMain.handle(QUEUE_LIST, async () => ({ ok: true, items: await queueSnapshot() }));

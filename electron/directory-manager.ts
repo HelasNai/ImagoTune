@@ -2,9 +2,10 @@ import { dialog, shell } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { errorMessage } from "./net-utils";
+import type { IpcCode } from "../shared/types";
 
 /** IPC handler 返回结构：成功、取消、失败三种形态保持与原内联实现一致。 */
-export type DirectoryIpcResult = { ok: boolean; error?: string; [key: string]: unknown };
+export type DirectoryIpcResult = { ok: boolean; error?: string; code?: IpcCode; [key: string]: unknown };
 
 export type DirectoryManagerOptions = {
   /** keytar 账号键（如 `${ACCOUNT}:saveDir`），读写都经注入的凭据回调，以复用 legacy service 回退。 */
@@ -22,13 +23,17 @@ export type DirectoryManagerOptions = {
   /** 返回结构中的目录字段名（saveDir / modelsDir）。 */
   resultKey: string;
   /** 切换前置守卫；返回错误对象表示拒绝（队列忙碌 / 模型下载中）。 */
-  guard?: () => { ok: false; error: string } | null;
+  guard?: () => { ok: false; error: string; code?: IpcCode } | null;
   /** 切换成功后附加字段（模型目录需要 items）。 */
   resultExtras?: () => Promise<Record<string, unknown>>;
   /** 选择失败时的兜底文案。 */
   chooseError: string;
+  /** 选择失败时的语义码（T25；缺省则无码，en 直通兜底文案）。 */
+  chooseErrorCode?: IpcCode;
   /** 恢复默认失败时的兜底文案。 */
   resetError: string;
+  /** 恢复默认失败时的语义码（T25；缺省则无码）。 */
+  resetErrorCode?: IpcCode;
   readCredential: (account: string) => Promise<string | null>;
   writeCredential: (account: string, value: string) => Promise<void>;
 };
@@ -49,7 +54,7 @@ export type DirectoryManager = {
 export function createDirectoryManager(options: DirectoryManagerOptions): DirectoryManager {
   const {
     credentialKey, systemDir, legacyDir, activate, currentDir, dialogTitle,
-    resultKey, guard, resultExtras, chooseError, resetError, readCredential, writeCredential,
+    resultKey, guard, resultExtras, chooseError, chooseErrorCode, resetError, resetErrorCode, readCredential, writeCredential,
   } = options;
 
   async function resolve(): Promise<string> {
@@ -87,7 +92,7 @@ export function createDirectoryManager(options: DirectoryManagerOptions): Direct
       await writeCredential(credentialKey, next);
       return { ok: true, canceled: false, [resultKey]: next, ...(resultExtras ? await resultExtras() : {}) };
     } catch (error) {
-      return { ok: false, error: errorMessage(error, chooseError) };
+      return { ok: false, error: errorMessage(error, chooseError), code: chooseErrorCode };
     }
   }
 
@@ -100,7 +105,7 @@ export function createDirectoryManager(options: DirectoryManagerOptions): Direct
       await writeCredential(credentialKey, next);
       return { ok: true, [resultKey]: next, ...(resultExtras ? await resultExtras() : {}) };
     } catch (error) {
-      return { ok: false, error: errorMessage(error, resetError) };
+      return { ok: false, error: errorMessage(error, resetError), code: resetErrorCode };
     }
   }
 

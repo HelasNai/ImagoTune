@@ -66,4 +66,18 @@ export const shell = {
   "ipc.clipboard.copyImageFailed": "Invalid image data",
   "ipc.clipboard.noImage": "No usable image in the clipboard",
   "ipc.clipboard.readImageFailed": "Could not read the clipboard image",
+
+  // ipc.updates.* / ipc.directory.* / ipc.png.* — T25（zh 走 handler 中文 error 回退）。
+  "ipc.updates.alphaLocked": "The Alpha test channel is not unlocked yet",
+  "ipc.updates.channelSaveFailed": "Could not save the update channel setting",
+  "ipc.updates.alphaUnlockSaveFailed": "Could not save the Alpha test channel unlock state",
+  "ipc.updates.autoUpdateSaveFailed": "Could not save the auto-update setting",
+  "ipc.directory.saveDirBusy": "A task is currently generating; wait for it to finish before changing the save location",
+  "ipc.directory.modelDirBusy": "A model is currently downloading; pause it or wait for it to finish",
+  "ipc.directory.saveChooseFailed": "Could not use the selected save location",
+  "ipc.directory.modelChooseFailed": "Could not use the selected model location",
+  "ipc.directory.saveResetFailed": "Could not restore the system default save location",
+  "ipc.directory.modelResetFailed": "Could not restore the default model location",
+  "ipc.png.noRecipe": "No ImagoTune recipe metadata in the PNG",
+  "ipc.png.readFailed": "Could not read the PNG metadata",
 } as const;

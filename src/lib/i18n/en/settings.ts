@@ -170,4 +170,21 @@ export const settings = {
   "test.scheme": "API Base URL only supports http/https",
   "test.http": "Endpoint returned {status}",
   "test.network": "Connection failed",
+
+  // --- ipc.settings.* — 主进程设置 IPC 失败码（T25；zh 走 handler 中文 error 回退） ---
+  "ipc.settings.invalidPayload": "Invalid save parameters",
+  "ipc.settings.providerBusy": "A provider has unfinished tasks",
+  "ipc.settings.saveFailed": "Failed to save settings",
+  "ipc.settings.unsupportedLocale": "Unsupported language",
+  "ipc.settings.localeSaveFailed": "Failed to save the language setting",
+  "ipc.settings.providerIdRequired": "Provider id cannot be empty",
+  "ipc.settings.providerIdDuplicate": "Duplicate provider id",
+  "ipc.settings.providerNameRequired": "Provider name cannot be empty",
+  "ipc.settings.providerApiInvalid": "Invalid provider API style",
+  "ipc.settings.providerIdReserved": "A reserved id cannot be used as a new provider id",
+  "ipc.settings.providerIdFormat": "A new provider id must be a UUID",
+  "ipc.settings.bindingProviderMissing": "The provider bound to a role does not exist",
+  "ipc.settings.bindingModelRequired": "Model name cannot be empty",
+  "ipc.settings.credentialFailed": "Could not write to the Windows Credential Manager",
+  "ipc.settings.configWriteFailed": "Failed to write the configuration",
 } as const;

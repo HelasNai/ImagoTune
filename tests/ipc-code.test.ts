@@ -6,6 +6,7 @@ import { queue } from "../src/lib/i18n/en/queue";
 import { composer } from "../src/lib/i18n/en/composer";
 import { localai } from "../src/lib/i18n/en/localai";
 import { shell } from "../src/lib/i18n/en/shell";
+import { settings } from "../src/lib/i18n/en/settings";
 
 // 主进程 IpcCode 全量清单：必须与 shared/types.d.ts 的 IpcCode 联合及 main.ts 的改动保持同步。
 // 类型注解 `IpcCode[]` 在 vitest/esbuild 下被擦除，仅起文档/IDE 提示作用；真正的锁是下面的词条存在性断言。
@@ -36,10 +37,44 @@ const IPC_CODES: IpcCode[] = [
   "clipboard.copyImageFailed",
   "clipboard.noImage",
   "clipboard.readImageFailed",
+  // T25：设置 / 更新 / 目录 / 扩图 / 提示词 / PNG
+  "settings.invalidPayload",
+  "settings.providerBusy",
+  "settings.saveFailed",
+  "settings.unsupportedLocale",
+  "settings.localeSaveFailed",
+  "settings.providerIdRequired",
+  "settings.providerIdDuplicate",
+  "settings.providerNameRequired",
+  "settings.providerApiInvalid",
+  "settings.providerIdReserved",
+  "settings.providerIdFormat",
+  "settings.bindingProviderMissing",
+  "settings.bindingModelRequired",
+  "settings.credentialFailed",
+  "settings.configWriteFailed",
+  "updates.alphaLocked",
+  "updates.channelSaveFailed",
+  "updates.alphaUnlockSaveFailed",
+  "updates.autoUpdateSaveFailed",
+  "directory.saveDirBusy",
+  "directory.modelDirBusy",
+  "directory.saveChooseFailed",
+  "directory.modelChooseFailed",
+  "directory.saveResetFailed",
+  "directory.modelResetFailed",
+  "outpaint.invalidTarget",
+  "outpaint.targetTooSmall",
+  "outpaint.targetUnsafe",
+  "prompt.empty",
+  "prompt.enhanceFailed",
+  "prompt.reverseFailed",
+  "png.noRecipe",
+  "png.readFailed",
 ];
 
 // 按前缀域直接 import 分片（不依赖聚合，锁定各自的 ipc.<code> 归属）。
-const shards: Record<string, string> = { ...gallery, ...queue, ...composer, ...localai, ...shell };
+const shards: Record<string, string> = { ...gallery, ...queue, ...composer, ...localai, ...shell, ...settings };
 
 afterEach(() => {
   setLocale("zh");
@@ -66,8 +101,16 @@ describe("IpcCode en 覆盖（T24）", () => {
     expect(tCode("ipc", "template.empty")).toBe("Template title and prompt cannot be empty");
     expect(tCode("ipc", "localai.notInstalled")).toBe("The model is not installed yet");
     expect(tCode("ipc", "clipboard.readImageFailed")).toBe("Could not read the clipboard image");
+    // T25 抽查：设置/更新/目录/扩图/提示词/PNG 各一。
+    expect(tCode("ipc", "settings.providerNameRequired")).toBe("Provider name cannot be empty");
+    expect(tCode("ipc", "updates.alphaLocked")).toBe("The Alpha test channel is not unlocked yet");
+    expect(tCode("ipc", "directory.saveChooseFailed")).toBe("Could not use the selected save location");
+    expect(tCode("ipc", "outpaint.targetTooSmall")).toBe("The outpaint target cannot be smaller than the source image");
+    expect(tCode("ipc", "prompt.empty")).toBe("Enter a prompt first");
+    expect(tCode("ipc", "png.noRecipe")).toBe("No ImagoTune recipe metadata in the PNG");
 
     setLocale("zh");
     expect(tCode("ipc", "gallery.notFound", {}, "图库记录不存在")).toBe("图库记录不存在");
+    expect(tCode("ipc", "settings.providerNameRequired", {}, "供应商名称不能为空")).toBe("供应商名称不能为空");
   });
 });
