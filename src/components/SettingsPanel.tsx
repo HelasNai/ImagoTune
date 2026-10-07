@@ -34,20 +34,24 @@ const SETTINGS_TAB_ICONS: Record<SettingsTab, NavIconName> = {
 
 // D10 刷新的渲染层轻量复刻：与 electron/model-config.ts 的 mergeFetchedModels 同语义
 // （渲染层不得 import electron/——tsconfig include 仅 src——故就地实现，保持 ≤20 行）。
-// 规则：保留既有顺序与 roles 标注；custom 永不 missing；fetch 来源缺失置 missing、重现清除；新 id 追加 roles:[]。
+// 规则：保留既有顺序与 roles 标注；custom 永不 missing；seen 记录「曾出现在刷新列表」——仅「曾出现、
+// 本次消失」置 missing；从未出现过的（平台列表端点不覆盖）永不标 missing 并清除历史误报；新 id 追加 roles:[]、seen:true。
 function mergeModels(existing: ProviderModel[], fetched: string[]): ProviderModel[] {
   const fetchedSet = new Set(fetched);
   const existingIds = new Set(existing.map((model) => model.id));
   const merged = existing.map((model) => {
     if (model.source === "custom") return { ...model };
     if (fetchedSet.has(model.id)) {
-      const next: ProviderModel = { ...model };
+      const next: ProviderModel = { ...model, seen: true };
       delete next.missing;
       return next;
     }
-    return { ...model, missing: true };
+    if (model.seen) return { ...model, missing: true };
+    const next: ProviderModel = { ...model };
+    delete next.missing;
+    return next;
   });
-  for (const id of fetched) if (!existingIds.has(id)) merged.push({ id, roles: [] });
+  for (const id of fetched) if (!existingIds.has(id)) merged.push({ id, roles: [], seen: true });
   return merged;
 }
 

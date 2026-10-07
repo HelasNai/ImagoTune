@@ -86,7 +86,7 @@ describe("parseModelsResponse", () => {
 });
 
 describe("mergeFetchedModels", () => {
-  it("已存在条目保留标注与顺序", () => {
+  it("已存在条目保留标注与顺序并标记 seen", () => {
     const existing: ProviderModel[] = [
       { id: "m-b", roles: ["image"] },
       { id: "m-a", roles: ["reverse", "enhance"] },
@@ -96,11 +96,20 @@ describe("mergeFetchedModels", () => {
     expect(merged[0].roles).toEqual(["image"]);
     expect(merged[1].roles).toEqual(["reverse", "enhance"]);
     expect(merged[0].missing).toBeUndefined();
+    expect(merged[0].seen).toBe(true);
+    expect(merged[1].seen).toBe(true);
   });
 
-  it("fetch 来源且新列表缺失的条目标记 missing", () => {
-    const merged = mergeFetchedModels([{ id: "gone", roles: [] }], ["other"]);
-    expect(merged[0]).toEqual({ id: "gone", roles: [], missing: true });
+  it("从未出现在刷新列表的条目不标 missing 并清除历史误报", () => {
+    const merged = mergeFetchedModels([{ id: "gone", roles: [], missing: true }], ["other"]);
+    expect(merged[0]).toEqual({ id: "gone", roles: [] });
+    expect("missing" in merged[0]).toBe(false);
+    expect(merged[0].seen).toBeUndefined();
+  });
+
+  it("曾出现（seen:true）且本次消失的条目标记 missing", () => {
+    const merged = mergeFetchedModels([{ id: "gone", roles: [], seen: true }], ["other"]);
+    expect(merged[0]).toEqual({ id: "gone", roles: [], seen: true, missing: true });
   });
 
   it("custom 条目即使不在新列表也永不 missing", () => {
@@ -109,16 +118,17 @@ describe("mergeFetchedModels", () => {
     expect(merged[0].source).toBe("custom");
   });
 
-  it("消失的条目重现时清除 missing", () => {
+  it("消失的条目重现时清除 missing 并标记 seen", () => {
     const merged = mergeFetchedModels([{ id: "back", roles: ["image"], missing: true }], ["back"]);
-    expect(merged[0]).toEqual({ id: "back", roles: ["image"] });
+    expect(merged[0]).toEqual({ id: "back", roles: ["image"], seen: true });
     expect("missing" in merged[0]).toBe(false);
   });
 
-  it("新出现的 id 按 fetched 顺序追加且 roles 为空", () => {
+  it("新出现的 id 按 fetched 顺序追加且 roles 为空、seen 为 true", () => {
     const merged = mergeFetchedModels([{ id: "old", roles: [] }], ["new-z", "old", "new-a"]);
     expect(merged.map((m) => m.id)).toEqual(["old", "new-z", "new-a"]);
-    expect(merged[1]).toEqual({ id: "new-z", roles: [] });
+    expect(merged[1]).toEqual({ id: "new-z", roles: [], seen: true });
+    expect(merged[2]).toEqual({ id: "new-a", roles: [], seen: true });
   });
 });
 

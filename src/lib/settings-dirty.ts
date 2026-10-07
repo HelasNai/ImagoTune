@@ -58,7 +58,7 @@ export function isSettingsDirty(
   return false;
 }
 
-/** 模型数组按索引顺序敏感比较：id、roles 逐项、source、missing。 */
+/** 模型数组按索引顺序敏感比较：id、roles 逐项、source、missing、seen。 */
 function providerModelsEqual(a: ProviderModel[], b: ProviderModel[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
@@ -71,6 +71,7 @@ function providerModelsEqual(a: ProviderModel[], b: ProviderModel[]): boolean {
     }
     if ((x.source ?? "") !== (y.source ?? "")) return false;
     if (Boolean(x.missing) !== Boolean(y.missing)) return false;
+    if (Boolean(x.seen) !== Boolean(y.seen)) return false;
   }
   return true;
 }

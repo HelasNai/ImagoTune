@@ -384,6 +384,8 @@ export interface ProviderModel {
   roles: ModelRole[];
   source?: "custom";
   missing?: boolean;
+  /** 曾出现在某次「刷新模型」返回的列表中；平台列表端点覆盖不到的模型永不置位（区分「真·从列表消失」与「平台列表从不返回」）。 */
+  seen?: boolean;
 }
 
 export interface ProviderConfig {

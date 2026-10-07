@@ -184,6 +184,14 @@ describe("isSettingsDirty", () => {
     expect(isSettingsDirty(draft, makeSnapshot())).toBe(true);
   });
 
+  it("模型 seen 翻转（true 与 undefined 互换）时返回 true", () => {
+    const baseModels = makeProviderDraft().models;
+    const draft = makeDraft({
+      providers: [makeProviderDraft({ models: [{ id: "m1", roles: ["image"], seen: true }, baseModels[1]] })],
+    });
+    expect(isSettingsDirty(draft, makeSnapshot())).toBe(true);
+  });
+
   it("模型顺序交换时返回 true（顺序敏感）", () => {
     const baseModels = makeProviderDraft().models;
     const draft = makeDraft({

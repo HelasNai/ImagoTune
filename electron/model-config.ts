@@ -65,21 +65,25 @@ export function parseModelsResponse(raw: unknown): string[] {
 }
 
 // D10：刷新合并。保留已有标注（roles）与顺序；custom 条目永不 missing；
-// fetch 来源且新列表缺失的条目置 missing:true，重现时清除；新 id 按 fetched 顺序追加（roles:[]）。
+// seen 为「曾出现在刷新列表中」的持久标记：仅「曾出现、本次消失」置 missing（重现清除）；
+// 从未出现过（平台列表端点不覆盖，如智谱 glm-image）的条目永不标 missing 并清除历史误报；新 id 按 fetched 顺序追加（roles:[]、seen:true）。
 export function mergeFetchedModels(existing: ProviderModel[], fetched: string[]): ProviderModel[] {
   const fetchedSet = new Set(fetched);
   const existingIds = new Set(existing.map((model) => model.id));
   const merged = existing.map((model) => {
     if (model.source === "custom") return { ...model };
     if (fetchedSet.has(model.id)) {
-      const next: ProviderModel = { ...model };
+      const next: ProviderModel = { ...model, seen: true };
       delete next.missing;
       return next;
     }
-    return { ...model, missing: true };
+    if (model.seen) return { ...model, missing: true };
+    const next: ProviderModel = { ...model };
+    delete next.missing;
+    return next;
   });
   for (const id of fetched) {
-    if (!existingIds.has(id)) merged.push({ id, roles: [] });
+    if (!existingIds.has(id)) merged.push({ id, roles: [], seen: true });
   }
   return merged;
 }
