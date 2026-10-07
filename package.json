@@ -1,14 +1,14 @@
 {
   "name": "imagotune",
-  "version": "2.0.0-alpha.3",
+  "version": "2.0.0-beta.1",
   "description": "OpenAI-compatible local creative workspace for Windows",
   "author": {
-    "name": "ImagoTune Studio"
+    "name": "HelasNai"
   },
   "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
-    "url": "https://github.com/zztnbnb/image-studio.git"
+    "url": "https://github.com/HelasNai/image-studio.git"
   },
   "private": true,
   "main": "dist-electron/main.js",
@@ -29,7 +29,7 @@
     "keytar": "^7.9.0"
   },
   "build": {
-    "appId": "com.zztnbnb.pinaic.imagestudio",
+    "appId": "io.github.helasnai.imagotune",
     "productName": "ImagoTune",
     "artifactName": "ImagoTune-Setup-${version}.${ext}",
     "asar": true,
@@ -38,7 +38,7 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "zztnbnb",
+        "owner": "HelasNai",
         "repo": "image-studio",
         "releaseType": "release"
       }

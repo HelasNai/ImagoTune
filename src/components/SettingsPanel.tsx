@@ -811,11 +811,11 @@ export function SettingsPanel({
                   <span className="eyebrow">ABOUT & HELP</span>
                   <h3>{t("关于与帮助")}</h3>
                   <p>{t("本地 OpenAI 兼容图片创作工具，支持自定义基础地址、模型、文生图、图片编辑和常用输出尺寸。")}</p>
-                  <p>{t("Copyright (C) 2026 zztnbnb。本项目以 GNU Affero General Public License v3.0 only 发布，不提供任何担保。")}</p>
+                  <p>{t("Copyright (C) 2026 HelasNai。本项目以 GNU Affero General Public License v3.0 only 发布，不提供任何担保。")}</p>
                 </div>
                 <div className="update-actions">
                   <button type="button" className="secondary" data-open-tutorial onClick={onOpenTutorial}>{t("打开新手教程")}</button>
-                  <a href="https://github.com/zztnbnb/image-studio/blob/main/LICENSE" target="_blank" rel="noreferrer" className="secondary">{t("查看许可证与源代码")}</a>
+                  <a href="https://github.com/HelasNai/image-studio/blob/main/LICENSE" target="_blank" rel="noreferrer" className="secondary">{t("查看许可证与源代码")}</a>
                 </div>
               </section>
             </div>

@@ -124,8 +124,8 @@ export const settings = {
   // --- 关于与帮助 ---
   "本地 OpenAI 兼容图片创作工具，支持自定义基础地址、模型、文生图、图片编辑和常用输出尺寸。":
     "A local OpenAI-compatible image creation tool with custom base URL, models, text-to-image, image editing, and common output sizes.",
-  "Copyright (C) 2026 zztnbnb。本项目以 GNU Affero General Public License v3.0 only 发布，不提供任何担保。":
-    "Copyright (C) 2026 zztnbnb. This project is released under the GNU Affero General Public License v3.0 only, without any warranty.",
+  "Copyright (C) 2026 HelasNai。本项目以 GNU Affero General Public License v3.0 only 发布，不提供任何担保。":
+    "Copyright (C) 2026 HelasNai. This project is released under the GNU Affero General Public License v3.0 only, without any warranty.",
   "打开新手教程": "Open tutorial",
   "查看许可证与源代码": "View license and source code",
 

@@ -215,13 +215,19 @@ async function readCustomTemplates(): Promise<PromptTemplate[]> {
 async function migrateLegacyUserData() {
   try {
     const newDir = app.getPath("userData");
-    const oldDir = path.join(app.getPath("appData"), "AI Image Studio");
-    if (path.resolve(newDir) === path.resolve(oldDir)) return;
+    // 旧 userData 目录候选：v1.5.x 打包版实测为 package.json name 字段（小写连字符 "ai-image-studio"，
+    // 见 2.0.0-beta.1 升级演练）；保留 productName 形式 "AI Image Studio" 作为兼容候选（防御性覆盖）。
+    const legacyNames = ["ai-image-studio", "AI Image Studio"];
+    if (legacyNames.some((name) => path.resolve(newDir) === path.resolve(path.join(app.getPath("appData"), name)))) return;
     const existing = await fs.readdir(newDir).catch(() => [] as string[]);
     if (existing.length > 0) return;
-    const legacy = await fs.stat(oldDir).catch(() => null);
-    if (!legacy || !legacy.isDirectory()) return;
-    await fs.cp(oldDir, newDir, { recursive: true, force: true, errorOnExist: false });
+    for (const name of legacyNames) {
+      const oldDir = path.join(app.getPath("appData"), name);
+      const legacy = await fs.stat(oldDir).catch(() => null);
+      if (!legacy || !legacy.isDirectory()) continue;
+      await fs.cp(oldDir, newDir, { recursive: true, force: true, errorOnExist: false });
+      break; // 命中第一个存在的旧目录即完成迁移（真实用户只会有一个旧目录）
+    }
   } catch (error) {
     // 迁移失败只告警，绝不删除旧目录，也绝不阻断启动。
     console.warn("迁移旧版 ImagoTune 用户数据目录失败：", error);
