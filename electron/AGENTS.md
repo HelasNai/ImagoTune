@@ -11,7 +11,7 @@ Electron 主进程：窗口、IPC、本地存储、OpenAI 兼容 API、本地 AI
 | `constants.ts` | 默认模型 `DEFAULT_IMAGE_MODEL`/`DEFAULT_CHAT_MODEL` + `INBOX_PROJECT_ID`（纯模块，与 `src/lib/constants` 一致性测试） |
 | `i18n.ts` | 主进程 locale 单例 + `mt()` 原生面小词典（`MainLocale`/`getMainLocale`/`setMainLocale`；32 条 `{zh;en}` + `{name}` 插值，缺失 key warn 返回 key 不抛错），纯模块可被 vitest 直接导入 |
 | `model-config.ts` | 多供应商配置纯逻辑（`parseModelsResponse`/`mergeFetchedModels`/`buildLegacyModelConfig`/`validateSavePayload`/`resolveRoleBinding`/`resolveJobBinding`/`deriveConfigured`/`runSavePlan`/`findProvider`/`stripProviderSecrets`）——无 IPC/副作用，供 main.ts 与 vitest 共用 |
-| `providers/` | 平台适配器层（纯逻辑无副作用）：`types.ts`（`ProviderAdapter`/`GenerateContext` 接口，只强制 `generate`）、`presets.ts`（`PROVIDER_PRESETS` 预设表 + `getAdapter`/`getPreset`，未知 api → `undefined`）、`hunyuan-image.ts`（腾讯混元生图适配器：专用端点 + messages 协议、单张限制、size 哨兵） |
+| `providers/` | 平台适配器层（纯逻辑无副作用）：`types.ts`（`ProviderAdapter`/`GenerateContext` 接口，只强制 `generate`）、`presets.ts`（`PROVIDER_PRESETS` 预设表 12 条：国内组 7（混元/智谱/火山/阿里/硅基/xAI/OpenRouter）+ 国际组 5（TokenHub/Z.AI/BytePlus ModelArk/Alibaba Cloud Model Studio/SiliconFlow，复用同适配器），分组排列不交叉 + `getAdapter`/`getPreset`，未知 api → `undefined`）、7 个适配器模块：`hunyuan-image.ts`（专用端点 + messages 协议、单张、size 哨兵）、`zhipu-image.ts`（只发 model/prompt/size；拒绝参考图）、`volcengine-image.ts`（无 n；i2i 走 `image` 数组）、`dashscope-image.ts`（n∈[1,6]；i2i 走顶层 `image`）、`siliconflow-image.ts`（`image_size`/`batch_size` 改名；`images[]` 响应）、`xai-image.ts`（generations/edits 端点切换 + size 推导）、`openrouter-image.ts`（专用 `/images` 端点；仅 `b64_json` 响应） |
 | `fs-utils.ts` | `ensureDir`/`atomicWriteJson`/`readJsonWithLegacy`/`replaceWithRetry`（原子写 + 重试） |
 | `net-utils.ts` | `joinBase`/`withTimeout`/`errorMessage`（网络请求共享助手） |
 | `directory-manager.ts` | 目录选择/打开/恢复默认的共享实现（依赖 `dialog`/keytar，不计入纯逻辑测试） |
@@ -22,7 +22,7 @@ Electron 主进程：窗口、IPC、本地存储、OpenAI 兼容 API、本地 AI
 | `image-response.ts` | 图片响应模型；JSDoc 注明"优先持久 Base64 而非瞬时 URL" |
 | `generation-error.ts` | 错误分类(鉴权/余额/限流等)——"不自动重试防重复计费"的核心 |
 | `png-metadata.ts` | PNG 元数据读写(UTF-8 中文) |
-| `reverse-prompt.ts` | 图反推提示词 |
+| `reverse-prompt.ts` | 图反推响应助手：`parseReversePrompt`（中英 JSON/标签解析）、`isVisionInputUnsupported`（视觉不支持错误识别）、`reverseContentError`（`finish_reason:"length"` 截断或空响应的可操作文案；推理模型 CoT 计入 max_tokens 时触发） |
 | `local-ai-models.ts` | 本地模型清单 + SHA-256 |
 | `local-ai-model-manager.ts` | 模型下载 / SHA-256 校验 / 断点续传 / 原子安装 |
 | `outpaint-limits.ts` | 画布常量 `CANVAS_MULTIPLE`/`CANVAS_MAX_EDGE`/`CANVAS_MAX_PIXELS`（与 `src/lib/creative` 一致性测试） |
@@ -39,7 +39,7 @@ Electron 主进程：窗口、IPC、本地存储、OpenAI 兼容 API、本地 AI
 | 原子写 / 网络 / 目录选择助手 | `fs-utils.ts` / `net-utils.ts` / `directory-manager.ts` |
 | 图库 / 队列持久化 | `{gallery,queue}-store.ts` |
 | 多供应商配置 / 角色解析 / 迁移 | `model-config.ts`（纯逻辑）+ `main.ts`（`loadModelConfig`/`saveModelConfig`/`providerCredential`/`resolveRole`/`SETTINGS_GET`/`SETTINGS_SAVE`/`SETTINGS_TEST`） |
-| 平台适配器 / 预设表 | `providers/`（`types.ts` 接口、`presets.ts` 注册表 `getAdapter`/`getPreset`、`hunyuan-image.ts`；新增平台 = 一条预设 + 一个适配器模块，未知 api 走 openai 默认路径） |
+| 平台适配器 / 预设表 | `providers/`（`types.ts` 接口、`presets.ts` 注册表 `getAdapter`/`getPreset`、7 个 `<vendor>-image.ts` 适配器；新增平台 = 一条预设 + 一个适配器模块 + `shared/types.d.ts` 的 `ProviderApiStyle` 与 `validateSavePayload` 白名单两处同步；国际站同协议时 = 仅加预设条目、复用适配器，未知 api 走 openai 默认路径） |
 | 报错分类 / 计费安全 | `generation-error.ts` |
 | 本地模型下载 / 校验 | `local-ai-model-manager.ts` + `local-ai-models.ts` |
 | PNG 元数据 / 反推 | `png-metadata.ts` / `reverse-prompt.ts` |
@@ -68,7 +68,7 @@ Electron 主进程：窗口、IPC、本地存储、OpenAI 兼容 API、本地 AI
 - 跨进程共享类型唯一来源 `../shared/types`（`shared/types.d.ts`）：本目录一律 `import type`，需对外导出时用 `export type { X } from "../shared/types"`（本仓 `isolatedModules`；异名映射如 `ImageResponse`↔`ApiImage`、`BinaryPayload`↔`BinaryInput`）。
 - IPC 通道名字符串唯一来源 `channels.ts`：`main.ts` 的 `ipcMain.handle` / `webContents.send` 引用常量；`preload.ts` 出于沙箱限制**刻意内联**字符串（sandboxed preload 不能 `require` 本地模块，否则 `dist-electron/preload.js` 的 `require("./channels")` 运行时失败 → `window.imageStudio` 不暴露 → 窗口白屏），两端一致性由 `tests/preload-channels.test.ts` 双向锁定；字符串本身是对外契约，不得改动。
 - 主进程可测纯模块（`constants`/`channels`/`model-config`/`outpaint-limits`/`local-ai-limits`/`data-url`）不得含 IPC/副作用，供 vitest 直接导入；原子写/重试/超时/目录选择等重复已收敛至 `fs-utils`/`net-utils`/`directory-manager`。
-- 平台适配器层 `providers/`：纯逻辑无副作用、可被 vitest 直接导入；`getAdapter(api)` 未命中注册表返回 `undefined` → 上层 `callImages` 走 openai 默认路径（零回归）；适配器只强制 `generate(ctx, fetcher?)`（`fetcher` 可注入供单测），`listModels` 可选；混元单次只出一张（`n>1` 抛 `parameters`）、`size` 直传前哨兵校验（宽高 [256,8192]、面积 ≤ 16777216，越界抛 `parameters`、绝不缩放）、HTTP 200 但 body 含 `error` 同样抛错（错误文本含「接口/模型不存在」时归类 `endpoint`，其余走 `classifyHttpError`）；预设与自定义共用 `ProviderConfig`（仅多一个可选 `api`）；预设数据只经 `settings:get` 快照下发，渲染层绝不 import 本目录。
+- 平台适配器层 `providers/`：纯逻辑无副作用、可被 vitest 直接导入；`getAdapter(api)` 未命中注册表返回 `undefined` → 上层 `callImages` 走 openai 默认路径（零回归）；适配器只强制 `generate(ctx, fetcher?)`（`fetcher` 可注入供单测），`listModels` 可选；混元单次只出一张（`n>1` 抛 `parameters`）、`size` 直传前哨兵校验（宽高 [256,8192]、面积 ≤ 16777216，越界抛 `parameters`、绝不缩放）、HTTP 200 但 body 含 `error` 同样抛错（错误文本含「接口/模型不存在」时归类 `endpoint`，其余走 `classifyHttpError`）；预设与自定义共用 `ProviderConfig`（仅多一个可选 `api`）；预设数据只经 `settings:get` 快照下发，渲染层绝不 import 本目录。六家新平台适配器（智谱/火山 Ark/阿里百炼/硅基流动/xAI/OpenRouter）同为纯逻辑 + 前置校验零请求（张数/size/参考图不支持一律在 fetch 前拒绝），错误码统一走通用码 `parameters.imageCount`/`parameters.referenceUnsupported`/`parameters.size`/`response.invalid`；新增平台两处必同步：`shared/types.d.ts` 的 `ProviderApiStyle` + `model-config.ts` 的 `VALID_API_STYLES` 白名单（完整流程见 `../docs/guides/add-provider-platform.md`）。
 - `BrowserWindow.backgroundColor`（`#fdf5f9`）现仅兜底窗口首帧底色（页面加载前防白闪）：`scrollbar-gutter` 槽位与透明滚动条轨道由渲染层 `.app` 自身背景绘制（见 `src/styles.css` v2.1 四层背景），不再依赖此值配色；保留它用于启动过渡。（Electron 44 的 overlay 滚动条 electron#53350 不可用，勿再走该方案）
 - 窗口为系统原生 WCO 模型（`titleBarStyle:'hidden'` + `titleBarOverlay` 对象，见 `createWindow()`）：禁止 `transparent:true`/`hasShadow:false`/`thickFrame:false`（会丢阴影与边缘 resize 能力），保留 `backgroundColor:"#fdf5f9"`；拖拽由渲染层 `header` 承担，其右上角原生按钮条以 `env(titlebar-area-*)` + `header::after` 从拖拽区挖除。
 - 启动页窗口时序（v3.14）：`createWindow` 必须保持 `show:false` + `win.once("ready-to-show", () => win.show())` + 4s 兜底 timer（`setTimeout` 内守卫 `isDestroyed`/`isVisible`）——窗口一出场即 React 首帧（启动页），消灭「先露 backgroundColor 纯色底再跳界面」的空窗；兜底防加载失败 / 极慢时窗口永不显示。不得移除 `show:false` 或兜底；渲染层退场判定见 `src/lib/splash.ts`（最短 1800ms / 上限 6s / reduced-motion 直通）。
