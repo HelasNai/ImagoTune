@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isVisionInputUnsupported, parseReversePrompt } from "../electron/reverse-prompt";
+import { isVisionInputUnsupported, parseReversePrompt, reverseContentError } from "../electron/reverse-prompt";
 
 describe("reverse prompt helpers", () => {
   it("parses JSON and labeled bilingual responses", () => {
@@ -10,6 +10,12 @@ describe("reverse prompt helpers", () => {
   it("recognizes unsupported vision input responses", () => {
     expect(isVisionInputUnsupported("image_url is not supported by this model")).toBe(true);
     expect(isVisionInputUnsupported("temporary gateway error")).toBe(false);
+  });
+
+  it("maps truncated or empty reverse responses to actionable errors", () => {
+    expect(reverseContentError("length")).toContain("截断");
+    expect(reverseContentError("stop")).toBe("图反推没有返回提示词");
+    expect(reverseContentError(undefined)).toBe("图反推没有返回提示词");
   });
 });
 

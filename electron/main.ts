@@ -12,7 +12,7 @@ import { createQueueStore, QueueJob, QueueStore } from "./queue-store";
 import { composeImagePrompt, ImageRecipeV1, normalizeRecipe, stringValue, tagsValue } from "./image-recipe";
 import { classifyHttpError, classifyRuntimeError, cancelledErrorInfo, errorInfoMessage, GenerationError, GenerationErrorInfo } from "./generation-error";
 import { embedRecipeInPng, readRecipeFromPng } from "./png-metadata";
-import { isVisionInputUnsupported, parseReversePrompt } from "./reverse-prompt";
+import { isVisionInputUnsupported, parseReversePrompt, reverseContentError } from "./reverse-prompt";
 import { normalizeImageBase64, prioritizeImageResponses, type ImageResponse } from "./image-response";
 import { stripDataUrlPrefix } from "./data-url";
 import { LocalAIModelManager } from "./local-ai-model-manager";
@@ -891,7 +891,9 @@ async function reversePromptWithModel(image: BinaryInput) {
       body: JSON.stringify({
         model: binding.model,
         temperature: 0.35,
-        max_tokens: 1600,
+        // 推理型视觉模型（如 deepseek-flash）把思维链 token 计入 max_tokens 且长度非确定性；
+        // 1600 会被复杂图片的长推理耗尽、导致 content 为空，故放宽到 8192 留足「推理 + 输出」预算。
+        max_tokens: 8192,
         messages: [
           { role: "system", content: "你是专业图片提示词分析助手。分析画面主体、环境、构图、镜头、光线、色彩、材质和风格，返回可直接用于图片生成的中英文提示词。只输出 JSON：{\"zh\":\"中文提示词\",\"en\":\"English prompt\"}。不要添加 Markdown。" },
           { role: "user", content: [
@@ -909,9 +911,10 @@ async function reversePromptWithModel(image: BinaryInput) {
       }
       throw new Error(`图反推接口返回 ${response.status}：${body.replace(/\s+/g, " ").slice(0, 300)}`);
     }
-    const json = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-    const content = json.choices?.[0]?.message?.content?.trim();
-    if (!content) throw new Error("图反推没有返回提示词");
+    const json = await response.json() as { choices?: Array<{ message?: { content?: string }; finish_reason?: string }> };
+    const choice = json.choices?.[0];
+    const content = choice?.message?.content?.trim();
+    if (!content || choice?.finish_reason === "length") throw new Error(reverseContentError(choice?.finish_reason));
     return parseReversePrompt(content);
   } catch (error) {
     if ((error as Error).name === "AbortError") throw new Error("图反推超过 90 秒，请稍后重试，原提示词未改变。");
