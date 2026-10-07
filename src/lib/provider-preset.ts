@@ -8,6 +8,17 @@ import { t, type I18nKey } from "./i18n";
 // （zh 直通即原文，en 查 en/settings.ts 译文）。主进程仍下发原中文 keyHelp 作未命中回退。
 const PRESET_KEY_HELP_KEYS: Record<string, I18nKey> = {
   hunyuan: "在腾讯云控制台 → TokenHub → API Key 创建",
+  "hunyuan-intl": "在腾讯云国际站控制台 → TokenHub → API Key 创建",
+  zhipu: "在智谱开放平台（bigmodel.cn）创建 API Key",
+  "zhipu-intl": "在 Z.AI 控制台（z.ai）创建 API Key",
+  volcengine: "在火山引擎控制台 → 火山方舟 → API Key 创建",
+  "volcengine-intl": "在 BytePlus 控制台 → ModelArk → API Key 创建",
+  dashscope: "在阿里云百炼控制台创建 API-KEY",
+  "dashscope-intl": "在 Alibaba Cloud Model Studio 控制台创建 API-KEY",
+  siliconflow: "在硅基流动控制台创建 API 密钥",
+  "siliconflow-intl": "在 SiliconFlow 控制台创建 API 密钥",
+  xai: "在 x.ai 控制台创建 API Key",
+  openrouter: "在 OpenRouter 控制台创建 API Key",
 };
 
 /** 预设平台 keyHelp 的本地化文本：命中映射走 t()（zh 原文 / en 译文），未命中回退原文。 */

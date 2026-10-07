@@ -242,6 +242,21 @@ describe("validateSavePayload", () => {
     expect(validateSavePayload(payload, [])).toEqual({ ok: true });
   });
 
+  it("api 为六家新增平台值时通过校验", () => {
+    const styles: ProviderApiStyle[] = [
+      "zhipu-image",
+      "volcengine-image",
+      "dashscope-image",
+      "siliconflow-image",
+      "xai-image",
+      "openrouter-image",
+    ];
+    for (const api of styles) {
+      const payload = makePayload({ providers: [{ ...makeProvider(UUID_A), api, apiKey: "sk-secret" }] });
+      expect(validateSavePayload(payload, [])).toEqual({ ok: true });
+    }
+  });
+
   it("api 为 openai 时通过校验", () => {
     const payload = makePayload({ providers: [{ ...makeProvider(UUID_A), api: "openai", apiKey: "sk-secret" }] });
     expect(validateSavePayload(payload, [])).toEqual({ ok: true });

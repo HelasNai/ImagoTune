@@ -96,6 +96,19 @@ export const errors = {
   "error.hunyuan.endpointMissing.message": "The server could not find the requested model or endpoint.",
   "error.hunyuan.endpointMissing.suggestion": "Check the provider's API type, base URL, and model name.",
 
+  // 通用平台适配器错误（智谱/火山/阿里/硅基/xAI/OpenRouter 六家共享；zh 用适配器存储中文回退）。
+  "error.parameters.imageCount.title": "Image count limit",
+  "error.parameters.imageCount.message": "This platform generates at most {max} image(s) per request.",
+  "error.parameters.imageCount.suggestion": "Lower the number of images and submit again.",
+
+  "error.parameters.referenceUnsupported.title": "Reference images not supported",
+  "error.parameters.referenceUnsupported.message": "This platform does not support image-to-image or reference images.",
+  "error.parameters.referenceUnsupported.suggestion": "Use text-to-image without reference images, or switch to a provider that supports editing.",
+
+  "error.response.invalid.title": "Generation request failed",
+  "error.response.invalid.message": "The endpoint returned a response that could not be parsed or contained no image.",
+  "error.response.invalid.suggestion": "Review the details and current parameters, then submit again.",
+
   // 队列绑定失败（T28）：processQueue 执行期解析不到原快照必需的供应商/模型；
   // 新记录带 code 落盘（zh 走存储中文回退，en 命中此处）。
   "error.provider.unavailable.title": "Original provider unavailable",

@@ -199,6 +199,10 @@ export type GenerationErrorCode =
   | "hunyuan.invalidResponse"
   | "hunyuan.noImageUrl"
   | "hunyuan.endpointMissing"
+  // 通用平台适配器错误（智谱/火山/阿里/硅基/xAI/OpenRouter 六家共享；新增一条 = 本联合 + en/errors.ts 三键）
+  | "parameters.imageCount"
+  | "parameters.referenceUnsupported"
+  | "response.invalid"
   // 队列绑定失败（T28）：执行期解析不到原快照必需的供应商/模型。旧记录此字段缺省，
   // 渲染层回退存储中文；新增记录必须带码，en 才可本地化。
   | "provider.unavailable"
@@ -365,7 +369,15 @@ export interface RoleBinding {
 }
 
 /** 供应商接口风格；缺省（undefined）等同 "openai"，旧配置与 JSON 无需迁移 */
-export type ProviderApiStyle = "openai" | "hunyuan-image";
+export type ProviderApiStyle =
+  | "openai"
+  | "hunyuan-image"
+  | "zhipu-image"
+  | "volcengine-image"
+  | "dashscope-image"
+  | "siliconflow-image"
+  | "xai-image"
+  | "openrouter-image";
 
 export interface ProviderModel {
   id: string;

@@ -15,6 +15,18 @@ const MODEL_LIST_CAP = 500;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const RESERVED_PROVIDER_IDS = new Set(["legacy"]);
 
+// 保存校验允许的接口风格白名单；新增平台时与 shared/types.d.ts 的 ProviderApiStyle 同步维护（两处必须一起改）。
+const VALID_API_STYLES = new Set<string>([
+  "openai",
+  "hunyuan-image",
+  "zhipu-image",
+  "volcengine-image",
+  "dashscope-image",
+  "siliconflow-image",
+  "xai-image",
+  "openrouter-image",
+]);
+
 // D7 辅助：解析 /models 响应为干净的模型 id 列表。
 // 兼容 {data:[{id}]}、{data:["id"]}、{models:[...]}，元素可为 string | {id} | {model}。
 // 精确去重、大小写不敏感排序、上限 500；任何畸形输入返回 []，绝不抛异常。
@@ -124,7 +136,7 @@ export function validateSavePayload(
     ids.add(provider.id);
     if (provider.name.trim().length === 0) return { ok: false, error: "供应商名称不能为空" };
     // api 缺省（undefined）合法（旧配置运行时归一为 openai）；一旦提供必须是已知枚举。
-    if (provider.api !== undefined && provider.api !== "openai" && provider.api !== "hunyuan-image") {
+    if (provider.api !== undefined && !VALID_API_STYLES.has(provider.api)) {
       return { ok: false, error: "供应商接口风格无效" };
     }
     if (!existing.has(provider.id)) {

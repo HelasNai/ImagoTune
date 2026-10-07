@@ -72,6 +72,23 @@ describe("presetKeyHelp", () => {
     );
   });
 
+  it("国际站条目（*-intl）全部命中 en 译文（映射与词典同步锁定）", () => {
+    setLocale("en");
+    expect(presetKeyHelp("hunyuan-intl", "回退")).toBe(
+      "Create an API key in the Tencent Cloud International console → TokenHub → API Key",
+    );
+    expect(presetKeyHelp("zhipu-intl", "回退")).toBe("Create an API key in the Z.AI console (z.ai)");
+    expect(presetKeyHelp("volcengine-intl", "回退")).toBe(
+      "Create an API key in the BytePlus console → ModelArk → API Key",
+    );
+    expect(presetKeyHelp("dashscope-intl", "回退")).toBe(
+      "Create an API-KEY in the Alibaba Cloud Model Studio console",
+    );
+    expect(presetKeyHelp("siliconflow-intl", "回退")).toBe(
+      "Create an API key in the SiliconFlow console (siliconflow.com)",
+    );
+  });
+
   it("未知 id 回退传入原文（zh / en 均不泄漏 id）", () => {
     expect(presetKeyHelp("unknown-preset", "回退原文")).toBe("回退原文");
     setLocale("en");
