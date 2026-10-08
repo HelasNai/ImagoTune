@@ -8,7 +8,7 @@
   "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
-    "url": "https://github.com/HelasNai/image-studio.git"
+    "url": "https://github.com/HelasNai/ImagoTune.git"
   },
   "private": true,
   "main": "dist-electron/main.js",
@@ -39,7 +39,7 @@
       {
         "provider": "github",
         "owner": "HelasNai",
-        "repo": "image-studio",
+        "repo": "ImagoTune",
         "releaseType": "release"
       }
     ],

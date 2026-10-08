@@ -6,7 +6,7 @@
 
 A Windows desktop AI image creation workbench: connect to any OpenAI-compatible service for text-to-image, image editing, and intelligent outpaint, plus a built-in toolbox for fully local upscaling, background removal, and face restore.
 
-Current version **v2.0.0-beta.1** · [Changelog](CHANGELOG.md) · [Download](https://github.com/HelasNai/image-studio/releases/latest)
+Current version **v2.0.0-beta.1** · [Changelog](CHANGELOG.md) · [Download](https://github.com/HelasNai/ImagoTune/releases/latest)
 
 ## Key features
 
@@ -24,7 +24,7 @@ Current version **v2.0.0-beta.1** · [Changelog](CHANGELOG.md) · [Download](htt
 
 Regular users don't need Node.js; download the Windows installer from GitHub Releases:
 
-**https://github.com/HelasNai/image-studio/releases/latest**
+**https://github.com/HelasNai/ImagoTune/releases/latest**
 
 - The installer lets you choose the install directory and creates desktop and Start menu shortcuts.
 - Upgrading from v1.x: settings, API keys, gallery, templates, queue, save directory, and update preferences migrate automatically; the new installer automatically detects, uninstalls, and takes over an older installation (v1.0-v1.5.1, formerly named AI Image Studio) while keeping user data. Queued tasks left over from the old version must be retried manually (intentional, to avoid duplicate billing).

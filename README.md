@@ -4,7 +4,7 @@
 
 面向 Windows 的 AI 图片创作工作台：连接任意 OpenAI 兼容服务完成文生图、图片编辑与智能扩图，并内置完全本地运行的高清放大、智能抠图和人脸优化工具箱。
 
-当前版本 **v2.0.0-beta.1** · [更新日志](CHANGELOG.md) · [下载最新版本](https://github.com/HelasNai/image-studio/releases/latest)
+当前版本 **v2.0.0-beta.1** · [更新日志](CHANGELOG.md) · [下载最新版本](https://github.com/HelasNai/ImagoTune/releases/latest)
 
 ## 主要功能
 
@@ -22,7 +22,7 @@
 
 普通用户无需安装 Node.js，从 GitHub Releases 下载 Windows 安装包：
 
-**https://github.com/HelasNai/image-studio/releases/latest**
+**https://github.com/HelasNai/ImagoTune/releases/latest**
 
 - 安装程序支持选择安装目录，并创建桌面和开始菜单快捷方式。
 - 从 v1.x 升级：设置、API 密钥、图库、模板、队列、保存目录和更新偏好会自动迁移；新版安装程序会自动检测、卸载并接管旧版安装（v1.0–v1.5.1，原名 AI Image Studio），用户数据保留。旧版本遗留的排队任务需要手动重试（刻意设计，避免重复计费）。

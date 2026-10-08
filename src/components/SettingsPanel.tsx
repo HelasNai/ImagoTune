@@ -815,7 +815,7 @@ export function SettingsPanel({
                 </div>
                 <div className="update-actions">
                   <button type="button" className="secondary" data-open-tutorial onClick={onOpenTutorial}>{t("打开新手教程")}</button>
-                  <a href="https://github.com/HelasNai/image-studio/blob/main/LICENSE" target="_blank" rel="noreferrer" className="secondary">{t("查看许可证与源代码")}</a>
+                  <a href="https://github.com/HelasNai/ImagoTune/blob/main/LICENSE" target="_blank" rel="noreferrer" className="secondary">{t("查看许可证与源代码")}</a>
                 </div>
               </section>
             </div>

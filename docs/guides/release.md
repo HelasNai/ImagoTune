@@ -27,7 +27,7 @@ npm.cmd run package:win
 
 ## 二、GitHub Release 资产
 
-公开仓库：https://github.com/HelasNai/image-studio
+公开仓库：https://github.com/HelasNai/ImagoTune
 
 每个 GitHub Release 需要同时上传：
 
