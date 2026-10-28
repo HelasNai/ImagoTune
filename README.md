@@ -4,7 +4,7 @@
 
 面向 Windows 的 AI 图片创作工作台：连接任意 OpenAI 兼容服务完成文生图、图片编辑与智能扩图，并内置完全本地运行的高清放大、智能抠图和人脸优化工具箱。
 
-当前版本 **v2.0.0-beta.1** · [更新日志](CHANGELOG.md) · [下载最新版本](https://github.com/HelasNai/ImagoTune/releases/latest)
+当前版本 **v2.0.0** · [更新日志](CHANGELOG.md) · [下载最新版本](https://github.com/HelasNai/ImagoTune/releases/latest)
 
 ## 主要功能
 

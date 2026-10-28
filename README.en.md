@@ -6,7 +6,7 @@
 
 A Windows desktop AI image creation workbench: connect to any OpenAI-compatible service for text-to-image, image editing, and intelligent outpaint, plus a built-in toolbox for fully local upscaling, background removal, and face restore.
 
-Current version **v2.0.0-beta.1** · [Changelog](CHANGELOG.md) · [Download](https://github.com/HelasNai/ImagoTune/releases/latest)
+Current version **v2.0.0** · [Changelog](CHANGELOG.md) · [Download](https://github.com/HelasNai/ImagoTune/releases/latest)
 
 ## Key features
 
